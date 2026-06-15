@@ -149,3 +149,29 @@ services:
       timeout: 5s
       retries: 5
       start_period: 25s
+
+  codebase-mcp:
+    build: ./services/codebase-mcp
+    <<: *restart
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:?set in .env}
+      MNEMO_TOKEN: ${MNEMO_TOKEN:-}
+      DEFAULT_PROJECT_ID: ${DEFAULT_PROJECT_ID:-nodex}
+      PORT: "8081"
+      REPOS_ROOT: /repos
+    volumes:
+      - /home/development/dev:/repos:ro   # repos mounted read-only for index + get_file
+    ports:
+      - "127.0.0.1:8081:8081"             # host-side Claude Code reaches it here
+    networks: [backend, edge]              # backend=Postgres, edge=egress to Voyage
+    mem_limit: 2g
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8081/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
