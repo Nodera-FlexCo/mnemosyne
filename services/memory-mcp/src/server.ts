@@ -48,15 +48,17 @@ function buildServer(projectId: string): McpServer {
         title: z.string().describe('Short headline'),
         content: z.string().describe('The distilled fact, markdown ok'),
         importance: z.number().min(0).max(1).default(0.5),
+        sourceKind: z.string().optional().describe('Category for enumeration: tech-debt, research, plan, audit, decision, implementation, requirements, copywrite'),
         tags: z.array(z.string()).optional(),
+        metadata: z.record(z.any()).optional().describe('Structured fields, e.g. tech-debt: {debtId, severity, category, file}'),
       },
       annotations: { readOnlyHint: false, idempotentHint: false },
     },
-    async ({ type, title, content, importance, tags }) => {
+    async ({ type, title, content, importance, sourceKind, tags, metadata }) => {
       try {
         const r = await mem.storeMemory({
-          projectId, type, title, content, importance,
-          metadata: tags ? { tags } : undefined,
+          projectId, type, title, content, importance, sourceKind,
+          metadata: { ...(metadata ?? {}), ...(tags ? { tags } : {}) },
         });
         return { content: [{ type: 'text', text: `stored ${type} memory "${r.title}" (id: ${r.id})` }] };
       } catch (e) {
@@ -108,6 +110,7 @@ function buildServer(projectId: string): McpServer {
         content: z.string().optional(),
         importance: z.number().min(0).max(1).optional(),
         pinned: z.boolean().optional(),
+        status: z.string().optional().describe('active | resolved | superseded | archived | closed — e.g. set "resolved" when a tech-debt item is fixed'),
       },
       annotations: { readOnlyHint: false, idempotentHint: true },
     },
@@ -115,6 +118,32 @@ function buildServer(projectId: string): McpServer {
       const r = await mem.updateMemory(id, fields);
       if (!r) return { isError: true, content: [{ type: 'text', text: `no memory ${id}` }] };
       return { content: [{ type: 'text', text: `updated ${r.id}` }] };
+    },
+  );
+
+  server.registerTool(
+    'memory_list',
+    {
+      title: 'List / enumerate memories (structured, not search)',
+      description:
+        'Enumerate + COUNT memories by source_kind / type / status / tag, newest first. ' +
+        'Use for "list all open tech debts", "which implementations shipped", "count research". ' +
+        'Returns compact rows + counts (X active / Y resolved / Z total). ' +
+        'This is NOT semantic search — for "what did we decide about X" use memory_search.',
+      inputSchema: {
+        sourceKind: z.string().optional().describe('e.g. tech-debt, research, plan, audit, decision, implementation'),
+        type: z.enum(MEMORY_TYPES).optional(),
+        status: z.string().optional().describe('active (default) | resolved | superseded | all'),
+        tag: z.string().optional(),
+        limit: z.number().int().min(1).max(100).default(30),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ sourceKind, type, status, tag, limit }) => {
+      const r = await mem.listMemories({ projectId, sourceKind, type, status, tag, limit });
+      const header = `${r.rows.length} shown · ${r.active} active / ${r.resolved} resolved / ${r.total} total${sourceKind ? ` [${sourceKind}]` : ''}`;
+      const body = r.rows.map((m) => `• [${m.status}] ${m.title}  (${m.source_kind ?? m.type}, id: ${m.id})`).join('\n');
+      return { content: [{ type: 'text', text: `${header}\n${body || '(none)'}` }] };
     },
   );
 

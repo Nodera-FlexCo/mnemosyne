@@ -15,15 +15,18 @@ import pg from 'pg';
 const DRY_RUN = process.env.DRY_RUN !== 'false';
 const PROJECT_ID = process.env.PROJECT_ID || 'nodex';
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY || '';
-const DATABASE_URL = process.env.DATABASE_URL || '';
+const DATABASE_URL = process.env.DATABASE_URL ||
+  (process.env.POSTGRES_USER
+    ? `postgres://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.PGHOST || '127.0.0.1'}:5432/${process.env.POSTGRES_DB}`
+    : '');
 const EMBED_MODEL = process.env.VOYAGE_EMBED_MODEL || 'voyage-4-large';
 const H = homedir();
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 
 // ---------- source manifest (Nodex-scoped) ----------
-const NODEX = join(H, 'Developer/Apps/Nodex');
-const MEM = join(H, '.claude/projects/-Users-development-Developer-Apps-Nodex/memory');
-const APPLE = join(H, 'Developer/Apple App Store Web');
+const NODEX = process.env.NODEX_DIR || join(H, 'Developer/Apps/Nodex');
+const MEM = process.env.MEM_DIR || join(H, '.claude/projects/-Users-development-Developer-Apps-Nodex/memory');
+const APPLE = process.env.APPLE_DIR || join(H, 'Developer/Apple App Store Web');
 const CORPORA = [
   { kind: 'claude-memory', dir: MEM, recurse: false },
   { kind: 'research', dir: join(NODEX, '.claude/research'), recurse: false },

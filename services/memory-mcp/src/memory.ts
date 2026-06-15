@@ -34,12 +34,13 @@ export async function storeMemory(input: {
   importance?: number;
   metadata?: Record<string, unknown>;
   sourceSessionId?: string;
+  sourceKind?: string;
 }): Promise<{ id: string; title: string }> {
   const [vec] = await embed([`${input.title}\n${input.content}`], 'document');
   const { rows } = await pool.query<{ id: string; title: string }>(
     `INSERT INTO memory.memories
-       (project_id, type, title, content, importance, metadata, source_session_id, embedding)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8::halfvec)
+       (project_id, type, title, content, importance, metadata, source_session_id, source_kind, embedding)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::halfvec)
      RETURNING id, title`,
     [
       input.projectId,
@@ -49,10 +50,76 @@ export async function storeMemory(input: {
       input.importance ?? 0.5,
       JSON.stringify(input.metadata ?? {}),
       input.sourceSessionId ?? null,
+      input.sourceKind ?? null,
       toVectorLiteral(vec),
     ],
   );
   return rows[0];
+}
+
+export interface MemoryRow {
+  id: string;
+  title: string;
+  type: MemoryType;
+  source_kind: string | null;
+  status: string;
+  importance: number;
+  event_date: Date | null;
+}
+
+/**
+ * Structured enumeration (NOT semantic search) — list/filter memories by
+ * source_kind / type / status / tag, newest first, with counts. Powers
+ * "list all open tech debts", "which implementations shipped", etc.
+ */
+export async function listMemories(input: {
+  projectId: string;
+  sourceKind?: string;
+  type?: MemoryType;
+  status?: string;
+  tag?: string;
+  limit: number;
+}): Promise<{ rows: MemoryRow[]; total: number; active: number; resolved: number }> {
+  const params: unknown[] = [input.projectId];
+  let where = `project_id = $1 AND archived_at IS NULL`;
+  // default to active unless a specific status (or 'all') is requested
+  if (input.status && input.status !== 'all') {
+    params.push(input.status);
+    where += ` AND COALESCE(status,'active') = $${params.length}`;
+  } else if (!input.status) {
+    where += ` AND COALESCE(status,'active') = 'active'`;
+  }
+  if (input.sourceKind) { params.push(input.sourceKind); where += ` AND source_kind = $${params.length}`; }
+  if (input.type) { params.push(input.type); where += ` AND type = $${params.length}::memory.memory_type`; }
+  if (input.tag) { params.push(input.tag); where += ` AND metadata->'tags' ? $${params.length}`; }
+
+  const listParams = [...params, input.limit];
+  const { rows } = await pool.query<MemoryRow>(
+    `SELECT id, title, type, source_kind, COALESCE(status,'active') AS status, importance, event_date
+     FROM memory.memories WHERE ${where}
+     ORDER BY COALESCE(event_date, created_at) DESC
+     LIMIT $${listParams.length}`,
+    listParams,
+  );
+
+  // counts over the same kind filter (ignoring the status filter), for "X open / Y resolved"
+  const countParams: unknown[] = [input.projectId];
+  let cf = '';
+  if (input.sourceKind) { countParams.push(input.sourceKind); cf = `AND source_kind = $${countParams.length}`; }
+  if (input.type) { countParams.push(input.type); cf += ` AND type = $${countParams.length}::memory.memory_type`; }
+  const c = await pool.query<{ total: string; active: string; resolved: string }>(
+    `SELECT count(*) AS total,
+            count(*) FILTER (WHERE COALESCE(status,'active')='active') AS active,
+            count(*) FILTER (WHERE status='resolved') AS resolved
+     FROM memory.memories WHERE project_id = $1 AND archived_at IS NULL ${cf}`,
+    countParams,
+  );
+  return {
+    rows,
+    total: Number(c.rows[0].total),
+    active: Number(c.rows[0].active),
+    resolved: Number(c.rows[0].resolved),
+  };
 }
 
 export async function searchMemory(input: {
@@ -164,7 +231,7 @@ export async function getRecent(input: {
 
 export async function updateMemory(
   id: string,
-  fields: { title?: string; content?: string; importance?: number; pinned?: boolean },
+  fields: { title?: string; content?: string; importance?: number; pinned?: boolean; status?: string },
 ): Promise<{ id: string } | null> {
   const sets: string[] = [];
   const params: unknown[] = [];
@@ -173,6 +240,7 @@ export async function updateMemory(
   if (fields.content !== undefined) { sets.push(`content = $${i++}`); params.push(fields.content); }
   if (fields.importance !== undefined) { sets.push(`importance = $${i++}`); params.push(fields.importance); }
   if (fields.pinned !== undefined) { sets.push(`pinned = $${i++}`); params.push(fields.pinned); }
+  if (fields.status !== undefined) { sets.push(`status = $${i++}`); params.push(fields.status); }
 
   if (fields.title !== undefined || fields.content !== undefined) {
     const cur = await pool.query<{ title: string; content: string }>(
