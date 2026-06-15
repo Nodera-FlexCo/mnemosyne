@@ -88,7 +88,7 @@ services:
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
     ports:
       - "127.0.0.1:5432:5432"            # loopback ONLY (host-side psql/migrations)
-    networks: [backend]
+    networks: [backend, edge]   # edge enables host-loopback publish (DBeaver + migrations/importer); Postgres makes no outbound calls
     mem_limit: 96g
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
