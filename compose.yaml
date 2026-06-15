@@ -187,7 +187,7 @@ services:
       PORT: "8082"
     ports:
       - "127.0.0.1:8082:8082"
-    networks: [backend]                 # Postgres only — NO egress (secrets never leave the box)
+    networks: [backend, edge]           # backend=Postgres; edge needed for host loopback publish (server makes NO outbound calls, so secrets still never leave)
     mem_limit: 512m
     depends_on:
       postgres:
