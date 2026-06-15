@@ -1,10 +1,16 @@
 import { readFileSync, statSync, readdirSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import ignore from 'ignore';
+import { createRequire } from 'node:module';
 import { pool } from './db/pool.js';
 import { config } from './config.js';
 import { chunkFile, languageFor, fileSha256 } from './chunker.js';
 import { embedCode, toVectorLiteral } from './voyage.js';
+
+interface Ignorer {
+  add(pattern: string | string[]): Ignorer;
+  ignores(path: string): boolean;
+}
+const ignore = createRequire(import.meta.url)('ignore') as () => Ignorer;
 
 const SKIP_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', '.next', '.turbo', '.cache', 'coverage',
