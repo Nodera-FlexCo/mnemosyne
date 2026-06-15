@@ -1,0 +1,127 @@
+name: mnemosyne
+
+# Data layer for Mnemosyne (Postgres+pgvector, Redis).
+# MCP servers, indexer, pgbouncer and cloudflared are added in later stages.
+#
+# Security model: DB/cache live on an internal-only network and are published
+# ONLY to host loopback (127.0.0.1) for admin/migrations — never to 0.0.0.0.
+# ufw-docker is installed on the host so even an accidental public publish is
+# filtered. cloudflared (added later) is the only ingress.
+
+x-restart: &restart
+  restart: unless-stopped
+
+networks:
+  backend:
+    internal: true        # no egress; DB/cache isolated
+  edge: {}                # used later by mcp servers + cloudflared
+
+volumes:
+  pgdata: {}
+  redisdata: {}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    <<: *restart
+    shm_size: "1g"                       # default 64MB breaks parallel/large queries
+    command:
+      - postgres
+      - -c
+      - listen_addresses=*
+      # --- memory (128GB box, shared with other services) ---
+      - -c
+      - shared_buffers=32GB
+      - -c
+      - effective_cache_size=96GB
+      - -c
+      - work_mem=128MB
+      - -c
+      - maintenance_work_mem=4GB
+      - -c
+      - hash_mem_multiplier=2.0
+      # --- parallelism (14C/20T) ---
+      - -c
+      - max_worker_processes=20
+      - -c
+      - max_parallel_workers=14
+      - -c
+      - max_parallel_workers_per_gather=4
+      - -c
+      - max_parallel_maintenance_workers=4
+      # --- I/O (Gen4 NVMe) ---
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - maintenance_io_concurrency=200
+      - -c
+      - random_page_cost=1.1
+      # --- WAL / checkpoints ---
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_size=16GB
+      - -c
+      - min_wal_size=2GB
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - checkpoint_timeout=15min
+      - -c
+      - wal_compression=zstd
+      - -c
+      - synchronous_commit=on            # non-ECC single box: keep durable
+      # --- planner / misc ---
+      - -c
+      - default_statistics_target=200
+      - -c
+      - jit=off
+      - -c
+      - max_connections=200
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_INITDB_ARGS: "--data-checksums"   # extra corruption detection (non-ECC box)
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:5432:5432"            # loopback ONLY (host-side psql/migrations)
+    networks: [backend]
+    mem_limit: 96g
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    <<: *restart
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:?set in .env}
+      - --maxmemory
+      - 2gb
+      - --maxmemory-policy
+      - allkeys-lru               # pure cache (rerank + query-embedding); evict freely
+      - --save
+      - ""                         # no RDB snapshots (cache is reproducible)
+      - --appendonly
+      - "no"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set in .env}
+    volumes:
+      - redisdata:/data
+    ports:
+      - "127.0.0.1:6379:6379"      # loopback ONLY
+    networks: [backend]
+    mem_limit: 3g
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5

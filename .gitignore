@@ -1,0 +1,12 @@
+# secrets — generated on the box, never committed
+.env
+secrets/
+
+# node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# logs / scratch
+*.log
+.DS_Store
