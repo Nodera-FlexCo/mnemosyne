@@ -125,3 +125,27 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+
+  memory-mcp:
+    build: ./services/memory-mcp
+    <<: *restart
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:?set in .env}
+      MNEMO_TOKEN: ${MNEMO_TOKEN:-}
+      DEFAULT_PROJECT_ID: ${DEFAULT_PROJECT_ID:-nodex}
+      PORT: "8080"
+      CANDIDATE_POOL: "25"
+    ports:
+      - "127.0.0.1:8080:8080"        # host-side Claude Code reaches it here
+    networks: [backend, edge]         # backend=Postgres, edge=egress to Voyage
+    mem_limit: 1g
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
