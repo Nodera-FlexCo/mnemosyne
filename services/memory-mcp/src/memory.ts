@@ -20,6 +20,7 @@ interface CandidateRow {
   type: MemoryType;
   importance: number;
   created_at: Date;
+  event_date?: Date | null;
   rrf: number;
 }
 
@@ -70,19 +71,19 @@ export async function searchMemory(input: {
     bm25 AS (
       SELECT m.id, row_number() OVER (ORDER BY ts_rank_cd(m.search_tsv, q.tsq) DESC) AS rank
       FROM memory.memories m, q
-      WHERE m.archived_at IS NULL AND m.project_id = $3
+      WHERE m.archived_at IS NULL AND COALESCE(m.status,'active') = 'active' AND m.project_id = $3
         AND m.search_tsv @@ q.tsq ${typeFilter}
       LIMIT ${RECALL_LIMIT}
     ),
     vec AS (
       SELECT m.id, row_number() OVER (ORDER BY m.embedding <=> $2::halfvec) AS rank
       FROM memory.memories m
-      WHERE m.archived_at IS NULL AND m.project_id = $3
+      WHERE m.archived_at IS NULL AND COALESCE(m.status,'active') = 'active' AND m.project_id = $3
         AND m.embedding IS NOT NULL ${typeFilter}
       ORDER BY m.embedding <=> $2::halfvec
       LIMIT ${RECALL_LIMIT}
     )
-    SELECT m.id, m.title, m.content, m.type, m.importance, m.created_at,
+    SELECT m.id, m.title, m.content, m.type, m.importance, m.created_at, m.event_date,
            COALESCE(1.0/(60+bm25.rank),0) + COALESCE(1.0/(60+vec.rank),0) AS rrf
     FROM memory.memories m
     LEFT JOIN bm25 ON bm25.id = m.id
@@ -103,7 +104,7 @@ export async function searchMemory(input: {
   const now = Date.now();
   const scored = rows.map((r) => {
     const rel = relById.get(r.id) ?? 0;
-    const ageDays = (now - new Date(r.created_at).getTime()) / 86_400_000;
+    const ageDays = (now - new Date(r.event_date ?? r.created_at).getTime()) / 86_400_000;
     const recency = Math.exp(-ageDays / 30);
     const final = 0.7 * rel + 0.2 * recency + 0.1 * r.importance;
     return { r, final };
@@ -146,7 +147,7 @@ export async function getRecent(input: {
   const { rows } = await pool.query<CandidateRow>(
     `SELECT id, title, content, type, importance, created_at, 0 AS rrf
      FROM memory.memories
-     WHERE archived_at IS NULL AND project_id = $1 ${typeFilter}
+     WHERE archived_at IS NULL AND COALESCE(status,'active') = 'active' AND project_id = $1 ${typeFilter}
      ORDER BY created_at DESC
      LIMIT $2`,
     params,
