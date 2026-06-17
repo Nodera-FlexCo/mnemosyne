@@ -210,6 +210,10 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${LANGFUSE_DB:-langfuse}
       NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3000}
+      # Next.js standalone binds to $HOSTNAME; Docker defaults it to the container id, so the app
+      # listens on the container's eth0 IP, not loopback — the in-container healthcheck (127.0.0.1)
+      # and the host port-forward both miss it. Pin 0.0.0.0 to listen on every interface.
+      HOSTNAME: "0.0.0.0"
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?set in .env}
       SALT: ${LANGFUSE_SALT:?set in .env}
       ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?set in .env}   # openssl rand -hex 32
