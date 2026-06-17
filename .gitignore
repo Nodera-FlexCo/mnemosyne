@@ -10,3 +10,6 @@ dist/
 # logs / scratch
 *.log
 .DS_Store
+
+# claude code worktrees + local agent scratch (worktrees live here)
+.claude/

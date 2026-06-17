@@ -198,3 +198,41 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  # Eval/observability plane (Mnemosyne Stage 3 — the eval harness keystone).
+  # Pinned to v2 ON PURPOSE: v2 is a single web container backed by Postgres only.
+  # v3 mandates ClickHouse + Redis + S3 (heavy) — not wanted for this MVP. It runs its
+  # own Prisma migrations into the `langfuse` DB on first boot. LANGFUSE_INIT_* headlessly
+  # bootstraps the org/project/user + API keys so Promptfoo gets stable keys with no UI clicks.
+  langfuse:
+    image: langfuse/langfuse:2
+    <<: *restart
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${LANGFUSE_DB:-langfuse}
+      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?set in .env}
+      SALT: ${LANGFUSE_SALT:?set in .env}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?set in .env}   # openssl rand -hex 32
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+      # Headless bootstrap (first boot only) — stable keys for the Promptfoo CI gate.
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-mnemosyne}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-nodex-evals}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:-}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:-}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-Mnemosyne}
+    ports:
+      - "127.0.0.1:3000:3000"        # loopback ONLY — reach via SSH tunnel (cloudflared later)
+    networks: [backend, edge]          # backend=Postgres; edge for NextAuth/egress
+    mem_limit: 2g
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/api/public/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s              # first boot runs DB migrations
