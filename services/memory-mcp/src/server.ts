@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod';
 import { config, assertServerConfig } from './config.js';
 import { requireBearer, type MnemoAuth } from './auth.js';
+import { originGuard } from './origin.js';
 import * as mem from './memory.js';
 
 const MEMORY_TYPES = ['episodic', 'semantic', 'procedural', 'entity'] as const;
@@ -188,6 +189,7 @@ app.get('/healthz', (_req, res) => {
   res.json({ ok: true, service: 'memory-mcp-server' });
 });
 
+app.use(originGuard);
 app.use(requireBearer);
 
 app.post('/mcp', async (req, res) => {

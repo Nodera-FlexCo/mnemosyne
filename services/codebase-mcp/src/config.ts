@@ -9,6 +9,14 @@ export const config = {
   candidatePool: parseInt(process.env.CANDIDATE_POOL ?? '25', 10),
   // repos are mounted read-only here (host /home/development/dev -> /repos)
   reposRoot: process.env.REPOS_ROOT ?? '/repos',
+  // Origin allowlist (DNS-rebinding guard). Empty = only no-Origin (loopback) passes.
+  allowedOrigins: (process.env.ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+  // Cloudflare Access (Managed OAuth) — validate Cf-Access-Jwt-Assertion on the public path.
+  cfAccessTeamDomain: process.env.CF_ACCESS_TEAM_DOMAIN ?? '',
+  cfAccessAud: process.env.CF_ACCESS_AUD ?? '',
 };
 
 export function assertServerConfig(): void {

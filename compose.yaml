@@ -14,7 +14,10 @@ x-restart: &restart
 networks:
   backend:
     internal: true        # no egress; DB/cache isolated
-  edge: {}                # used later by mcp servers + cloudflared
+  edge: {}                # mcp servers (memory/codebase) + cloudflared + mnemo-auth
+  loopback: {}            # non-internal, NOT shared with cloudflared — lets secrets-mcp
+                          # keep its 127.0.0.1 host publish while staying unreachable from
+                          # the tunnel (internal:true would block the loopback publish).
 
 volumes:
   pgdata: {}
@@ -136,6 +139,9 @@ services:
       DEFAULT_PROJECT_ID: ${DEFAULT_PROJECT_ID:-nodex}
       PORT: "8080"
       CANDIDATE_POOL: "25"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}
     ports:
       - "127.0.0.1:8080:8080"        # host-side Claude Code reaches it here
     networks: [backend, edge]         # backend=Postgres, edge=egress to Voyage
@@ -160,6 +166,9 @@ services:
       DEFAULT_PROJECT_ID: ${DEFAULT_PROJECT_ID:-nodex}
       PORT: "8081"
       REPOS_ROOT: /repos
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}
     volumes:
       - /home/development/dev:/repos:ro   # repos mounted read-only for index + get_file
     ports:
@@ -187,7 +196,11 @@ services:
       PORT: "8082"
     ports:
       - "127.0.0.1:8082:8082"
-    networks: [backend, edge]           # backend=Postgres; edge needed for host loopback publish (server makes NO outbound calls, so secrets still never leave)
+    networks: [backend, loopback]       # backend=Postgres; loopback (non-internal) keeps the
+                                         # 127.0.0.1:8082 host publish working WITHOUT putting secrets
+                                         # on the cloudflared-shared `edge` net — so the tunnel can
+                                         # never reach 8082 (no ingress route AND no shared network).
+                                         # secrets-mcp makes NO outbound calls; loopback has no egress need.
     mem_limit: 512m
     depends_on:
       postgres:
@@ -198,6 +211,27 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  # Public ingress — Cloudflare Tunnel (token mode). Outbound-only (dials OUT to Cloudflare;
+  # no published host ports). Ingress is managed REMOTELY via the CF API (config_src=cloudflare):
+  # ONLY memory + codebase are routed; there is NO secrets route, and secrets-mcp is additionally
+  # off the `edge` net (see the loopback network) so the tunnel cannot reach it. Profile-gated:
+  # stays DOWN under the default up (and systemd) until COMPOSE_PROFILES=edge is set in .env.
+  cloudflared:
+    image: cloudflare/cloudflared@sha256:803b17adb5326a38ce397b9c9f374289ad290ee5526d204b5879a1423b6f5c3e   # cloudflared 2025.7.0, digest-pinned
+    <<: *restart
+    profiles: ["edge"]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set in .env}   # named-tunnel run token (from the CF API/dashboard)
+    networks: [edge]                           # reaches memory-mcp + codebase-mcp by DNS; NOT secrets-mcp
+    mem_limit: 256m
+    depends_on:
+      memory-mcp:
+        condition: service_healthy
+      codebase-mcp:
+        condition: service_healthy
+    # NO `ports:` — outbound tunnel only.
 
   # Eval/observability plane (Mnemosyne Stage 3 — the eval harness keystone).
   # Pinned to v2 ON PURPOSE: v2 is a single web container backed by Postgres only.

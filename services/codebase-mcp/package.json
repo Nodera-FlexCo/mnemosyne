@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
@@ -14,6 +16,7 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "express": "^5.2.0",
     "ignore": "^6.0.0",
+    "jose": "^6.2.3",
     "pg": "^8.21.0",
     "zod": "^3.23.0"
   },
