@@ -206,18 +206,18 @@ services:
       retries: 5
       start_period: 20s
 
-  # Public ingress — Cloudflare Tunnel. Outbound-only (dials OUT to Cloudflare; no
-  # published host ports). Routes ONLY memory + codebase (see cloudflared/config.yml);
-  # secrets-mcp is not on the `edge` net so it is unreachable here regardless of routing.
-  # Profile-gated: stays DOWN under the default `docker compose up -d` (and systemd) until
-  # credentials exist — enable with `COMPOSE_PROFILES=edge` in .env or `--profile edge`.
+  # Public ingress — Cloudflare Tunnel (token mode). Outbound-only (dials OUT to Cloudflare;
+  # no published host ports). Ingress is managed REMOTELY via the CF API (config_src=cloudflare):
+  # ONLY memory + codebase are routed; there is NO secrets route, and secrets-mcp is additionally
+  # off the `edge` net (see the loopback network) so the tunnel cannot reach it. Profile-gated:
+  # stays DOWN under the default up (and systemd) until COMPOSE_PROFILES=edge is set in .env.
   cloudflared:
-    image: cloudflare/cloudflared:2025.7.0   # TODO confirm/pin a digest before deploy (date-tagged releases)
+    image: cloudflare/cloudflared:2025.7.0   # TODO confirm/pin a digest before relying on it long-term
     <<: *restart
     profiles: ["edge"]
-    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
-    volumes:
-      - ./cloudflared:/etc/cloudflared:ro     # config.yml (tracked) + <TUNNEL_ID>.json (gitignored)
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set in .env}   # named-tunnel run token (from the CF API/dashboard)
     networks: [edge]                           # reaches memory-mcp + codebase-mcp by DNS; NOT secrets-mcp
     mem_limit: 256m
     depends_on:
