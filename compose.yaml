@@ -139,6 +139,9 @@ services:
       DEFAULT_PROJECT_ID: ${DEFAULT_PROJECT_ID:-nodex}
       PORT: "8080"
       CANDIDATE_POOL: "25"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}
     ports:
       - "127.0.0.1:8080:8080"        # host-side Claude Code reaches it here
     networks: [backend, edge]         # backend=Postgres, edge=egress to Voyage
@@ -163,6 +166,9 @@ services:
       DEFAULT_PROJECT_ID: ${DEFAULT_PROJECT_ID:-nodex}
       PORT: "8081"
       REPOS_ROOT: /repos
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}
     volumes:
       - /home/development/dev:/repos:ro   # repos mounted read-only for index + get_file
     ports:
@@ -212,7 +218,7 @@ services:
   # off the `edge` net (see the loopback network) so the tunnel cannot reach it. Profile-gated:
   # stays DOWN under the default up (and systemd) until COMPOSE_PROFILES=edge is set in .env.
   cloudflared:
-    image: cloudflare/cloudflared:2025.7.0   # TODO confirm/pin a digest before relying on it long-term
+    image: cloudflare/cloudflared@sha256:803b17adb5326a38ce397b9c9f374289ad290ee5526d204b5879a1423b6f5c3e   # cloudflared 2025.7.0, digest-pinned
     <<: *restart
     profiles: ["edge"]
     command: tunnel --no-autoupdate run

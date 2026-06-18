@@ -14,6 +14,9 @@ export const config = {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
+  // Cloudflare Access (Managed OAuth) — validate Cf-Access-Jwt-Assertion on the public path.
+  cfAccessTeamDomain: process.env.CF_ACCESS_TEAM_DOMAIN ?? '',
+  cfAccessAud: process.env.CF_ACCESS_AUD ?? '',
 };
 
 export function assertServerConfig(): void {
