@@ -7,6 +7,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod';
 import { config, assertServerConfig } from './config.js';
 import { requireBearer, type MnemoAuth } from './auth.js';
+import { originGuard } from './origin.js';
 import { pool } from './db/pool.js';
 import { searchCode, formatHits } from './search.js';
 
@@ -129,6 +130,7 @@ assertServerConfig();
 const app = express();
 app.use(express.json({ limit: '4mb' }));
 app.get('/healthz', (_req, res) => { res.json({ ok: true, service: 'codebase-mcp-server' }); });
+app.use(originGuard);
 app.use(requireBearer);
 app.post('/mcp', async (req, res) => {
   const auth = (req as express.Request & { auth?: MnemoAuth }).auth;

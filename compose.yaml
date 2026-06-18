@@ -14,7 +14,10 @@ x-restart: &restart
 networks:
   backend:
     internal: true        # no egress; DB/cache isolated
-  edge: {}                # used later by mcp servers + cloudflared
+  edge: {}                # mcp servers (memory/codebase) + cloudflared + mnemo-auth
+  loopback: {}            # non-internal, NOT shared with cloudflared — lets secrets-mcp
+                          # keep its 127.0.0.1 host publish while staying unreachable from
+                          # the tunnel (internal:true would block the loopback publish).
 
 volumes:
   pgdata: {}
@@ -187,7 +190,11 @@ services:
       PORT: "8082"
     ports:
       - "127.0.0.1:8082:8082"
-    networks: [backend, edge]           # backend=Postgres; edge needed for host loopback publish (server makes NO outbound calls, so secrets still never leave)
+    networks: [backend, loopback]       # backend=Postgres; loopback (non-internal) keeps the
+                                         # 127.0.0.1:8082 host publish working WITHOUT putting secrets
+                                         # on the cloudflared-shared `edge` net — so the tunnel can
+                                         # never reach 8082 (no ingress route AND no shared network).
+                                         # secrets-mcp makes NO outbound calls; loopback has no egress need.
     mem_limit: 512m
     depends_on:
       postgres:
@@ -198,6 +205,27 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  # Public ingress — Cloudflare Tunnel. Outbound-only (dials OUT to Cloudflare; no
+  # published host ports). Routes ONLY memory + codebase (see cloudflared/config.yml);
+  # secrets-mcp is not on the `edge` net so it is unreachable here regardless of routing.
+  # Profile-gated: stays DOWN under the default `docker compose up -d` (and systemd) until
+  # credentials exist — enable with `COMPOSE_PROFILES=edge` in .env or `--profile edge`.
+  cloudflared:
+    image: cloudflare/cloudflared:2025.7.0   # TODO confirm/pin a digest before deploy (date-tagged releases)
+    <<: *restart
+    profiles: ["edge"]
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared:/etc/cloudflared:ro     # config.yml (tracked) + <TUNNEL_ID>.json (gitignored)
+    networks: [edge]                           # reaches memory-mcp + codebase-mcp by DNS; NOT secrets-mcp
+    mem_limit: 256m
+    depends_on:
+      memory-mcp:
+        condition: service_healthy
+      codebase-mcp:
+        condition: service_healthy
+    # NO `ports:` — outbound tunnel only.
 
   # Eval/observability plane (Mnemosyne Stage 3 — the eval harness keystone).
   # Pinned to v2 ON PURPOSE: v2 is a single web container backed by Postgres only.

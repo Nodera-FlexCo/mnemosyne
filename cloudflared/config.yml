@@ -1,0 +1,25 @@
+# Cloudflare Tunnel ingress for Mnemosyne — checked into git so the routing is
+# auditable. The single most important property: ONLY memory + codebase are routed
+# publicly; secrets-mcp has NO ingress entry and is additionally isolated at the
+# Docker-network layer (see compose.yaml `loopback` network). Everything unmatched
+# returns 404.
+#
+# cloudflared does NOT interpolate env vars in this file. Before deploy, replace:
+#   <TUNNEL_ID>  -> your named tunnel's UUID (`cloudflared tunnel create mnemosyne`)
+#   <DOMAIN>     -> your Cloudflare-delegated zone (e.g. nodera.studio)
+# and drop the credentials JSON at ./cloudflared/<TUNNEL_ID>.json (gitignored).
+
+tunnel: <TUNNEL_ID>
+credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  - hostname: memory.<DOMAIN>
+    service: http://memory-mcp:8080
+  - hostname: codebase.<DOMAIN>
+    service: http://codebase-mcp:8081
+  # Phase 2 only — uncomment when the self-hosted OAuth AS (mnemo-auth) is built:
+  # - hostname: auth.<DOMAIN>
+  #   service: http://mnemo-auth:8083
+  #
+  # NO secrets-mcp entry — secrets is loopback-only, never public.
+  - service: http_status:404   # catch-all (required last rule)
