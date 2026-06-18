@@ -23,6 +23,18 @@ const EMBED_MODEL = process.env.VOYAGE_EMBED_MODEL || 'voyage-4-large';
 const H = homedir();
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 
+// Normalize a source path to a STABLE repo-relative key so dedup works regardless
+// of WHERE the importer ran. The first migration ran on the box from a staged copy
+// under IMPORT_SRC_BASE (paths like /opt/mnemosyne/import-src/Developer/Apps/Nodex/…);
+// re-runs from the Mac use ${HOME}/Developer/Apps/Nodex/…. Both normalize to the same
+// key (e.g. "Developer/Apps/Nodex/.claude/plans/x/index.md"), making re-ingest idempotent.
+const IMPORT_SRC_BASE = process.env.IMPORT_SRC_BASE || '/opt/mnemosyne/import-src/';
+function pathKey(p) {
+  if (p.startsWith(IMPORT_SRC_BASE)) return p.slice(IMPORT_SRC_BASE.length);
+  if (p.startsWith(H + '/')) return p.slice(H.length + 1);
+  return p;
+}
+
 // ---------- source manifest (Nodex-scoped) ----------
 const NODEX = process.env.NODEX_DIR || join(H, 'Developer/Apps/Nodex');
 const MEM = process.env.MEM_DIR || join(H, '.claude/projects/-Users-development-Developer-Apps-Nodex/memory');
@@ -31,7 +43,7 @@ const CORPORA = [
   { kind: 'claude-memory', dir: MEM, recurse: false },
   { kind: 'research', dir: join(NODEX, '.claude/research'), recurse: false },
   { kind: 'notes', dir: join(NODEX, '.claude/notes'), recurse: false },
-  { kind: 'plan', dir: join(NODEX, '.claude/plans'), recurse: false },
+  { kind: 'plan', dir: join(NODEX, '.claude/plans'), recurse: true },
   { kind: 'review', dir: join(NODEX, '.claude/reviews'), recurse: true },
   { kind: 'tech-debt', dir: join(NODEX, '.claude/tech-debt'), recurse: false },
   { kind: 'brainstorm', dir: join(NODEX, '.claude/brainstorm'), recurse: true },
@@ -109,12 +121,15 @@ function listFiles(c) {
 
 // ---------- collect ----------
 const pool = DATABASE_URL ? new pg.Pool({ connectionString: DATABASE_URL, max: 4 }) : null;
-const existing = new Set();
+const existing = new Set();      // content_sha256 dedup (handles renamed/moved files)
+const existingUris = new Set();  // source_uri (path) dedup — idempotent across redaction changes
 if (pool) {
   try {
     const r = await pool.query(`SELECT content_sha256 FROM memory.memories WHERE content_sha256 IS NOT NULL`);
     for (const row of r.rows) existing.add(row.content_sha256);
-  } catch (e) { console.error('warn: could not read existing hashes:', e.message); }
+    const r2 = await pool.query(`SELECT source_uri FROM memory.memories WHERE source_uri IS NOT NULL`);
+    for (const row of r2.rows) existingUris.add(pathKey(row.source_uri));
+  } catch (e) { console.error('warn: could not read existing hashes/uris:', e.message); }
 }
 
 const seen = new Set();
@@ -125,6 +140,7 @@ const secretFlagged = [];
 
 for (const c of CORPORA) {
   for (const f of listFiles(c)) {
+    if (existingUris.has(pathKey(f))) { dupCount++; continue; } // already ingested (repo-relative path) — skip
     let content;
     try { content = readFileSync(f, 'utf8'); } catch { continue; }
     if (!content.trim()) continue;
