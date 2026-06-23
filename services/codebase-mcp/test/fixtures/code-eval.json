@@ -1,0 +1,297 @@
+{
+  "_seed": true,
+  "_note": "SEED rows describe the SHAPE of a code-search eval set over the REAL indexed mnemosyne corpus (repository_id = the repo dir, file_path = repo-relative). Each row is query -> the relevant FILE PATH(s); a hit on ANY relevant path in the top-k counts as recall. Paths are matched case-insensitively (leading ./ stripped) by the bake-off scorer. These 50 rows point at files that exist in THIS repo today, but they are a SEED, not a frozen held-out set: before the AC-030 bake-off decision the OPERATOR must (1) confirm each relevant path is the truly-relevant file for the query (a human picks it), (2) EXPAND toward representative coverage of the live corpora the tool indexes (nodex + mnemosyne), and (3) freeze it. The research caveat applies: validate Voyage's paper numbers on YOUR TS repo — this set IS that instrument, so keep labels honest.",
+  "_archetypes": "where-is-X (subsystem location), how-do-we-X (mechanism), symbol-lookup (named function/type), route->handler trace, cross-file usage. The `archetype` field on each row is informational only (the loader ignores it).",
+  "_expand": "Operator: add rows until coverage is representative (target 80-150 for a stable number), then set _seed=false and freeze. The DB-backed code-recall.test.ts asserts the chosen-arm baseline once frozen.",
+  "k": 10,
+  "rows": [
+    {
+      "archetype": "where-is-X",
+      "query": "where is bearer token authentication handled",
+      "relevantPaths": ["services/codebase-mcp/src/auth.ts"]
+    },
+    {
+      "archetype": "where-is-X",
+      "query": "how do we verify Cloudflare Access JWT assertions",
+      "relevantPaths": ["services/codebase-mcp/src/cfAccess.ts"]
+    },
+    {
+      "archetype": "where-is-X",
+      "query": "DNS rebinding origin allowlist guard",
+      "relevantPaths": ["services/codebase-mcp/src/origin.ts"]
+    },
+    {
+      "archetype": "where-is-X",
+      "query": "where is the postgres connection pool created",
+      "relevantPaths": ["services/codebase-mcp/src/db/pool.ts"]
+    },
+    {
+      "archetype": "where-is-X",
+      "query": "where are SQL migrations applied at startup",
+      "relevantPaths": ["services/codebase-mcp/src/db/migrate.ts"]
+    },
+    {
+      "archetype": "where-is-X",
+      "query": "voyage embeddings client with retry on 429",
+      "relevantPaths": ["services/codebase-mcp/src/voyage.ts"]
+    },
+    {
+      "archetype": "where-is-X",
+      "query": "hybrid code search RRF fusion and rerank",
+      "relevantPaths": ["services/codebase-mcp/src/search.ts"]
+    },
+    {
+      "archetype": "where-is-X",
+      "query": "the repository indexer that walks files and embeds chunks",
+      "relevantPaths": ["services/codebase-mcp/src/indexer.ts"]
+    },
+    {
+      "archetype": "where-is-X",
+      "query": "sliding window code chunker",
+      "relevantPaths": ["services/codebase-mcp/src/chunker.ts"]
+    },
+    {
+      "archetype": "where-is-X",
+      "query": "tree-sitter symbol and edge extraction",
+      "relevantPaths": ["services/codebase-mcp/src/graph/extractor.ts"]
+    },
+    {
+      "archetype": "where-is-X",
+      "query": "graph traversal expanding symbol edges",
+      "relevantPaths": ["services/codebase-mcp/src/graph/traverse.ts"]
+    },
+    {
+      "archetype": "where-is-X",
+      "query": "MCP tool registration and HTTP server entrypoint",
+      "relevantPaths": ["services/codebase-mcp/src/server.ts"]
+    },
+    {
+      "archetype": "where-is-X",
+      "query": "formatting index run status for display",
+      "relevantPaths": ["services/codebase-mcp/src/status-format.ts"]
+    },
+    {
+      "archetype": "where-is-X",
+      "query": "environment-driven service configuration object",
+      "relevantPaths": ["services/codebase-mcp/src/config.ts"]
+    },
+
+    {
+      "archetype": "how-do-we-X",
+      "query": "how do we skip unchanged files during reindex",
+      "relevantPaths": ["services/codebase-mcp/src/indexer.ts"]
+    },
+    {
+      "archetype": "how-do-we-X",
+      "query": "how do we serialize a vector into a halfvec literal",
+      "relevantPaths": ["services/codebase-mcp/src/voyage.ts"]
+    },
+    {
+      "archetype": "how-do-we-X",
+      "query": "how do we hold a per-repo advisory lock during indexing",
+      "relevantPaths": ["services/codebase-mcp/src/indexer.ts"]
+    },
+    {
+      "archetype": "how-do-we-X",
+      "query": "how do we resolve by-name call edges after the walk",
+      "relevantPaths": ["services/codebase-mcp/src/indexer.ts"]
+    },
+    {
+      "archetype": "how-do-we-X",
+      "query": "how do we batch embed chunks in groups of 64",
+      "relevantPaths": ["services/codebase-mcp/src/indexer.ts"]
+    },
+    {
+      "archetype": "how-do-we-X",
+      "query": "how does retry backoff honor the Retry-After header",
+      "relevantPaths": ["services/codebase-mcp/src/voyage.ts"]
+    },
+    {
+      "archetype": "how-do-we-X",
+      "query": "how do we guess a symbol name from a chunk",
+      "relevantPaths": ["services/codebase-mcp/src/chunker.ts"]
+    },
+    {
+      "archetype": "how-do-we-X",
+      "query": "how do we map file extensions to languages",
+      "relevantPaths": ["services/codebase-mcp/src/chunker.ts"]
+    },
+    {
+      "archetype": "how-do-we-X",
+      "query": "how do we cancel an in-flight index run cooperatively",
+      "relevantPaths": ["services/codebase-mcp/src/indexer.ts"]
+    },
+    {
+      "archetype": "how-do-we-X",
+      "query": "how do we run the contextual embedding bake-off scratch re-embed",
+      "relevantPaths": ["services/codebase-mcp/src/db/bakeoff-embed.ts"]
+    },
+    {
+      "archetype": "how-do-we-X",
+      "query": "how is recall at k and MRR computed for the embedder gate",
+      "relevantPaths": ["services/codebase-mcp/src/recall-math.ts"]
+    },
+
+    {
+      "archetype": "symbol-lookup",
+      "query": "embedCode function",
+      "relevantPaths": ["services/codebase-mcp/src/voyage.ts"]
+    },
+    {
+      "archetype": "symbol-lookup",
+      "query": "embedCodeContextual contextualized embeddings",
+      "relevantPaths": ["services/codebase-mcp/src/voyage.ts"]
+    },
+    {
+      "archetype": "symbol-lookup",
+      "query": "searchCode",
+      "relevantPaths": ["services/codebase-mcp/src/search.ts"]
+    },
+    {
+      "archetype": "symbol-lookup",
+      "query": "indexRepo",
+      "relevantPaths": ["services/codebase-mcp/src/indexer.ts"]
+    },
+    {
+      "archetype": "symbol-lookup",
+      "query": "chunkFile",
+      "relevantPaths": ["services/codebase-mcp/src/chunker.ts"]
+    },
+    {
+      "archetype": "symbol-lookup",
+      "query": "extractGraph",
+      "relevantPaths": ["services/codebase-mcp/src/graph/extractor.ts"]
+    },
+    {
+      "archetype": "symbol-lookup",
+      "query": "toVectorLiteral",
+      "relevantPaths": ["services/codebase-mcp/src/voyage.ts"]
+    },
+    {
+      "archetype": "symbol-lookup",
+      "query": "assertServerConfig",
+      "relevantPaths": ["services/codebase-mcp/src/config.ts"]
+    },
+    {
+      "archetype": "symbol-lookup",
+      "query": "verifyBearer token check",
+      "relevantPaths": ["services/codebase-mcp/src/auth.ts"]
+    },
+    {
+      "archetype": "symbol-lookup",
+      "query": "rerank documents against a query",
+      "relevantPaths": ["services/codebase-mcp/src/voyage.ts"]
+    },
+    {
+      "archetype": "symbol-lookup",
+      "query": "bakeoffEmbedContextual scratch embedder",
+      "relevantPaths": ["services/codebase-mcp/src/db/bakeoff-embed.ts"]
+    },
+    {
+      "archetype": "symbol-lookup",
+      "query": "scoreArm per-arm recall scoring",
+      "relevantPaths": ["services/codebase-mcp/src/db/bakeoff-embed.ts"]
+    },
+
+    {
+      "archetype": "route-to-handler",
+      "query": "the code_search MCP tool wiring to searchCode",
+      "relevantPaths": [
+        "services/codebase-mcp/src/server.ts",
+        "services/codebase-mcp/src/search.ts"
+      ]
+    },
+    {
+      "archetype": "route-to-handler",
+      "query": "code_reindex tool spawning the indexer",
+      "relevantPaths": [
+        "services/codebase-mcp/src/server.ts",
+        "services/codebase-mcp/src/indexer.ts"
+      ]
+    },
+    {
+      "archetype": "route-to-handler",
+      "query": "code_graph_expand tool calling graph traversal",
+      "relevantPaths": [
+        "services/codebase-mcp/src/server.ts",
+        "services/codebase-mcp/src/graph/traverse.ts"
+      ]
+    },
+    {
+      "archetype": "route-to-handler",
+      "query": "code_index_status tool reading index_runs",
+      "relevantPaths": [
+        "services/codebase-mcp/src/server.ts",
+        "services/codebase-mcp/src/status-format.ts"
+      ]
+    },
+    {
+      "archetype": "route-to-handler",
+      "query": "request origin validation before handling MCP calls",
+      "relevantPaths": [
+        "services/codebase-mcp/src/origin.ts",
+        "services/codebase-mcp/src/server.ts"
+      ]
+    },
+
+    {
+      "archetype": "cross-file-usage",
+      "query": "where is the candidate pool config used by search",
+      "relevantPaths": [
+        "services/codebase-mcp/src/search.ts",
+        "services/codebase-mcp/src/config.ts"
+      ]
+    },
+    {
+      "archetype": "cross-file-usage",
+      "query": "which code reads VOYAGE_CODE_MODEL",
+      "relevantPaths": [
+        "services/codebase-mcp/src/config.ts",
+        "services/codebase-mcp/src/voyage.ts"
+      ]
+    },
+    {
+      "archetype": "cross-file-usage",
+      "query": "where the embedding halfvec 1024 column is defined and written",
+      "relevantPaths": [
+        "services/codebase-mcp/sql/001_codebase.sql",
+        "services/codebase-mcp/src/indexer.ts"
+      ]
+    },
+    {
+      "archetype": "cross-file-usage",
+      "query": "code_chunks table schema with tsvector and hnsw index",
+      "relevantPaths": ["services/codebase-mcp/sql/001_codebase.sql"]
+    },
+    {
+      "archetype": "cross-file-usage",
+      "query": "symbol graph unique constraints migration",
+      "relevantPaths": ["services/codebase-mcp/sql/003_graph_constraints.sql"]
+    },
+    {
+      "archetype": "cross-file-usage",
+      "query": "index_runs observability table migration",
+      "relevantPaths": ["services/codebase-mcp/sql/002_index_jobs.sql"]
+    },
+    {
+      "archetype": "cross-file-usage",
+      "query": "bake-off scratch embedding column migration",
+      "relevantPaths": ["services/codebase-mcp/sql/004_bakeoff_scratch.sql"]
+    },
+    {
+      "archetype": "cross-file-usage",
+      "query": "memory-mcp blue green contextual embedding backfill",
+      "relevantPaths": ["services/memory-mcp/src/db/backfill-context.ts"]
+    },
+    {
+      "archetype": "cross-file-usage",
+      "query": "memory search hybrid rrf and relevance blend",
+      "relevantPaths": ["services/memory-mcp/src/memory.ts"]
+    },
+    {
+      "archetype": "cross-file-usage",
+      "query": "concurrent HNSW index build outside the batch runner",
+      "relevantPaths": ["services/memory-mcp/src/db/create-v2-index.ts"]
+    }
+  ]
+}

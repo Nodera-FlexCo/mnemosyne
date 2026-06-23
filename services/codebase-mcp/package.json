@@ -12,6 +12,7 @@
     "dev": "tsx watch src/server.ts",
     "index": "node dist/indexer.js",
     "migrate": "tsx src/db/migrate.ts",
+    "bakeoff": "tsx src/db/bakeoff-embed.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

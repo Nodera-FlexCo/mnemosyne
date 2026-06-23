@@ -42,7 +42,10 @@ describe.skipIf(skip)("forced graph backfill (AC-007)", () => {
     for (const f of readdirSync(sqlDir)
       .filter((x) => x.endsWith(".sql"))
       .sort()) {
-      await pool.query(readFileSync(join(sqlDir, f), "utf8"));
+      const sql = readFileSync(join(sqlDir, f), "utf8");
+      // Skip HOLD migrations (e.g. 005_drop_bakeoff_scratch.sql) like the real runner.
+      if (/^\s*--\s*HOLD\b/im.test(sql.split("\n")[0] ?? "")) continue;
+      await pool.query(sql);
     }
     await pool.query("DELETE FROM codebase.index_runs WHERE repository_id=$1", [
       REPO,

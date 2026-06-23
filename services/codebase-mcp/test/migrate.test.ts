@@ -48,6 +48,26 @@ describe.skipIf(skip)("codebase-mcp migrate runner", () => {
     expect(out).toContain("migrations complete");
   });
 
+  it("adds the bake-off scratch column but SKIPS the HOLD drop (Wave 5)", async () => {
+    const out = execFileSync("npx", ["tsx", migrateEntry], {
+      cwd: serviceDir,
+      env: { ...process.env, DATABASE_URL },
+      encoding: "utf8",
+    });
+    // 004 applies; 005 is HOLD-skipped, not applied.
+    expect(out).toContain("004_bakeoff_scratch.sql");
+    expect(out).toMatch(/skipping 005_drop_bakeoff_scratch\.sql \(HOLD/);
+    // the scratch column exists AND the live `embedding` column is still present.
+    const { rows } = await pool.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'codebase' AND table_name = 'code_chunks'
+         AND column_name IN ('embedding', 'embedding_ctx')`,
+    );
+    const cols = new Set(rows.map((r) => r.column_name));
+    expect(cols.has("embedding")).toBe(true);
+    expect(cols.has("embedding_ctx")).toBe(true);
+  });
+
   it("index_runs exists with the documented lifecycle columns", async () => {
     const { rows } = await pool.query<{ column_name: string }>(
       `SELECT column_name FROM information_schema.columns
