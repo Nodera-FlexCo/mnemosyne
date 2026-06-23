@@ -2,10 +2,12 @@ import { readFileSync, statSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import type pg from "pg";
 import { pool } from "./db/pool.js";
 import { config } from "./config.js";
 import { chunkFile, languageFor, fileSha256 } from "./chunker.js";
 import { embedCode, toVectorLiteral } from "./voyage.js";
+import { extractGraph, type ByNameEdge } from "./graph/extractor.js";
 
 interface Ignorer {
   add(pattern: string | string[]): Ignorer;
@@ -107,9 +109,24 @@ export async function indexRepo(
   repoDir: string,
   repositoryId: string,
   projectId: string,
+  // force/--force-graph (AC-007): bypass the content_sha256 skip so an already-indexed
+  // corpus gets a graph on first rollout. To avoid burning Voyage quota re-embedding an
+  // unchanged corpus, the forced run is GRAPH-ONLY for unchanged files: it skips the
+  // embed + chunk rewrite but still extracts symbols/edges and writes code_chunks.imports.
+  force = false,
 ): Promise<void> {
   const runId = await startRun(repositoryId, projectId);
+  // Dedicated client holding a SESSION advisory lock for the WHOLE run (AC-006).
+  // Two code_reindex calls for the same repo must serialize — the repo-wide post-walk
+  // edge resolution would otherwise interleave and corrupt. A separate pooled client
+  // is used so the pool can't recycle it mid-run; it is released in finally.
+  const lockClient = await pool.connect();
+  let lockAcquired = false;
   try {
+    await lockClient.query("SELECT pg_advisory_lock(hashtext($1))", [
+      repositoryId,
+    ]);
+    lockAcquired = true;
     const base = resolve(repoDir);
     const ig = ignore();
     for (const f of [".gitignore", ".indexignore"]) {
@@ -137,7 +154,12 @@ export async function indexRepo(
     let indexed = 0,
       skipped = 0,
       chunksTotal = 0,
+      symbolsTotal = 0,
       cancelled = false;
+    // Staged by-name edges collected across the whole repo; resolved to concrete
+    // symbol ids in the post-walk pass AFTER every file's symbols exist. Small repos
+    // stage in memory; the pg COPY-style insert below batches them into a temp table.
+    const stagedEdges: ByNameEdge[] = [];
     for (const full of files) {
       if (await cancelRequested(runId)) {
         cancelled = true;
@@ -166,11 +188,48 @@ export async function indexRepo(
       }
       const fhash = fileSha256(content);
 
-      const existing = await pool.query<{ content_sha256: string }>(
-        "SELECT content_sha256 FROM codebase.files WHERE repository_id=$1 AND path=$2",
+      // Extract symbols/edges/imports for TS/TSX (no-op for other langs / parse errors).
+      const graph = extractGraph(content, rel);
+
+      const existing = await pool.query<{ id: string; content_sha256: string }>(
+        "SELECT id, content_sha256 FROM codebase.files WHERE repository_id=$1 AND path=$2",
         [repositoryId, rel],
       );
-      if (existing.rows[0]?.content_sha256 === fhash) {
+      const unchanged = existing.rows[0]?.content_sha256 === fhash;
+
+      // ── Graph-only forced path: sha unchanged but force is on. Skip embed + chunk
+      //    rewrite (don't burn Voyage quota), but DO (re)write this file's symbols +
+      //    code_chunks.imports so an already-indexed corpus gains a graph. ──────────
+      if (unchanged) {
+        if (!force) {
+          skipped++;
+          continue;
+        }
+        const fileId = existing.rows[0].id;
+        await updateRun(runId, { phase: "graph", current_file: rel });
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          symbolsTotal += await writeSymbols(
+            client,
+            graph,
+            fileId,
+            repositoryId,
+            projectId,
+            rel,
+          );
+          await client.query(
+            "UPDATE codebase.code_chunks SET imports=$2::jsonb WHERE file_id=$1",
+            [fileId, JSON.stringify(graph.imports)],
+          );
+          await client.query("COMMIT");
+        } catch (e) {
+          await client.query("ROLLBACK");
+          throw e;
+        } finally {
+          client.release();
+        }
+        stagedEdges.push(...graph.edges);
         skipped++;
         continue;
       }
@@ -192,6 +251,7 @@ export async function indexRepo(
         );
       }
 
+      const importsJson = JSON.stringify(graph.imports);
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
@@ -212,8 +272,8 @@ export async function indexRepo(
           const c = chunks[i];
           await client.query(
             `INSERT INTO codebase.code_chunks
-               (file_id,repository_id,project_id,file_path,language,symbol_name,symbol_kind,start_line,end_line,content,content_sha256,embedding)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::halfvec)`,
+               (file_id,repository_id,project_id,file_path,language,symbol_name,symbol_kind,start_line,end_line,content,content_sha256,imports,embedding)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::halfvec)`,
             [
               fileId,
               repositoryId,
@@ -226,11 +286,23 @@ export async function indexRepo(
               c.endLine,
               c.content,
               c.contentSha256,
+              importsJson,
               toVectorLiteral(vectors[i]),
             ],
           );
           chunksTotal++;
         }
+        // Per-file symbol replacement (AC-005): file_id-keyed delete+reinsert, the
+        // symbols analog of the code_chunks delete above. Cascades to this file's
+        // outgoing edges; cross-file edges into these symbols are rebuilt post-walk.
+        symbolsTotal += await writeSymbols(
+          client,
+          graph,
+          fileId,
+          repositoryId,
+          projectId,
+          rel,
+        );
         await client.query("COMMIT");
       } catch (e) {
         await client.query("ROLLBACK");
@@ -238,6 +310,7 @@ export async function indexRepo(
       } finally {
         client.release();
       }
+      stagedEdges.push(...graph.edges);
       indexed++;
       if (indexed % 25 === 0) {
         console.error(`  ${indexed} files, ${chunksTotal} chunks...`);
@@ -247,6 +320,14 @@ export async function indexRepo(
         });
       }
     }
+
+    // ── Post-walk by-name edge resolution (AC-004) — the REPO-LEVEL phase. ────────
+    // Names only resolve once ALL files' symbols exist, so we rebuild the whole repo's
+    // edges here, not per file. A name may match MULTIPLE target symbols (ambiguous):
+    // we insert one row per resolved candidate and let code_graph_expand (Wave 4) label
+    // a target as ambiguous when the same (from, toName) resolved to >1 row (AC-010).
+    await updateRun(runId, { phase: "resolving", current_file: null });
+    const edgesTotal = await resolveEdges(repositoryId, stagedEdges);
     console.error(
       `done ${repositoryId}: ${indexed} indexed, ${skipped} skipped, ${chunksTotal} chunks total`,
     );
@@ -254,6 +335,8 @@ export async function indexRepo(
       phase: "done",
       files_done: indexed,
       chunks_total: chunksTotal,
+      symbols_total: symbolsTotal,
+      edges_total: edgesTotal,
       current_file: null,
       error: cancelled ? "cancelled by request" : null,
       finished_at: new Date(),
@@ -276,24 +359,183 @@ export async function indexRepo(
       );
     }
     throw e;
+  } finally {
+    // Release the per-repo advisory lock on the SAME client that acquired it, even on
+    // throw — otherwise a crashed run wedges the repo. Escape hatch for a leaked lock:
+    // SELECT pg_advisory_unlock_all() on the stuck session.
+    if (lockAcquired) {
+      try {
+        await lockClient.query("SELECT pg_advisory_unlock(hashtext($1))", [
+          repositoryId,
+        ]);
+      } catch (unlockErr) {
+        console.error(
+          "[advisory-lock] unlock failed:",
+          (unlockErr as Error).message,
+        );
+      }
+    }
+    lockClient.release();
   }
 }
 
-// CLI: node dist/indexer.js <repoDirOrName> [projectId] [repositoryId]
+/**
+ * Write one file's symbols (file_id-keyed delete+reinsert). Returns the count inserted.
+ * Mirrors the code_chunks delete+reinsert pattern; the (repository_id, file_path, name,
+ * kind, start_line) unique index (sql/003) gives stable identity, so re-indexing a file
+ * never duplicates rows. ON CONFLICT DO NOTHING absorbs the rare same-line overload.
+ */
+async function writeSymbols(
+  client: pg.PoolClient,
+  graph: { symbols: { name: string; kind: string; startLine: number }[] },
+  fileId: string,
+  repositoryId: string,
+  projectId: string,
+  filePath: string,
+): Promise<number> {
+  await client.query("DELETE FROM codebase.symbols WHERE file_id=$1", [fileId]);
+  let n = 0;
+  for (const s of graph.symbols) {
+    await client.query(
+      `INSERT INTO codebase.symbols
+         (repository_id, project_id, file_id, name, kind, file_path, start_line)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (repository_id, file_path, name, kind, start_line) DO NOTHING`,
+      [repositoryId, projectId, fileId, s.name, s.kind, filePath, s.startLine],
+    );
+    n++;
+  }
+  return n;
+}
+
+/**
+ * Repo-wide by-name edge resolution (AC-004). Full rebuild: delete all of the repo's
+ * edges, then resolve every staged by-name edge to concrete symbol ids by joining on
+ * name within the repository. Staged into a TEMP table (over a huge in-memory VALUES
+ * list) so it scales past a few thousand files. Returns the resolved edge count.
+ *
+ * Two edge kinds land in symbol_edges:
+ *  - `call`: join from_name → symbol AND to_name → symbol within the repo (both must
+ *    resolve). A name matching >1 symbol fans out; Wave 4 labels the >1 case ambiguous
+ *    (AC-010). Calls to built-ins (trim/toFixed) resolve to no symbol and are dropped.
+ *  - `import`: from_name is null (file-level), so we anchor FROM every symbol declared
+ *    in the importing file (from_file) and link TO the imported symbol (to_name). This
+ *    gives symbol_edges the file→file import structure of the golden fixture while
+ *    staying symbol→symbol (the FK shape). The import LOCAL binding is also surfaced in
+ *    code_chunks.imports; symbol_edges carries the resolved dependency edge.
+ */
+async function resolveEdges(
+  repositoryId: string,
+  edges: ByNameEdge[],
+): Promise<number> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // Full repo-level edge rebuild — names resolve only once every file's symbols exist.
+    await client.query(
+      "DELETE FROM codebase.symbol_edges WHERE repository_id=$1",
+      [repositoryId],
+    );
+
+    const callEdges = edges.filter(
+      (e): e is ByNameEdge & { fromName: string } =>
+        e.kind === "call" && e.fromName !== null,
+    );
+    const importEdges = edges.filter((e) => e.kind === "import");
+    if (callEdges.length === 0 && importEdges.length === 0) {
+      await client.query("COMMIT");
+      return 0;
+    }
+
+    await client.query(
+      `CREATE TEMP TABLE staged_edges
+         (from_name text, from_file text, to_name text, kind text)
+       ON COMMIT DROP`,
+    );
+    const staged = [...callEdges, ...importEdges];
+    const BATCH = 500;
+    for (let i = 0; i < staged.length; i += BATCH) {
+      const slice = staged.slice(i, i + BATCH);
+      const values: string[] = [];
+      const params: unknown[] = [];
+      slice.forEach((e, j) => {
+        const base = j * 4;
+        values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4})`);
+        params.push(e.fromName, e.fromFile, e.toName, e.kind);
+      });
+      await client.query(
+        `INSERT INTO staged_edges (from_name, from_file, to_name, kind)
+         VALUES ${values.join(",")}`,
+        params,
+      );
+    }
+
+    // call edges: from_name → symbol, to_name → symbol (both in-repo).
+    const callRes = await client.query<{ n: string }>(
+      `WITH inserted AS (
+         INSERT INTO codebase.symbol_edges (repository_id, from_symbol, to_symbol, kind)
+         SELECT DISTINCT $1, sf.id, st.id, 'call'
+         FROM staged_edges se
+         JOIN codebase.symbols sf
+           ON sf.repository_id = $1 AND sf.name = se.from_name
+         JOIN codebase.symbols st
+           ON st.repository_id = $1 AND st.name = se.to_name
+         WHERE se.kind = 'call'
+         RETURNING 1
+       )
+       SELECT count(*) AS n FROM inserted`,
+      [repositoryId],
+    );
+
+    // import edges: anchor from every symbol in the importing file → imported symbol.
+    const importRes = await client.query<{ n: string }>(
+      `WITH inserted AS (
+         INSERT INTO codebase.symbol_edges (repository_id, from_symbol, to_symbol, kind)
+         SELECT DISTINCT $1, sf.id, st.id, 'import'
+         FROM staged_edges se
+         JOIN codebase.symbols sf
+           ON sf.repository_id = $1 AND sf.file_path = se.from_file
+         JOIN codebase.symbols st
+           ON st.repository_id = $1 AND st.name = se.to_name AND st.file_path <> se.from_file
+         WHERE se.kind = 'import'
+         RETURNING 1
+       )
+       SELECT count(*) AS n FROM inserted`,
+      [repositoryId],
+    );
+
+    await client.query("COMMIT");
+    return Number(callRes.rows[0].n) + Number(importRes.rows[0].n);
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// CLI: node dist/indexer.js <repoDirOrName> [projectId] [repositoryId] [force]
+// Force/--force-graph (AC-007) is accepted as a positional token ("force"/"--force-graph"),
+// or via FORCE_GRAPH=1 in the env — server.ts plumbs it through the spawned env.
 // Guarded so importing this module (e.g. from tests) does not auto-run the CLI.
 function runCli(): void {
-  const arg = process.argv[2];
+  const raw = process.argv.slice(2);
+  const forceTokens = new Set(["force", "--force-graph", "--force"]);
+  const force =
+    process.env.FORCE_GRAPH === "1" || raw.some((a) => forceTokens.has(a));
+  const positional = raw.filter((a) => !forceTokens.has(a));
+  const arg = positional[0];
   if (!arg) {
     console.error(
-      "usage: indexer <repoDirName|absPath> [projectId] [repositoryId]",
+      "usage: indexer <repoDirName|absPath> [projectId] [repositoryId] [force]",
     );
     process.exit(1);
   }
   const repoDir = arg.startsWith("/") ? arg : join(config.reposRoot, arg);
-  const projectId = process.argv[3] ?? config.defaultProjectId;
+  const projectId = positional[1] ?? config.defaultProjectId;
   const repositoryId =
-    process.argv[4] ?? arg.replace(/\/+$/, "").split("/").pop()!;
-  indexRepo(repoDir, repositoryId, projectId)
+    positional[2] ?? arg.replace(/\/+$/, "").split("/").pop()!;
+  indexRepo(repoDir, repositoryId, projectId, force)
     .then(() => pool.end())
     .catch((e) => {
       console.error(e);

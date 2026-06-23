@@ -54,6 +54,17 @@ in the repo. Where more than one symbol shares the target name, the edge is
 `format-alt.ts:4`). The extractor may emit either target (or both) but MUST mark it
 name-matched.
 
+**Raw extractor output is a SUPERSET of this table.** The extractor emits a by-name
+edge for EVERY call site with an enclosing symbol, including calls to built-in /
+external methods that have no symbol in this repo — concretely `format → trim`
+(`ambiguous.ts:7`) and `format → toFixed` (`format-alt.ts:5`). Those two are correct
+raw output but resolve to NO repo symbol, so the indexer's post-walk resolution drops
+them and they never become `symbol_edges` rows. The 6 rows above are exactly the call
+edges whose `toName` resolves to a symbol in the repo (i.e. what lands in
+`symbol_edges`). The extractor unit test asserts the 6 resolvable edges are present and
+that the 2 built-in-method edges resolve to zero symbols; the indexer-graph test asserts
+the final `symbol_edges` set equals the 6 above (modulo the ambiguous `format` fan-out).
+
 ### `import` edges (file → file, by imported symbol)
 
 | from file       | imports         | from file       |

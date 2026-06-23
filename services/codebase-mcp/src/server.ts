@@ -161,25 +161,40 @@ function buildServer(projectId: string): McpServer {
     {
       title: "Trigger (re)index of a repo",
       description:
-        "Kick off background indexing of a repo dir under the repos root.",
+        "Kick off background indexing of a repo dir under the repos root. Runs detached " +
+        "(fire-and-forget) — poll code_index_status for the result. " +
+        "Pass force:true to bypass the content-hash skip so an ALREADY-indexed corpus " +
+        "gets its code graph (symbols + edges) built on first rollout; forced runs are " +
+        "graph-only for unchanged files (no re-embed, so no Voyage quota burn).",
       inputSchema: {
         repo: z.string().describe("Repository dir name under repos root"),
+        force: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            "Bypass the content_sha256 skip to backfill the graph on an already-indexed corpus",
+          ),
       },
       annotations: { readOnlyHint: false, idempotentHint: false },
     },
-    async ({ repo }) => {
+    async ({ repo, force }) => {
       const child = spawn(
         "node",
         [join(import.meta.dirname, "indexer.js"), repo, projectId],
         {
           detached: true,
           stdio: "ignore",
+          env: force ? { ...process.env, FORCE_GRAPH: "1" } : process.env,
         },
       );
       child.unref();
       return {
         content: [
-          { type: "text", text: `reindex of "${repo}" started in background` },
+          {
+            type: "text",
+            text: `reindex of "${repo}"${force ? " (force-graph)" : ""} started in background — poll code_index_status for progress`,
+          },
         ],
       };
     },
