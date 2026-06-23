@@ -1,0 +1,97 @@
+{
+  "_seed": true,
+  "_note": "SEED set, not a finalized held-out eval set. These rows are query -> expected memory TITLE(s), NOT live ids (ids are environment-specific and must never be invented). Before the Wave-P embedder flip (AC-023), an operator must EXPAND this to a real held-out set drawn from the live corpus and freeze it. The DB-backed runner in recall.helper.ts matches searchMemory() hits to `relevantTitles` by exact, case-insensitive title equality. Titles below are illustrative placeholders describing the SHAPE of the corpus; replace with verbatim titles from the target deployment before relying on the recall gate.",
+  "k": 10,
+  "rows": [
+    {
+      "query": "what embedding model does memory-mcp use",
+      "relevantTitles": ["Voyage embedding model decision"]
+    },
+    {
+      "query": "how is hybrid search fused",
+      "relevantTitles": ["RRF fusion of BM25 and vector arms"]
+    },
+    {
+      "query": "reranker blend weights for final scoring",
+      "relevantTitles": ["Rerank then blend relevance recency importance"]
+    },
+    {
+      "query": "code knowledge graph plan",
+      "relevantTitles": [
+        "Code knowledge graph + contextual embeddings decision"
+      ]
+    },
+    {
+      "query": "why is scip-typescript deferred",
+      "relevantTitles": ["scip-typescript deferred to tree-sitter native"]
+    },
+    {
+      "query": "tree-sitter native module docker runtime risk",
+      "relevantTitles": [
+        "tree-sitter native binding must survive slim runtime image"
+      ]
+    },
+    {
+      "query": "voyage-context-3 vs voyage-code-3 bake-off",
+      "relevantTitles": [
+        "Code embedder bake-off voyage-code-3 vs voyage-context-3"
+      ]
+    },
+    {
+      "query": "how does the indexer skip unchanged files",
+      "relevantTitles": ["Indexer content_sha256 skip and force-graph bypass"]
+    },
+    {
+      "query": "index_runs observability table",
+      "relevantTitles": ["index_runs lifecycle table for indexer observability"]
+    },
+    {
+      "query": "per-repo advisory lock during reindex",
+      "relevantTitles": ["pg_advisory_lock per repo during code_reindex"]
+    },
+    {
+      "query": "decision log typed shape and supersession",
+      "relevantTitles": ["Decision-log metadata typed shape + supersession CTE"]
+    },
+    {
+      "query": "blue green re-embed backfill strategy",
+      "relevantTitles": ["Blue/green re-embed backfill into embedding_v2"]
+    },
+    {
+      "query": "re-embed couples to fusion and rerank tuning",
+      "relevantTitles": [
+        "Re-embed couples to fusion/rerank — retune before flip"
+      ]
+    },
+    {
+      "query": "recall gate not eyeball for embedder flip",
+      "relevantTitles": ["Gate embedder flip on recall, not eyeball"]
+    },
+    {
+      "query": "importer hardcodes voyage-4-large model",
+      "relevantTitles": ["Importer/distill must read embed model from env"]
+    },
+    {
+      "query": "halfvec 1024 dimension column",
+      "relevantTitles": ["halfvec(1024) embedding column dimension-safe"]
+    },
+    {
+      "query": "migration numbering collision between waves",
+      "relevantTitles": ["Migration numbering collision Wave P vs Wave 6"]
+    },
+    {
+      "query": "no migrate on boot operators run by hand",
+      "relevantTitles": ["No migrate-on-boot — manual npm run migrate"]
+    },
+    {
+      "query": "create index concurrently cannot run in batch runner",
+      "relevantTitles": [
+        "CREATE INDEX CONCURRENTLY routed through standalone op script"
+      ]
+    },
+    {
+      "query": "code_graph_expand depth cap and limit defaults",
+      "relevantTitles": ["code_graph_expand depth default 4 cap 10 limit 50"]
+    }
+  ]
+}
