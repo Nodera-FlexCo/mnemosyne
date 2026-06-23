@@ -14,6 +14,7 @@ const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 const DRY_RUN = process.env.DRY_RUN !== 'false';
 const PROJECT_ID = process.env.PROJECT_ID || 'nodex';
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY || '';
+const EMBED_MODEL = process.env.VOYAGE_EMBED_MODEL || 'voyage-4-large';
 const DATABASE_URL = process.env.DATABASE_URL ||
   `postgres://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.PGHOST || '127.0.0.1'}:5432/${process.env.POSTGRES_DB}`;
 
@@ -27,7 +28,7 @@ async function embed(text) {
   const res = await fetch('https://api.voyageai.com/v1/embeddings', {
     method: 'POST',
     headers: { Authorization: `Bearer ${VOYAGE_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ input: [text], model: 'voyage-4-large', input_type: 'document' }),
+    body: JSON.stringify({ input: [text], model: EMBED_MODEL, input_type: 'document' }),
   });
   if (!res.ok) throw new Error(`voyage ${res.status}: ${await res.text()}`);
   return (await res.json()).data[0].embedding;

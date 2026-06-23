@@ -11,6 +11,8 @@
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
     "migrate": "tsx src/db/migrate.ts",
+    "index:v2": "tsx src/db/create-v2-index.ts",
+    "backfill:context": "tsx src/db/backfill-context.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

@@ -135,6 +135,8 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       VOYAGE_API_KEY: ${VOYAGE_API_KEY:?set in .env}
+      VOYAGE_EMBED_MODEL: ${VOYAGE_EMBED_MODEL:-voyage-4-large}    # legacy embed() model (burn-in)
+      VOYAGE_CONTEXT_MODEL: ${VOYAGE_CONTEXT_MODEL:-voyage-context-3}   # Wave-P contextual embedder (blue/green swap)
       MNEMO_TOKEN: ${MNEMO_TOKEN:-}
       DEFAULT_PROJECT_ID: ${DEFAULT_PROJECT_ID:-nodex}
       PORT: "8080"

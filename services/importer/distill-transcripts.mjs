@@ -5,7 +5,8 @@
 //
 // For each session: Haiku extracts 0..N durable items (decisions, learnings,
 // tech-debt, requirements). Each item is content-hash deduped against the DB,
-// embedded with voyage-4-large, and inserted with source_kind set for enumeration.
+// embedded with $VOYAGE_EMBED_MODEL (default voyage-4-large), and inserted with
+// source_kind set for enumeration.
 //
 //   DRY_RUN=true  node distill-transcripts.mjs ./condensed         # extract+print, no writes
 //   DRY_RUN=false VOYAGE_API_KEY=… node distill-transcripts.mjs ./condensed
@@ -22,6 +23,7 @@ const DRY_RUN = process.env.DRY_RUN !== 'false';
 const PROJECT_ID = process.env.PROJECT_ID || 'nodex';
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY || '';
 const MODEL = process.env.MODEL || 'claude-haiku-4-5';
+const EMBED_MODEL = process.env.VOYAGE_EMBED_MODEL || 'voyage-4-large';
 const CONCURRENCY = Number(process.env.CONCURRENCY || 4);
 const LIMIT = Number(process.env.LIMIT || 0);
 const DIR = process.argv[2] || './condensed';
@@ -89,7 +91,7 @@ async function embed(text) {
   const res = await fetch('https://api.voyageai.com/v1/embeddings', {
     method: 'POST',
     headers: { Authorization: `Bearer ${VOYAGE_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ input: [text], model: 'voyage-4-large', input_type: 'document' }),
+    body: JSON.stringify({ input: [text], model: EMBED_MODEL, input_type: 'document' }),
   });
   if (!res.ok) throw new Error(`voyage ${res.status}: ${await res.text()}`);
   return (await res.json()).data[0].embedding;

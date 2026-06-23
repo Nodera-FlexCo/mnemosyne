@@ -1,8 +1,26 @@
-import { pool } from './db/pool.js';
-import { embed, rerank, toVectorLiteral } from './voyage.js';
-import { config } from './config.js';
+import { pool } from "./db/pool.js";
+import {
+  embed,
+  embedContextualSingle,
+  rerank,
+  toVectorLiteral,
+} from "./voyage.js";
+import { config } from "./config.js";
 
-export type MemoryType = 'episodic' | 'semantic' | 'procedural' | 'entity';
+// ── Tuned fusion/blend constants (Wave P) ───────────────────────────────────────────
+// These are the RRF k + the rerank/recency/importance blend weights. They are the
+// "retune-before-flip" knobs (AC-024): the operator finalizes them from the held-out
+// recall run documented in test/retune.md AFTER the live backfill. Defaults below match
+// the pre-flip behavior (RRF k=60; 0.7·rel + 0.2·recency + 0.1·importance) so the flip
+// is no-regression-by-default; adjust only with a recall measurement in hand.
+// TODO(operator/retune): finalize these from test/retune.md after the live backfill.
+const RRF_K = 60;
+const BLEND_RELEVANCE = 0.7;
+const BLEND_RECENCY = 0.2;
+const BLEND_IMPORTANCE = 0.1;
+const RECENCY_HALFLIFE_DAYS = 30;
+
+export type MemoryType = "episodic" | "semantic" | "procedural" | "entity";
 
 export interface Hit {
   id: string;
@@ -36,11 +54,16 @@ export async function storeMemory(input: {
   sourceSessionId?: string;
   sourceKind?: string;
 }): Promise<{ id: string; title: string }> {
-  const [vec] = await embed([`${input.title}\n${input.content}`], 'document');
+  // Burn-in: write BOTH the legacy `embedding` (voyage-4-large) and the contextual
+  // `embedding_v2` (voyage-context-3) so a rollback stays possible. After the Step 8
+  // burn-in window, the legacy column + its embed() call are dropped.
+  const text = `${input.title}\n${input.content}`;
+  const [vec] = await embed([text], "document");
+  const [vec2] = await embedContextualSingle([text], "document");
   const { rows } = await pool.query<{ id: string; title: string }>(
     `INSERT INTO memory.memories
-       (project_id, type, title, content, importance, metadata, source_session_id, source_kind, embedding)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::halfvec)
+       (project_id, type, title, content, importance, metadata, source_session_id, source_kind, embedding, embedding_v2)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::halfvec,$10::halfvec)
      RETURNING id, title`,
     [
       input.projectId,
@@ -52,6 +75,7 @@ export async function storeMemory(input: {
       input.sourceSessionId ?? null,
       input.sourceKind ?? null,
       toVectorLiteral(vec),
+      toVectorLiteral(vec2),
     ],
   );
   return rows[0];
@@ -79,19 +103,33 @@ export async function listMemories(input: {
   status?: string;
   tag?: string;
   limit: number;
-}): Promise<{ rows: MemoryRow[]; total: number; active: number; resolved: number }> {
+}): Promise<{
+  rows: MemoryRow[];
+  total: number;
+  active: number;
+  resolved: number;
+}> {
   const params: unknown[] = [input.projectId];
   let where = `project_id = $1 AND archived_at IS NULL`;
   // default to active unless a specific status (or 'all') is requested
-  if (input.status && input.status !== 'all') {
+  if (input.status && input.status !== "all") {
     params.push(input.status);
     where += ` AND COALESCE(status,'active') = $${params.length}`;
   } else if (!input.status) {
     where += ` AND COALESCE(status,'active') = 'active'`;
   }
-  if (input.sourceKind) { params.push(input.sourceKind); where += ` AND source_kind = $${params.length}`; }
-  if (input.type) { params.push(input.type); where += ` AND type = $${params.length}::memory.memory_type`; }
-  if (input.tag) { params.push(input.tag); where += ` AND metadata->'tags' ? $${params.length}`; }
+  if (input.sourceKind) {
+    params.push(input.sourceKind);
+    where += ` AND source_kind = $${params.length}`;
+  }
+  if (input.type) {
+    params.push(input.type);
+    where += ` AND type = $${params.length}::memory.memory_type`;
+  }
+  if (input.tag) {
+    params.push(input.tag);
+    where += ` AND metadata->'tags' ? $${params.length}`;
+  }
 
   const listParams = [...params, input.limit];
   const { rows } = await pool.query<MemoryRow>(
@@ -104,10 +142,20 @@ export async function listMemories(input: {
 
   // counts over the same kind filter (ignoring the status filter), for "X open / Y resolved"
   const countParams: unknown[] = [input.projectId];
-  let cf = '';
-  if (input.sourceKind) { countParams.push(input.sourceKind); cf = `AND source_kind = $${countParams.length}`; }
-  if (input.type) { countParams.push(input.type); cf += ` AND type = $${countParams.length}::memory.memory_type`; }
-  const c = await pool.query<{ total: string; active: string; resolved: string }>(
+  let cf = "";
+  if (input.sourceKind) {
+    countParams.push(input.sourceKind);
+    cf = `AND source_kind = $${countParams.length}`;
+  }
+  if (input.type) {
+    countParams.push(input.type);
+    cf += ` AND type = $${countParams.length}::memory.memory_type`;
+  }
+  const c = await pool.query<{
+    total: string;
+    active: string;
+    resolved: string;
+  }>(
     `SELECT count(*) AS total,
             count(*) FILTER (WHERE COALESCE(status,'active')='active') AS active,
             count(*) FILTER (WHERE status='resolved') AS resolved
@@ -128,9 +176,16 @@ export async function searchMemory(input: {
   type?: MemoryType;
   limit: number;
 }): Promise<Hit[]> {
-  const [qvec] = await embed([input.query], 'query');
-  const typeFilter = input.type ? 'AND m.type = $5::memory.memory_type' : '';
-  const params: unknown[] = [input.query, toVectorLiteral(qvec), input.projectId, config.candidatePool];
+  // BOTH sides contextual (critical): the corpus is voyage-context-3 (embedding_v2), so
+  // the query MUST be embedded by the same model family or recall craters.
+  const [qvec] = await embedContextualSingle([input.query], "query");
+  const typeFilter = input.type ? "AND m.type = $5::memory.memory_type" : "";
+  const params: unknown[] = [
+    input.query,
+    toVectorLiteral(qvec),
+    input.projectId,
+    config.candidatePool,
+  ];
   if (input.type) params.push(input.type);
 
   const sql = `
@@ -143,15 +198,15 @@ export async function searchMemory(input: {
       LIMIT ${RECALL_LIMIT}
     ),
     vec AS (
-      SELECT m.id, row_number() OVER (ORDER BY m.embedding <=> $2::halfvec) AS rank
+      SELECT m.id, row_number() OVER (ORDER BY m.embedding_v2 <=> $2::halfvec) AS rank
       FROM memory.memories m
       WHERE m.archived_at IS NULL AND COALESCE(m.status,'active') = 'active' AND m.project_id = $3
-        AND m.embedding IS NOT NULL ${typeFilter}
-      ORDER BY m.embedding <=> $2::halfvec
+        AND m.embedding_v2 IS NOT NULL ${typeFilter}
+      ORDER BY m.embedding_v2 <=> $2::halfvec
       LIMIT ${RECALL_LIMIT}
     )
     SELECT m.id, m.title, m.content, m.type, m.importance, m.created_at, m.event_date,
-           COALESCE(1.0/(60+bm25.rank),0) + COALESCE(1.0/(60+vec.rank),0) AS rrf
+           COALESCE(1.0/(${RRF_K}+bm25.rank),0) + COALESCE(1.0/(${RRF_K}+vec.rank),0) AS rrf
     FROM memory.memories m
     LEFT JOIN bm25 ON bm25.id = m.id
     LEFT JOIN vec  ON vec.id  = m.id
@@ -171,9 +226,13 @@ export async function searchMemory(input: {
   const now = Date.now();
   const scored = rows.map((r) => {
     const rel = relById.get(r.id) ?? 0;
-    const ageDays = (now - new Date(r.event_date ?? r.created_at).getTime()) / 86_400_000;
-    const recency = Math.exp(-ageDays / 30);
-    const final = 0.7 * rel + 0.2 * recency + 0.1 * r.importance;
+    const ageDays =
+      (now - new Date(r.event_date ?? r.created_at).getTime()) / 86_400_000;
+    const recency = Math.exp(-ageDays / RECENCY_HALFLIFE_DAYS);
+    const final =
+      BLEND_RELEVANCE * rel +
+      BLEND_RECENCY * recency +
+      BLEND_IMPORTANCE * r.importance;
     return { r, final };
   });
   scored.sort((a, b) => b.final - a.final);
@@ -182,13 +241,15 @@ export async function searchMemory(input: {
     id: r.id,
     title: r.title,
     type: r.type,
-    snippet: r.content.replace(/\s+/g, ' ').slice(0, 180),
+    snippet: r.content.replace(/\s+/g, " ").slice(0, 180),
     importance: r.importance,
     score: Number(final.toFixed(4)),
   }));
 }
 
-export async function getMemory(id: string): Promise<Record<string, unknown> | null> {
+export async function getMemory(
+  id: string,
+): Promise<Record<string, unknown> | null> {
   const { rows } = await pool.query(
     `UPDATE memory.memories
        SET access_count = access_count + 1, last_accessed_at = now()
@@ -206,9 +267,9 @@ export async function getRecent(input: {
   type?: MemoryType;
 }): Promise<Hit[]> {
   const params: unknown[] = [input.projectId, input.limit];
-  let typeFilter = '';
+  let typeFilter = "";
   if (input.type) {
-    typeFilter = 'AND type = $3::memory.memory_type';
+    typeFilter = "AND type = $3::memory.memory_type";
     params.push(input.type);
   }
   const { rows } = await pool.query<CandidateRow>(
@@ -223,7 +284,7 @@ export async function getRecent(input: {
     id: r.id,
     title: r.title,
     type: r.type,
-    snippet: r.content.replace(/\s+/g, ' ').slice(0, 180),
+    snippet: r.content.replace(/\s+/g, " ").slice(0, 180),
     importance: r.importance,
     score: 0,
   }));
@@ -231,30 +292,61 @@ export async function getRecent(input: {
 
 export async function updateMemory(
   id: string,
-  fields: { title?: string; content?: string; importance?: number; pinned?: boolean; status?: string },
+  fields: {
+    title?: string;
+    content?: string;
+    importance?: number;
+    pinned?: boolean;
+    status?: string;
+  },
 ): Promise<{ id: string } | null> {
   const sets: string[] = [];
   const params: unknown[] = [];
   let i = 1;
-  if (fields.title !== undefined) { sets.push(`title = $${i++}`); params.push(fields.title); }
-  if (fields.content !== undefined) { sets.push(`content = $${i++}`); params.push(fields.content); }
-  if (fields.importance !== undefined) { sets.push(`importance = $${i++}`); params.push(fields.importance); }
-  if (fields.pinned !== undefined) { sets.push(`pinned = $${i++}`); params.push(fields.pinned); }
-  if (fields.status !== undefined) { sets.push(`status = $${i++}`); params.push(fields.status); }
+  if (fields.title !== undefined) {
+    sets.push(`title = $${i++}`);
+    params.push(fields.title);
+  }
+  if (fields.content !== undefined) {
+    sets.push(`content = $${i++}`);
+    params.push(fields.content);
+  }
+  if (fields.importance !== undefined) {
+    sets.push(`importance = $${i++}`);
+    params.push(fields.importance);
+  }
+  if (fields.pinned !== undefined) {
+    sets.push(`pinned = $${i++}`);
+    params.push(fields.pinned);
+  }
+  if (fields.status !== undefined) {
+    sets.push(`status = $${i++}`);
+    params.push(fields.status);
+  }
 
   if (fields.title !== undefined || fields.content !== undefined) {
     const cur = await pool.query<{ title: string; content: string }>(
-      `SELECT title, content FROM memory.memories WHERE id = $1`, [id]);
+      `SELECT title, content FROM memory.memories WHERE id = $1`,
+      [id],
+    );
     if (cur.rows.length === 0) return null;
     const title = fields.title ?? cur.rows[0].title;
     const content = fields.content ?? cur.rows[0].content;
-    const [vec] = await embed([`${title}\n${content}`], 'document');
-    sets.push(`embedding = $${i++}::halfvec`); params.push(toVectorLiteral(vec));
+    // Burn-in: re-embed into BOTH columns (legacy + contextual) so a rollback works.
+    const text = `${title}\n${content}`;
+    const [vec] = await embed([text], "document");
+    const [vec2] = await embedContextualSingle([text], "document");
+    sets.push(`embedding = $${i++}::halfvec`);
+    params.push(toVectorLiteral(vec));
+    sets.push(`embedding_v2 = $${i++}::halfvec`);
+    params.push(toVectorLiteral(vec2));
   }
   if (sets.length === 0) return { id };
   params.push(id);
   const { rows } = await pool.query<{ id: string }>(
-    `UPDATE memory.memories SET ${sets.join(', ')} WHERE id = $${i} RETURNING id`, params);
+    `UPDATE memory.memories SET ${sets.join(", ")} WHERE id = $${i} RETURNING id`,
+    params,
+  );
   return rows[0] ?? null;
 }
 
@@ -289,8 +381,11 @@ export async function getEntity(input: {
 }
 
 export function formatHits(hits: Hit[]): string {
-  if (hits.length === 0) return 'No matching memories.';
+  if (hits.length === 0) return "No matching memories.";
   return hits
-    .map((h, i) => `${i + 1}. [${h.type}] ${h.title}  (id: ${h.id})\n   ${h.snippet}`)
-    .join('\n');
+    .map(
+      (h, i) =>
+        `${i + 1}. [${h.type}] ${h.title}  (id: ${h.id})\n   ${h.snippet}`,
+    )
+    .join("\n");
 }

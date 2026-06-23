@@ -1,97 +1,149 @@
 {
   "_seed": true,
-  "_note": "SEED set, not a finalized held-out eval set. These rows are query -> expected memory TITLE(s), NOT live ids (ids are environment-specific and must never be invented). Before the Wave-P embedder flip (AC-023), an operator must EXPAND this to a real held-out set drawn from the live corpus and freeze it. The DB-backed runner in recall.helper.ts matches searchMemory() hits to `relevantTitles` by exact, case-insensitive title equality. Titles below are illustrative placeholders describing the SHAPE of the corpus; replace with verbatim titles from the target deployment before relying on the recall gate.",
+  "_note": "SEED rows (\"seed\": true) are illustrative placeholders describing the SHAPE of the corpus, NOT a finalized held-out eval set. Each row is query -> expected memory TITLE(s), NOT live ids (ids are environment-specific and must never be invented). Before the Wave-P embedder flip (AC-023), the OPERATOR must EXPAND this with real HELD-OUT rows (\"heldOut\": true) drawn from the LIVE corpus using verbatim titles, then freeze it — see ../retune.md step 4. The DB-backed runner in recall.helper.ts matches searchMemory() hits to `relevantTitles` by exact, case-insensitive title equality, so placeholder seed titles will score 0 against a real corpus until replaced. The per-row `seed`/`heldOut` flags mark provenance; the loader ignores them (only { query, relevantTitles } is required).",
+  "_split": "All rows below are SEED. The held-out set is empty until the operator adds heldOut rows post-backfill; the recall-gate test skips while embedding_v2 is unpopulated, so the seed placeholders never gate falsely.",
   "k": 10,
   "rows": [
     {
+      "seed": true,
       "query": "what embedding model does memory-mcp use",
       "relevantTitles": ["Voyage embedding model decision"]
     },
     {
+      "seed": true,
       "query": "how is hybrid search fused",
       "relevantTitles": ["RRF fusion of BM25 and vector arms"]
     },
     {
+      "seed": true,
       "query": "reranker blend weights for final scoring",
       "relevantTitles": ["Rerank then blend relevance recency importance"]
     },
     {
+      "seed": true,
       "query": "code knowledge graph plan",
       "relevantTitles": [
         "Code knowledge graph + contextual embeddings decision"
       ]
     },
     {
+      "seed": true,
       "query": "why is scip-typescript deferred",
       "relevantTitles": ["scip-typescript deferred to tree-sitter native"]
     },
     {
+      "seed": true,
       "query": "tree-sitter native module docker runtime risk",
       "relevantTitles": [
         "tree-sitter native binding must survive slim runtime image"
       ]
     },
     {
+      "seed": true,
       "query": "voyage-context-3 vs voyage-code-3 bake-off",
       "relevantTitles": [
         "Code embedder bake-off voyage-code-3 vs voyage-context-3"
       ]
     },
     {
+      "seed": true,
       "query": "how does the indexer skip unchanged files",
       "relevantTitles": ["Indexer content_sha256 skip and force-graph bypass"]
     },
     {
+      "seed": true,
       "query": "index_runs observability table",
       "relevantTitles": ["index_runs lifecycle table for indexer observability"]
     },
     {
+      "seed": true,
       "query": "per-repo advisory lock during reindex",
       "relevantTitles": ["pg_advisory_lock per repo during code_reindex"]
     },
     {
+      "seed": true,
       "query": "decision log typed shape and supersession",
       "relevantTitles": ["Decision-log metadata typed shape + supersession CTE"]
     },
     {
+      "seed": true,
       "query": "blue green re-embed backfill strategy",
       "relevantTitles": ["Blue/green re-embed backfill into embedding_v2"]
     },
     {
+      "seed": true,
       "query": "re-embed couples to fusion and rerank tuning",
       "relevantTitles": [
         "Re-embed couples to fusion/rerank — retune before flip"
       ]
     },
     {
+      "seed": true,
       "query": "recall gate not eyeball for embedder flip",
       "relevantTitles": ["Gate embedder flip on recall, not eyeball"]
     },
     {
+      "seed": true,
       "query": "importer hardcodes voyage-4-large model",
       "relevantTitles": ["Importer/distill must read embed model from env"]
     },
     {
+      "seed": true,
       "query": "halfvec 1024 dimension column",
       "relevantTitles": ["halfvec(1024) embedding column dimension-safe"]
     },
     {
+      "seed": true,
       "query": "migration numbering collision between waves",
       "relevantTitles": ["Migration numbering collision Wave P vs Wave 6"]
     },
     {
+      "seed": true,
       "query": "no migrate on boot operators run by hand",
       "relevantTitles": ["No migrate-on-boot — manual npm run migrate"]
     },
     {
+      "seed": true,
       "query": "create index concurrently cannot run in batch runner",
       "relevantTitles": [
         "CREATE INDEX CONCURRENTLY routed through standalone op script"
       ]
     },
     {
+      "seed": true,
       "query": "code_graph_expand depth cap and limit defaults",
       "relevantTitles": ["code_graph_expand depth default 4 cap 10 limit 50"]
+    },
+    {
+      "seed": true,
+      "query": "contextualized embeddings endpoint nested inputs",
+      "relevantTitles": [
+        "embedContextual posts to /v1/contextualizedembeddings with nested inputs"
+      ]
+    },
+    {
+      "seed": true,
+      "query": "query and corpus must use the same embedder family",
+      "relevantTitles": [
+        "Query-side embedder must match corpus embedder or recall craters"
+      ]
+    },
+    {
+      "seed": true,
+      "query": "int8 quantized vectors stored in halfvec without a cast",
+      "relevantTitles": ["int8 output_dtype serializes into halfvec literal"]
+    },
+    {
+      "seed": true,
+      "query": "backfill must be a deliberate paid ops action not auto-run",
+      "relevantTitles": [
+        "Re-embed backfill is a deliberate ops action, never auto-run on boot"
+      ]
+    },
+    {
+      "seed": true,
+      "query": "burn-in writes both embedding columns for rollback",
+      "relevantTitles": ["Burn-in: write both embedding and embedding_v2"]
     }
   ]
 }
