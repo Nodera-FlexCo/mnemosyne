@@ -44,41 +44,160 @@ interface CandidateRow {
 
 const RECALL_LIMIT = 50; // per-arm (BM25 / vector) recall before fusion
 
-export async function storeMemory(input: {
-  projectId: string;
-  type: MemoryType;
-  title: string;
-  content: string;
-  importance?: number;
-  metadata?: Record<string, unknown>;
-  sourceSessionId?: string;
-  sourceKind?: string;
-}): Promise<{ id: string; title: string }> {
+// ── Decision-log typed shape (Wave 6, AC-040) ────────────────────────────────────────
+// A sparse typed shape carried on memory.memories for source_kind='decision' rows. These
+// fields are NULL on every other row. See sql/005_decision_log.sql for the axis split
+// (decision_status vs status; supersedes_id vs superseded_by).
+export const DECISION_STATUSES = ["active", "superseded", "deferred"] as const;
+export type DecisionStatus = (typeof DECISION_STATUSES)[number];
+
+export interface DecisionFields {
+  decisionProject?: string;
+  decisionStatus?: DecisionStatus;
+  decidedAt?: string | Date;
+  supersedesId?: string;
+  decidedIn?: string;
+  relatedIds?: string[];
+}
+
+export async function storeMemory(
+  input: {
+    projectId: string;
+    type: MemoryType;
+    title: string;
+    content: string;
+    importance?: number;
+    metadata?: Record<string, unknown>;
+    sourceSessionId?: string;
+    sourceKind?: string;
+  } & DecisionFields,
+): Promise<{ id: string; title: string }> {
+  const isDecision = input.sourceKind === "decision";
+  // AC-040: validate the typed shape in code (the DB CHECK is the backstop) so the
+  // connector gets a clean error instead of a raw constraint violation.
+  if (isDecision && input.decisionStatus !== undefined) {
+    if (!DECISION_STATUSES.includes(input.decisionStatus)) {
+      throw new Error(
+        `invalid decisionStatus "${input.decisionStatus}" — must be one of ${DECISION_STATUSES.join(", ")}`,
+      );
+    }
+  }
+  // Decision columns: only populated for source_kind='decision' rows; NULL otherwise so
+  // non-decision memories keep their existing shape. decided_at defaults to now() for a
+  // decision when not supplied.
+  const decisionStatus = isDecision ? (input.decisionStatus ?? "active") : null;
+  const decidedAt = isDecision
+    ? input.decidedAt
+      ? new Date(input.decidedAt)
+      : new Date()
+    : null;
+  const decisionProject = isDecision ? (input.decisionProject ?? null) : null;
+  const supersedesId = isDecision ? (input.supersedesId ?? null) : null;
+  const decidedIn = isDecision ? (input.decidedIn ?? null) : null;
+  const relatedIds = isDecision ? (input.relatedIds ?? null) : null;
+
   // Burn-in: write BOTH the legacy `embedding` (voyage-4-large) and the contextual
   // `embedding_v2` (voyage-context-3) so a rollback stays possible. After the Step 8
   // burn-in window, the legacy column + its embed() call are dropped.
   const text = `${input.title}\n${input.content}`;
   const [vec] = await embed([text], "document");
   const [vec2] = await embedContextualSingle([text], "document");
-  const { rows } = await pool.query<{ id: string; title: string }>(
-    `INSERT INTO memory.memories
-       (project_id, type, title, content, importance, metadata, source_session_id, source_kind, embedding, embedding_v2)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::halfvec,$10::halfvec)
-     RETURNING id, title`,
-    [
-      input.projectId,
-      input.type,
-      input.title,
-      input.content,
-      input.importance ?? 0.5,
-      JSON.stringify(input.metadata ?? {}),
-      input.sourceSessionId ?? null,
-      input.sourceKind ?? null,
-      toVectorLiteral(vec),
-      toVectorLiteral(vec2),
-    ],
+
+  // A transaction so the supersession bookkeeping (insert the new decision + flip the
+  // superseded row) stays consistent — the chain never half-updates.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ id: string; title: string }>(
+      `INSERT INTO memory.memories
+         (project_id, type, title, content, importance, metadata, source_session_id, source_kind,
+          embedding, embedding_v2,
+          decision_project, decision_status, decided_at, supersedes_id, decided_in, related_ids)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::halfvec,$10::halfvec,
+               $11,$12,$13,$14,$15,$16)
+       RETURNING id, title`,
+      [
+        input.projectId,
+        input.type,
+        input.title,
+        input.content,
+        input.importance ?? 0.5,
+        JSON.stringify(input.metadata ?? {}),
+        input.sourceSessionId ?? null,
+        input.sourceKind ?? null,
+        toVectorLiteral(vec),
+        toVectorLiteral(vec2),
+        decisionProject,
+        decisionStatus,
+        decidedAt,
+        supersedesId,
+        decidedIn,
+        relatedIds,
+      ],
+    );
+    const newId = rows[0].id;
+
+    // AC-041 supersession write: mark the superseded decision as superseded and set its
+    // forward pointer (superseded_by) to this new decision, keeping the inverse of
+    // supersedes_id in sync. Canonical chain direction stays supersedes_id (backward).
+    if (supersedesId) {
+      await client.query(
+        `UPDATE memory.memories
+           SET decision_status = 'superseded', superseded_by = $1
+         WHERE id = $2`,
+        [newId, supersedesId],
+      );
+    }
+
+    await client.query("COMMIT");
+    return rows[0];
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// ── Supersession chain (Wave 6, AC-041) ──────────────────────────────────────────────
+export interface DecisionChainRow {
+  id: string;
+  title: string;
+  decision_status: string | null;
+  decision_project: string | null;
+  decided_at: Date | null;
+  supersedes_id: string | null;
+  decided_in: string | null;
+  depth: number;
+}
+
+/**
+ * Walk the supersession chain BACKWARD from a decision via supersedes_id
+ * (this decision → the one it superseded → …), as a recursive CTE. Carries a `path`
+ * array + a `NOT (id = ANY(path))` guard so a malformed supersedes_id cycle terminates
+ * instead of infinite-looping. Returns the chain ordered by depth (seed = depth 0).
+ */
+export async function decisionChain(id: string): Promise<DecisionChainRow[]> {
+  const { rows } = await pool.query<DecisionChainRow>(
+    `WITH RECURSIVE chain AS (
+       SELECT m.id, m.title, m.decision_status, m.decision_project, m.decided_at,
+              m.supersedes_id, m.decided_in, 0 AS depth, ARRAY[m.id] AS path
+       FROM memory.memories m
+       WHERE m.id = $1
+       UNION ALL
+       SELECT m.id, m.title, m.decision_status, m.decision_project, m.decided_at,
+              m.supersedes_id, m.decided_in, c.depth + 1, c.path || m.id
+       FROM memory.memories m
+       JOIN chain c ON m.id = c.supersedes_id
+       WHERE NOT (m.id = ANY(c.path))
+     )
+     SELECT id, title, decision_status, decision_project, decided_at,
+            supersedes_id, decided_in, depth
+     FROM chain
+     ORDER BY depth`,
+    [id],
   );
-  return rows[0];
+  return rows;
 }
 
 export interface MemoryRow {
