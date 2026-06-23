@@ -152,6 +152,40 @@ describe.skipIf(!HAS_DB)(
       ]);
     });
 
+    it("splits a DB page into token-budgeted sub-batches (≤120k tok/request)", async () => {
+      const bigProj = `${projectId}-big`;
+      const big = "x ".repeat(54000); // ~108k chars ≈ 27k est tokens per doc
+      for (let i = 0; i < 8; i++) {
+        await pool.query(
+          `INSERT INTO memory.memories (project_id,type,title,content,importance,status,archived_at)
+           VALUES ($1,'semantic',$2,$3,0.5,'active',null)`,
+          [bigProj, `big ${i}`, big],
+        );
+      }
+      const { fn, calls } = mockEmbedder();
+      // batchSize large → all 8 rows land in ONE DB page, so any splitting is the
+      // token-budget sub-batcher, not page paging. Before the fix this was a single
+      // 8-doc request that Voyage rejects with TOO_MANY_TOKENS_IN_BATCH (120k cap).
+      const res = await backfillContext({
+        pool,
+        embed: fn,
+        batchSize: 50,
+        log: () => {},
+      });
+      expect(res.processed).toBe(8);
+      expect(calls.length).toBeGreaterThan(1); // sub-batched, not one giant request
+      expect(Math.max(...calls)).toBeLessThanOrEqual(4); // each request stays small
+      expect(calls.reduce((a, b) => a + b, 0)).toBe(8);
+      const pend = await pool.query<{ n: string }>(
+        `SELECT count(*) AS n FROM memory.memories WHERE project_id=$1 AND embedding_v2 IS NULL`,
+        [bigProj],
+      );
+      expect(Number(pend.rows[0].n)).toBe(0);
+      await pool.query(`DELETE FROM memory.memories WHERE project_id=$1`, [
+        bigProj,
+      ]);
+    });
+
     it("countPending reflects global active-missing count and never throws", async () => {
       const n = await countPending(pool);
       expect(typeof n).toBe("number");

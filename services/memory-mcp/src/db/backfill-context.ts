@@ -21,9 +21,18 @@ import type { Pool } from "pg";
 import { pool as defaultPool } from "./pool.js";
 import { embedContextualSingle, toVectorLiteral } from "../voyage.js";
 
-/** Default batch size. ≤500 keeps us well under the 1000-doc / 16k-chunk / 120k-token
- *  per-request caps (one chunk per memory → ≤500 docs = ≤500 chunks). */
+/** DB page size — how many pending rows we SELECT per round (for resumability/paging).
+ *  The actual Voyage requests are token-budgeted SUB-batches of these rows (see below),
+ *  because the 120k-token/request cap binds long before the 1000-doc cap. */
 export const BACKFILL_BATCH = 500;
+
+/** Voyage /contextualizedembeddings per-request caps: 120k tokens, 1000 docs, 32k tokens/doc.
+ *  We budget conservatively under those. Token estimate = chars/4 (rough, deliberately low
+ *  margin baked into the budgets). */
+export const TOKEN_BUDGET = 100_000; // safety margin under the 120k/request cap
+export const DOC_CAP = 1000; // Voyage hard cap on docs/request
+export const MAX_DOC_CHARS = 110_000; // ≈27.5k tokens — keep each doc under the 32k/doc cap
+const estTokens = (s: string): number => Math.ceil(s.length / 4);
 
 /** Embedder signature — injectable so the batching/SQL logic is unit-testable with a
  *  MOCK (no live Voyage quota in tests). Returns one vector per input text, in order. */
@@ -88,25 +97,48 @@ export async function backfillContext(
     );
     if (rows.length === 0) break;
 
-    // One doc = one chunk: each memory's title+content is a single unit.
-    const docs = rows.map((r) => `${r.title}\n${r.content}`);
-    const vectors = await embed(docs, "document");
-    if (vectors.length !== rows.length) {
-      throw new Error(
-        `embedder returned ${vectors.length} vectors for ${rows.length} rows`,
+    // One doc = one chunk: each memory's title+content is a single unit, truncated to
+    // stay under the 32k-token/doc cap. Split the page into token-budgeted SUB-batches so
+    // no single Voyage request exceeds the 120k-token / 1000-doc caps.
+    const docs = rows.map((r) => ({
+      id: r.id,
+      text: `${r.title}\n${r.content}`.slice(0, MAX_DOC_CHARS),
+    }));
+
+    let i = 0;
+    while (i < docs.length) {
+      const sub: typeof docs = [];
+      let toks = 0;
+      while (i < docs.length && sub.length < DOC_CAP) {
+        const t = estTokens(docs[i].text);
+        if (sub.length > 0 && toks + t > TOKEN_BUDGET) break;
+        sub.push(docs[i]);
+        toks += t;
+        i++;
+      }
+
+      const vectors = await embed(
+        sub.map((d) => d.text),
+        "document",
+      );
+      if (vectors.length !== sub.length) {
+        throw new Error(
+          `embedder returned ${vectors.length} vectors for ${sub.length} rows`,
+        );
+      }
+      for (let j = 0; j < sub.length; j++) {
+        await pool.query(
+          `UPDATE memory.memories SET embedding_v2 = $1::halfvec WHERE id = $2`,
+          [toVectorLiteral(vectors[j]), sub[j].id],
+        );
+      }
+
+      processed += sub.length;
+      batches += 1;
+      log(
+        `backfill: batch ${batches} (+${sub.length}, ~${toks} tok) → ${processed} embedded`,
       );
     }
-
-    for (let i = 0; i < rows.length; i++) {
-      await pool.query(
-        `UPDATE memory.memories SET embedding_v2 = $1::halfvec WHERE id = $2`,
-        [toVectorLiteral(vectors[i]), rows[i].id],
-      );
-    }
-
-    processed += rows.length;
-    batches += 1;
-    log(`backfill: batch ${batches} (+${rows.length}) → ${processed} embedded`);
   }
 
   return { processed, batches };
