@@ -57,7 +57,7 @@ async function embedContextual(text) {
   return (await res.json()).data[0].data[0].embedding;
 }
 
-let stored = 0, skipped = 0, empty = 0;
+let stored = 0, skipped = 0, empty = 0, failed = 0;
 for (const th of threads) {
   const titleRaw = (th.title || th.first_user_message || '').trim();
   if (!titleRaw) { empty++; continue; }
@@ -72,19 +72,25 @@ for (const th of threads) {
   if (existing.has(hash)) { skipped++; continue; }
   if (DRY_RUN) { stored++; continue; }
   const embedInput = `${title}\n${content}`;
-  const vec = await embed(embedInput);
-  const vec2 = await embedContextual(embedInput);
-  const eventDate = th.created_at ? new Date(th.created_at * 1000).toISOString().slice(0, 10) : null;
-  await pool.query(
-    `INSERT INTO memory.memories
-       (project_id,type,title,content,importance,metadata,embedding,embedding_v2,status,source_kind,content_sha256,event_date)
-     VALUES ($1,'episodic',$2,$3,0.4,$4,$5::halfvec,$6::halfvec,'active','codex-session',$7,$8)`,
-    [PROJECT_ID, title, content,
-     JSON.stringify({ cwd: th.cwd, branch: th.git_branch, tokens: th.tokens_used, threadId: th.id, tags: ['codex-session'] }),
-     `[${vec.join(',')}]`, `[${vec2.join(',')}]`, hash, eventDate],
-  );
-  stored++;
-  if (stored % 50 === 0) console.error(`  ${stored} stored...`);
+  try {
+    const vec = await embed(embedInput);
+    const vec2 = await embedContextual(embedInput);
+    const eventDate = th.created_at ? new Date(th.created_at * 1000).toISOString().slice(0, 10) : null;
+    await pool.query(
+      `INSERT INTO memory.memories
+         (project_id,type,title,content,importance,metadata,embedding,embedding_v2,status,source_kind,content_sha256,event_date)
+       VALUES ($1,'episodic',$2,$3,0.4,$4,$5::halfvec,$6::halfvec,'active','codex-session',$7,$8)`,
+      [PROJECT_ID, title, content,
+       JSON.stringify({ cwd: th.cwd, branch: th.git_branch, tokens: th.tokens_used, threadId: th.id, tags: ['codex-session'] }),
+       `[${vec.join(',')}]`, `[${vec2.join(',')}]`, hash, eventDate],
+    );
+    stored++;
+    if (stored % 50 === 0) console.error(`  ${stored} stored...`);
+  } catch (e) {
+    failed++;
+    console.error(`  skip "${title}": ${e.message}`);
+    continue;
+  }
 }
-console.error(`codex distill ${DRY_RUN ? 'DRY-RUN' : 'LIVE'}: ${stored} ${DRY_RUN ? 'would-store' : 'stored'}, ${skipped} dedup-skipped, ${empty} empty-title`);
+console.error(`codex distill ${DRY_RUN ? 'DRY-RUN' : 'LIVE'}: ${stored} ${DRY_RUN ? 'would-store' : 'stored'}, ${skipped} dedup-skipped, ${empty} empty-title, ${failed} failed`);
 await pool.end();
