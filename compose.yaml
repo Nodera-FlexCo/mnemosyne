@@ -162,6 +162,7 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       VOYAGE_API_KEY: ${VOYAGE_API_KEY:?set in .env}
+      VOYAGE_CODE_MODEL: ${VOYAGE_CODE_MODEL:-voyage-code-3}   # code embedder (Wave 5 bake-off flips this)
       MNEMO_TOKEN: ${MNEMO_TOKEN:-}
       DEFAULT_PROJECT_ID: ${DEFAULT_PROJECT_ID:-nodex}
       PORT: "8081"
