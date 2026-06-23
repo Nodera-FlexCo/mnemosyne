@@ -253,3 +253,83 @@ describe.skipIf(skip)("graph traversal (AC-008/010)", () => {
     expect(rows).toEqual([]);
   });
 });
+
+// Regression (review Fix 5) — code_trace_path must return a REAL predecessor chain, not a
+// sliced depth-ordered expansion. The branch-repo fixture forks at the seed: root calls a
+// dead-end `aSibling` (which sorts before `mid` at depth 1) AND `mid` → `target`. A depth-
+// ordered slice up to `target` would wrongly include `aSibling`; the recursive-CTE path must
+// return EXACTLY [root, mid, target], each consecutive pair a real call edge.
+describe.skipIf(skip)(
+  "code_trace_path returns a real path, not a slice (Fix 5)",
+  () => {
+    let pool: pg.Pool;
+    const branchRepoDir = join(here, "fixtures", "branch-repo");
+    const REPO2 = "branch-trace-test";
+    const PROJ2 = "branch-trace-proj";
+
+    beforeAll(async () => {
+      pool = new pg.Pool({ connectionString: DATABASE_URL });
+      await pool.query(
+        "DELETE FROM codebase.index_runs WHERE repository_id=$1",
+        [REPO2],
+      );
+      await pool.query("DELETE FROM codebase.files WHERE repository_id=$1", [
+        REPO2,
+      ]);
+      await indexRepo(branchRepoDir, REPO2, PROJ2);
+    });
+
+    afterAll(async () => {
+      await pool.query(
+        "DELETE FROM codebase.index_runs WHERE repository_id=$1",
+        [REPO2],
+      );
+      await pool.query("DELETE FROM codebase.files WHERE repository_id=$1", [
+        REPO2,
+      ]);
+      await pool.end();
+    });
+
+    it("traces root→mid→target as the ordered chain, excluding the unrelated sibling", async () => {
+      const { rows, reachedTo } = await tracePath({
+        seed: { projectId: PROJ2, repo: REPO2, name: "root" },
+        toName: "target",
+        depth: 5,
+      });
+      expect(reachedTo).toBe(true);
+      // EXACT ordered predecessor chain — aSibling is NOT on the path and must be absent.
+      expect(rows.map((r) => r.name)).toEqual(["root", "mid", "target"]);
+      expect(rows.map((r) => r.name)).not.toContain("aSibling");
+      // depth is the position on the path (0,1,2), not a global min-depth.
+      expect(rows.map((r) => r.depth)).toEqual([0, 1, 2]);
+    });
+
+    it("every consecutive pair on the traced path is a real call edge", async () => {
+      const { rows } = await tracePath({
+        seed: { projectId: PROJ2, repo: REPO2, name: "root" },
+        toName: "target",
+        depth: 5,
+      });
+      for (let i = 0; i + 1 < rows.length; i++) {
+        const { rows: edge } = await pool.query<{ n: string }>(
+          `SELECT count(*) AS n FROM codebase.symbol_edges
+         WHERE repository_id=$1 AND kind='call'
+           AND from_symbol=$2 AND to_symbol=$3`,
+          [REPO2, rows[i].id, rows[i + 1].id],
+        );
+        expect(Number(edge[0].n)).toBeGreaterThan(0);
+      }
+    });
+
+    it("returns reachedTo=false (no fake path) when the target is unreachable", async () => {
+      const { rows, reachedTo } = await tracePath({
+        seed: { projectId: PROJ2, repo: REPO2, name: "root" },
+        toName: "noSuchSymbol",
+        depth: 5,
+      });
+      expect(reachedTo).toBe(false);
+      // It does not pretend to have reached anything; the chain is the plain expansion.
+      expect(rows.some((r) => r.name === "noSuchSymbol")).toBe(false);
+    });
+  },
+);

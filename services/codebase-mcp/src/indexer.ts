@@ -109,10 +109,15 @@ export async function indexRepo(
   repoDir: string,
   repositoryId: string,
   projectId: string,
-  // force/--force-graph (AC-007): bypass the content_sha256 skip so an already-indexed
-  // corpus gets a graph on first rollout. To avoid burning Voyage quota re-embedding an
-  // unchanged corpus, the forced run is GRAPH-ONLY for unchanged files: it skips the
-  // embed + chunk rewrite but still extracts symbols/edges and writes code_chunks.imports.
+  // force/--force-graph (AC-007, refined): graph extraction is DECOUPLED from the
+  // content_sha256 skip. Every run extracts + stages the graph (symbols upsert via the
+  // file_id-keyed delete+reinsert, edges pushed to stagedEdges, code_chunks.imports
+  // written) for EVERY graphable file, regardless of sha — so the repo-wide edge rebuild
+  // in resolveEdges is always complete and an incremental reindex never drops unchanged
+  // files' edges. The sha-skip now gates ONLY the expensive embed + chunk-content rewrite.
+  // `force` additionally bypasses the sha-skip so an unchanged file is re-embedded /
+  // re-chunked too (full rebuild); it is no longer the ONLY way to backfill the graph —
+  // any reindex now backfills it.
   force = false,
 ): Promise<void> {
   const runId = await startRun(repositoryId, projectId);
@@ -197,14 +202,14 @@ export async function indexRepo(
       );
       const unchanged = existing.rows[0]?.content_sha256 === fhash;
 
-      // ── Graph-only forced path: sha unchanged but force is on. Skip embed + chunk
-      //    rewrite (don't burn Voyage quota), but DO (re)write this file's symbols +
-      //    code_chunks.imports so an already-indexed corpus gains a graph. ──────────
-      if (unchanged) {
-        if (!force) {
-          skipped++;
-          continue;
-        }
+      // ── Graph-always path: the file's content_sha256 is UNCHANGED. The expensive
+      //    embed + chunk-content rewrite is the ONLY work gated by the sha-skip, so for
+      //    a non-forced run we skip that here — but we STILL extract + (re)write this
+      //    file's symbols, code_chunks.imports, AND push its edges to stagedEdges so the
+      //    repo-wide rebuild in resolveEdges stays complete (a partial-stage would zero
+      //    every unchanged file's edges). `force` falls through to the full path below so
+      //    an unchanged file is re-embedded too (full rebuild). ──────────────────────
+      if (unchanged && !force) {
         const fileId = existing.rows[0].id;
         await updateRun(runId, { phase: "graph", current_file: rel });
         const client = await pool.connect();
@@ -470,7 +475,11 @@ async function resolveEdges(
       );
     }
 
-    // call edges: from_name → symbol, to_name → symbol (both in-repo).
+    // call edges: from_name → symbol, to_name → symbol (both in-repo). The FROM side is
+    // anchored by BOTH name AND file_path (from_file is staged at insert time) so a call
+    // inside `foo` links only from the `foo` that actually contains it — not from every
+    // same-named `foo` across the repo. The TO side stays by-name (the intentional,
+    // labeled ambiguity: a name matching >1 target fans out and Wave 4 flags it AC-010).
     const callRes = await client.query<{ n: string }>(
       `WITH inserted AS (
          INSERT INTO codebase.symbol_edges (repository_id, from_symbol, to_symbol, kind)
@@ -478,6 +487,7 @@ async function resolveEdges(
          FROM staged_edges se
          JOIN codebase.symbols sf
            ON sf.repository_id = $1 AND sf.name = se.from_name
+              AND sf.file_path = se.from_file
          JOIN codebase.symbols st
            ON st.repository_id = $1 AND st.name = se.to_name
          WHERE se.kind = 'call'

@@ -311,9 +311,19 @@ export async function graphExpand(input: {
 }
 
 /**
- * code_trace_path core: a directed callees-only chain from a seed. When `toName` is given,
- * stop at the first symbol with that name and return the resolved path to it (approximate —
- * by-name edges make "shortest" non-unique; we return A path, not a proven-unique one).
+ * code_trace_path core: a directed callees-only chain from a seed.
+ *
+ * When `toName` is absent, this returns the depth-ordered callees expansion (the same set
+ * `code_graph_expand` would produce in the callees direction) — there is no target, so a
+ * concrete predecessor chain is undefined.
+ *
+ * When `toName` is given, this returns an ACTUAL path — the ordered node chain from the seed
+ * to the FIRST reached symbol named `toName` — NOT a sliced depth-ordered set. It walks call
+ * edges with a recursive CTE that carries the concrete `uuid[]` path it took (plus the same
+ * per-path cycle guard as `expand`), then picks the shortest (then lexically-first) acyclic
+ * path whose terminal node is named `toName` and reconstructs the ordered symbol rows from
+ * that path array. By-name edges make "shortest" non-unique, so this is A real path, not a
+ * proven-unique one — but every consecutive pair is a genuine call edge.
  */
 export async function tracePath(input: {
   seed: SeedInput;
@@ -323,17 +333,74 @@ export async function tracePath(input: {
   const defRows = await resolveSeed(input.seed);
   if (defRows.length === 0) return { rows: [], reachedTo: false };
   const seedIds = defRows.map((d) => d.id);
-  const rows = await expand(
+  const maxDepth = clampDepth(input.depth);
+
+  // No target: keep the callees-expansion behavior (a path to nowhere is undefined).
+  if (!input.toName) {
+    const rows = await expand(seedIds, "callees", maxDepth, DEFAULT_LIMIT);
+    return { rows, reachedTo: false };
+  }
+
+  // Recursive CTE over call edges. `path` is the ordered uuid[] of the route taken; the
+  // `NOT (e.to_symbol = ANY(w.path))` guard makes each path acyclic and terminates the
+  // A↔B cycle. We keep ONLY paths whose terminal symbol is named $2, then order by length
+  // (shortest first) and break ties on the path array so the result is deterministic.
+  const sql = `
+    WITH RECURSIVE walk(id, depth, path) AS (
+      SELECT unnest($1::uuid[]), 0, ARRAY[]::uuid[]
+      UNION ALL
+      SELECT e.to_symbol, w.depth + 1, w.path || w.id
+      FROM walk w
+      JOIN codebase.symbol_edges e ON e.from_symbol = w.id
+      WHERE e.kind = 'call'
+        AND w.depth < ${maxDepth}
+        AND NOT (e.to_symbol = ANY(w.path))
+        AND NOT (e.to_symbol = w.id)
+    ),
+    reached AS (
+      SELECT (w.path || w.id) AS full_path, array_length(w.path || w.id, 1) AS len
+      FROM walk w
+      JOIN codebase.symbols s ON s.id = w.id
+      WHERE s.name = $2
+    )
+    SELECT full_path FROM reached
+    ORDER BY len ASC, full_path ASC
+    LIMIT 1`;
+
+  const { rows: pathRows } = await pool.query<{ full_path: string[] }>(sql, [
     seedIds,
-    "callees",
-    clampDepth(input.depth),
-    DEFAULT_LIMIT,
+    input.toName,
+  ]);
+  if (pathRows.length === 0) {
+    // Target unreachable within depth: return the plain callees expansion as context.
+    const rows = await expand(seedIds, "callees", maxDepth, DEFAULT_LIMIT);
+    return { rows, reachedTo: false };
+  }
+
+  // Reconstruct the ordered symbol chain from the concrete path array (preserve order).
+  const pathIds = pathRows[0].full_path;
+  const { rows: symRows } = await pool.query<SymbolLite>(
+    `SELECT id, name, file_path, start_line FROM codebase.symbols
+     WHERE id = ANY($1::uuid[])`,
+    [pathIds],
   );
-  if (!input.toName) return { rows, reachedTo: false };
-  // Truncate the (depth-ordered) chain at the first row matching the target name.
-  const idx = rows.findIndex((r) => r.name === input.toName);
-  if (idx === -1) return { rows, reachedTo: false };
-  return { rows: rows.slice(0, idx + 1), reachedTo: true };
+  const byId = new Map(symRows.map((s) => [s.id, s]));
+  const chain: GraphRow[] = pathIds
+    .map((id, depth): GraphRow | null => {
+      const s = byId.get(id);
+      if (!s) return null;
+      return {
+        id: s.id,
+        name: s.name,
+        file: s.file_path,
+        line: s.start_line,
+        depth,
+        edge_type: depth === 0 ? "def" : "call→",
+        ambiguous: false,
+      };
+    })
+    .filter((r): r is GraphRow => r !== null);
+  return { rows: chain, reachedTo: true };
 }
 
 /** code_symbol_lookup core: resolve a name to its definition(s), repo+project scoped. */

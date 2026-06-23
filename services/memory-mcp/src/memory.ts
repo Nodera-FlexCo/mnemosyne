@@ -141,11 +141,14 @@ export async function storeMemory(
     // forward pointer (superseded_by) to this new decision, keeping the inverse of
     // supersedes_id in sync. Canonical chain direction stays supersedes_id (backward).
     if (supersedesId) {
+      // Scope the supersession to a DECISION in the SAME project (Fix 4): a decision must
+      // not flip another project's row or a non-decision memory. The id/project/kind guard
+      // makes a cross-project or wrong-kind supersedesId a silent no-op (0 rows updated).
       await client.query(
         `UPDATE memory.memories
            SET decision_status = 'superseded', superseded_by = $1
-         WHERE id = $2`,
-        [newId, supersedesId],
+         WHERE id = $2 AND project_id = $3 AND source_kind = 'decision'`,
+        [newId, supersedesId, input.projectId],
       );
     }
 

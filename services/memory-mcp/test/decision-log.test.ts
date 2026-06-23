@@ -251,6 +251,81 @@ describe.skipIf(!HAS_DB)(
       expect(chain.map((c) => c.id)).toEqual([x]);
     });
 
+    // Regression (review Fix 4) — the supersession UPDATE is scoped by id + project_id +
+    // source_kind='decision', so a new decision cannot flip a row in a DIFFERENT project
+    // or a NON-decision memory. Both cases must be a no-op on the target row.
+    it("Fix 4 — supersedesId pointing at ANOTHER project's row does not flip it", async () => {
+      const otherProject = `${projectId}-other`;
+      // A decision in a different project.
+      const foreign = await mem.storeMemory({
+        projectId: otherProject,
+        type: "semantic",
+        title: "Foreign decision",
+        content: "belongs to another project",
+        sourceKind: "decision",
+        decisionStatus: "active",
+      });
+      // A new decision in OUR project tries to supersede the foreign one.
+      await mem.storeMemory({
+        projectId,
+        type: "semantic",
+        title: "Cross-project supersede attempt",
+        content: "should not flip the foreign row",
+        sourceKind: "decision",
+        decisionStatus: "active",
+        supersedesId: foreign.id,
+      });
+      const { rows } = await pool.query<{
+        decision_status: string;
+        superseded_by: string | null;
+      }>(
+        `SELECT decision_status, superseded_by FROM memory.memories WHERE id = $1`,
+        [foreign.id],
+      );
+      expect(rows[0].decision_status).toBe("active"); // unchanged
+      expect(rows[0].superseded_by).toBeNull(); // not flipped
+      // Cleanup: clear the cross-project supersedes_id pointer (mem_supersedes_fk) before
+      // dropping the foreign row, then remove the foreign project's rows.
+      await pool.query(
+        `UPDATE memory.memories SET supersedes_id = NULL WHERE supersedes_id = $1`,
+        [foreign.id],
+      );
+      await pool.query(`DELETE FROM memory.memories WHERE project_id = $1`, [
+        otherProject,
+      ]);
+    });
+
+    it("Fix 4 — supersedesId pointing at a NON-decision memory does not flip it", async () => {
+      // A plain (non-decision) memory in the SAME project.
+      const plain = await mem.storeMemory({
+        projectId,
+        type: "semantic",
+        title: "Plain research note",
+        content: "not a decision row",
+        sourceKind: "research",
+      });
+      // A new decision tries to supersede the non-decision memory.
+      await mem.storeMemory({
+        projectId,
+        type: "semantic",
+        title: "Supersede a non-decision",
+        content: "should be a no-op on the plain row",
+        sourceKind: "decision",
+        decisionStatus: "active",
+        supersedesId: plain.id,
+      });
+      const { rows } = await pool.query<{
+        decision_status: string | null;
+        superseded_by: string | null;
+      }>(
+        `SELECT decision_status, superseded_by FROM memory.memories WHERE id = $1`,
+        [plain.id],
+      );
+      // Non-decision rows keep NULL decision columns; the supersede UPDATE must not touch them.
+      expect(rows[0].decision_status).toBeNull();
+      expect(rows[0].superseded_by).toBeNull();
+    });
+
     it("AC-042 — storing decisions does NOT touch entities / entity_edges", async () => {
       const before = await pool.query<{ e: string; ed: string }>(
         `SELECT (SELECT count(*) FROM memory.entities)     AS e,

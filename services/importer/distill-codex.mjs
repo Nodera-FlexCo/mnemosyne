@@ -15,6 +15,7 @@ const DRY_RUN = process.env.DRY_RUN !== 'false';
 const PROJECT_ID = process.env.PROJECT_ID || 'nodex';
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY || '';
 const EMBED_MODEL = process.env.VOYAGE_EMBED_MODEL || 'voyage-4-large';
+const CONTEXT_MODEL = process.env.VOYAGE_CONTEXT_MODEL || 'voyage-context-3';
 const DATABASE_URL = process.env.DATABASE_URL ||
   `postgres://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.PGHOST || '127.0.0.1'}:5432/${process.env.POSTGRES_DB}`;
 
@@ -34,6 +35,28 @@ async function embed(text) {
   return (await res.json()).data[0].embedding;
 }
 
+// Contextual embedding for embedding_v2 (voyage-context-3). After the contextual flip,
+// searchMemory filters `embedding_v2 IS NOT NULL`, so memories ingested with ONLY the legacy
+// `embedding` are invisible to recall until a manual backfill. Compute it here too, the same
+// dual-write storeMemory does. One-chunk-per-doc: inputs=[[text]], dim 1024, int8.
+// Once the legacy `embedding` column is dropped post burn-in, drop the legacy `embed()` write.
+async function embedContextual(text) {
+  const res = await fetch('https://api.voyageai.com/v1/contextualizedembeddings', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${VOYAGE_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      inputs: [[text]],
+      model: CONTEXT_MODEL,
+      input_type: 'document',
+      output_dimension: 1024,
+      output_dtype: 'int8',
+    }),
+  });
+  if (!res.ok) throw new Error(`voyage ctx ${res.status}: ${await res.text()}`);
+  // Response: { data: [ { data: [ { embedding } ] } ] } — one doc, one chunk.
+  return (await res.json()).data[0].data[0].embedding;
+}
+
 let stored = 0, skipped = 0, empty = 0;
 for (const th of threads) {
   const titleRaw = (th.title || th.first_user_message || '').trim();
@@ -48,15 +71,17 @@ for (const th of threads) {
   const hash = sha256(content);
   if (existing.has(hash)) { skipped++; continue; }
   if (DRY_RUN) { stored++; continue; }
-  const vec = await embed(`${title}\n${content}`);
+  const embedInput = `${title}\n${content}`;
+  const vec = await embed(embedInput);
+  const vec2 = await embedContextual(embedInput);
   const eventDate = th.created_at ? new Date(th.created_at * 1000).toISOString().slice(0, 10) : null;
   await pool.query(
     `INSERT INTO memory.memories
-       (project_id,type,title,content,importance,metadata,embedding,status,source_kind,content_sha256,event_date)
-     VALUES ($1,'episodic',$2,$3,0.4,$4,$5::halfvec,'active','codex-session',$6,$7)`,
+       (project_id,type,title,content,importance,metadata,embedding,embedding_v2,status,source_kind,content_sha256,event_date)
+     VALUES ($1,'episodic',$2,$3,0.4,$4,$5::halfvec,$6::halfvec,'active','codex-session',$7,$8)`,
     [PROJECT_ID, title, content,
      JSON.stringify({ cwd: th.cwd, branch: th.git_branch, tokens: th.tokens_used, threadId: th.id, tags: ['codex-session'] }),
-     `[${vec.join(',')}]`, hash, eventDate],
+     `[${vec.join(',')}]`, `[${vec2.join(',')}]`, hash, eventDate],
   );
   stored++;
   if (stored % 50 === 0) console.error(`  ${stored} stored...`);

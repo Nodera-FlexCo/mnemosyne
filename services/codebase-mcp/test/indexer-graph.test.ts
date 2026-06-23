@@ -2,7 +2,8 @@
 // the test DB and asserts: symbols + symbol_edges populated; the route→handler→service→repo
 // chain resolved repo-wide (post-walk); re-indexing ONE file replaces its symbols/edges via
 // file_id without duplicates or orphans; code_chunks.imports is non-NULL; and index_runs
-// carries symbols_total/edges_total. Requires DATABASE_URL (skipIf otherwise).
+// carries symbols_total/edges_total. A trailing describe block (review Fix 1) asserts an
+// incremental NON-forced reindex preserves unchanged files' edges. Requires DATABASE_URL.
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -201,5 +202,122 @@ describe.skipIf(skip)("indexer graph phase (AC-004/005)", () => {
       [REPO],
     );
     expect(nullFileId).toBe(0);
+  });
+});
+
+// Regression (review Fix 1) — an incremental (NON-forced) reindex must NOT wipe unchanged
+// files' edges. resolveEdges does a repo-wide DELETE then rebuilds ONLY from stagedEdges,
+// so every graphable file must stage its edges on every run — even when its content_sha256
+// is unchanged. Before the fix, unchanged files were skipped WITHOUT staging, so a repo-wide
+// rebuild from only-changed-files' edges zeroed every unchanged file's edges. A copy of the
+// sample-repo is used so a file can be mutated on disk without disturbing the shared fixture.
+describe.skipIf(skip)("incremental reindex preserves edges (Fix 1)", () => {
+  let pool: pg.Pool;
+  let tmpRepo: string;
+  const REPO2 = "graph-incremental-test";
+
+  async function count(sql: string, params: unknown[] = []): Promise<number> {
+    const { rows } = await pool.query<{ n: string }>(sql, params);
+    return Number(rows[0].n);
+  }
+  async function edgeFromFiles(): Promise<Set<string>> {
+    const { rows } = await pool.query<{ from_file: string }>(
+      `SELECT DISTINCT sf.file_path AS from_file
+       FROM codebase.symbol_edges e
+       JOIN codebase.symbols sf ON sf.id = e.from_symbol
+       WHERE e.repository_id=$1 AND e.kind='call'`,
+      [REPO2],
+    );
+    return new Set(rows.map((r) => r.from_file));
+  }
+
+  beforeAll(async () => {
+    pool = new pg.Pool({ connectionString: DATABASE_URL });
+    const { cpSync, mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    tmpRepo = mkdtempSync(join(tmpdir(), "incremental-repo-"));
+    cpSync(sampleRepoDir, tmpRepo, { recursive: true });
+    await pool.query("DELETE FROM codebase.index_runs WHERE repository_id=$1", [
+      REPO2,
+    ]);
+    await pool.query("DELETE FROM codebase.files WHERE repository_id=$1", [
+      REPO2,
+    ]);
+  });
+
+  afterAll(async () => {
+    const { rmSync } = await import("node:fs");
+    rmSync(tmpRepo, { recursive: true, force: true });
+    await pool.query("DELETE FROM codebase.index_runs WHERE repository_id=$1", [
+      REPO2,
+    ]);
+    await pool.query("DELETE FROM codebase.files WHERE repository_id=$1", [
+      REPO2,
+    ]);
+    await pool.end();
+  });
+
+  it("a no-change NON-forced reindex leaves symbol_edges UNCHANGED (not zeroed)", async () => {
+    await indexRepo(tmpRepo, REPO2, "test-proj"); // full initial index
+    const edgesAfterFirst = await count(
+      "SELECT count(*) AS n FROM codebase.symbol_edges WHERE repository_id=$1",
+      [REPO2],
+    );
+    expect(edgesAfterFirst).toBeGreaterThan(0);
+
+    // Modify NOTHING; reindex NON-forced.
+    await indexRepo(tmpRepo, REPO2, "test-proj", false);
+    const edgesAfterReindex = await count(
+      "SELECT count(*) AS n FROM codebase.symbol_edges WHERE repository_id=$1",
+      [REPO2],
+    );
+    // Before the fix this was 0 (every unchanged file's edges deleted by the repo-wide
+    // rebuild that staged nothing). After the fix the count is unchanged.
+    expect(edgesAfterReindex).toBe(edgesAfterFirst);
+  });
+
+  it("changing ONE file keeps the OTHER files' edges and updates the changed file's", async () => {
+    const { writeFileSync } = await import("node:fs");
+    // Edges originate from these files before the change.
+    const beforeFiles = await edgeFromFiles();
+    expect(beforeFiles.has("route.ts")).toBe(true);
+    expect(beforeFiles.has("handler.ts")).toBe(true);
+    expect(beforeFiles.has("service.ts")).toBe(true);
+
+    // Change service.ts so getUser now calls a NEW leaf instead of findUser. This rewrites
+    // service.ts's outgoing edge while every other file is sha-unchanged.
+    writeFileSync(
+      join(tmpRepo, "service.ts"),
+      `// service.ts — mutated: getUser now calls findUserV2.\n` +
+        `import { findUser, type UserRow } from "./repo.js";\n\n` +
+        `export function findUserV2(id: string): UserRow {\n` +
+        `  return findUser(id);\n` +
+        `}\n\n` +
+        `export function getUser(id: string): UserRow {\n` +
+        `  return findUserV2(id);\n` +
+        `}\n`,
+      "utf8",
+    );
+
+    await indexRepo(tmpRepo, REPO2, "test-proj", false); // NON-forced incremental
+
+    // The OTHER files' edges survive (route→handleGetUser, handleGetUser→getUser).
+    const { rows } = await pool.query<{ from_name: string; to_name: string }>(
+      `SELECT sf.name AS from_name, st.name AS to_name
+       FROM codebase.symbol_edges e
+       JOIN codebase.symbols sf ON sf.id = e.from_symbol
+       JOIN codebase.symbols st ON st.id = e.to_symbol
+       WHERE e.repository_id=$1 AND e.kind='call'`,
+      [REPO2],
+    );
+    const has = (from: string, to: string) =>
+      rows.some((r) => r.from_name === from && r.to_name === to);
+    expect(has("route", "handleGetUser")).toBe(true); // unchanged file's edge survives
+    expect(has("handleGetUser", "getUser")).toBe(true); // unchanged file's edge survives
+    // The changed file's edge is updated: getUser→findUserV2 now, not getUser→findUser.
+    expect(has("getUser", "findUserV2")).toBe(true);
+    expect(has("getUser", "findUser")).toBe(false);
+    // findUserV2→findUser (the new symbol's own call) also present.
+    expect(has("findUserV2", "findUser")).toBe(true);
   });
 });

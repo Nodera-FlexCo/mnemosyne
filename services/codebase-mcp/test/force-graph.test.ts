@@ -1,8 +1,13 @@
-// Wave 3 — forced graph-backfill test (AC-007). Simulates an already-indexed corpus that
-// predates the graph feature (files + chunks present, symbols empty), then runs forced mode
-// and asserts symbols/edges appear for files whose content_sha256 is UNCHANGED — i.e. the
-// force flag bypasses the sha skip so the existing corpus gets a graph on first rollout.
-// Also asserts the graph-only force does NOT re-embed unchanged files (no Voyage burn).
+// Wave 3 — graph-backfill test (AC-007, refined by review Fix 1). Simulates an already-
+// indexed corpus that predates the graph feature (files + chunks present, symbols empty),
+// then asserts the graph is backfilled for files whose content_sha256 is UNCHANGED.
+//
+// AC-007 refinement: graph extraction is now DECOUPLED from the sha-skip — `force` is no
+// longer the ONLY way to backfill the graph. ANY reindex (forced or not) re-populates
+// symbols/edges/imports for every graphable file; the sha-skip gates ONLY the expensive
+// embed + chunk rewrite. So a NON-forced reindex backfills the graph WITHOUT re-embedding
+// (no Voyage burn on an unchanged corpus), and `force` additionally bypasses the sha-skip
+// to re-embed/re-chunk unchanged files (a full rebuild).
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,7 +70,7 @@ describe.skipIf(skip)("forced graph backfill (AC-007)", () => {
     await pool.end();
   });
 
-  it("force backfills the graph on an unchanged-sha corpus without re-embedding", async () => {
+  it("any reindex backfills the graph on an unchanged-sha corpus (force re-embeds, non-force does not)", async () => {
     // 1. Initial index — files + chunks + symbols written.
     await indexRepo(sampleRepoDir, REPO, "test-proj");
     const filesIndexed = await count(
@@ -90,7 +95,9 @@ describe.skipIf(skip)("forced graph backfill (AC-007)", () => {
       ),
     ).toBe(0);
 
-    // 3. A NON-forced re-index must skip everything (sha unchanged) → graph stays empty.
+    // 3. AC-007 refinement (Fix 1): a NON-forced reindex now BACKFILLS the graph for an
+    //    already-chunked corpus — force is no longer the only way. The sha is unchanged,
+    //    so it does this WITHOUT re-embedding (no Voyage quota burned).
     embedCode.mockClear();
     await indexRepo(sampleRepoDir, REPO, "test-proj", false);
     expect(
@@ -98,9 +105,18 @@ describe.skipIf(skip)("forced graph backfill (AC-007)", () => {
         "SELECT count(*) AS n FROM codebase.symbols WHERE repository_id=$1",
         [REPO],
       ),
-    ).toBe(0);
+    ).toBe(10);
+    expect(
+      await count(
+        "SELECT count(*) AS n FROM codebase.symbol_edges WHERE repository_id=$1",
+        [REPO],
+      ),
+    ).toBeGreaterThan(0);
+    // The non-forced backfill path skips embed on every unchanged file.
+    expect(embedCode).not.toHaveBeenCalled();
 
-    // 4. A FORCED re-index backfills the graph despite unchanged sha (AC-007)...
+    // 4. A FORCED reindex bypasses the sha-skip entirely — it re-embeds/re-chunks the
+    //    unchanged corpus (full rebuild) and keeps the graph populated.
     embedCode.mockClear();
     await indexRepo(sampleRepoDir, REPO, "test-proj", true);
     expect(
@@ -115,8 +131,7 @@ describe.skipIf(skip)("forced graph backfill (AC-007)", () => {
         [REPO],
       ),
     ).toBeGreaterThan(0);
-
-    // 5. ...and graph-only force did NOT re-embed (no Voyage quota burned on unchanged files).
-    expect(embedCode).not.toHaveBeenCalled();
+    // force re-embeds the unchanged corpus (the distinguishing semantic vs non-forced).
+    expect(embedCode).toHaveBeenCalled();
   });
 });
