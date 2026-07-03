@@ -68,6 +68,11 @@ npm --prefix services/memory-mcp run index:decision     # build the decision par
 
 # codebase-mcp — code-embedder bake-off (Wave 5: voyage-code-3 vs voyage-context-3)
 npm --prefix services/codebase-mcp run bakeoff -- <projectId> [repositoryId]
+
+# codebase-mcp — reranker bake-off (Wave 6: rerank-2.5-lite vs rerank-2.5);
+# refuses without --yes and writes test/runs/<date>-bakeoff-rerank.json
+DATABASE_URL=<live> VOYAGE_API_KEY=<live> \
+  npm --prefix services/codebase-mcp run bakeoff:rerank -- --yes <projectId> [repositoryId]
 ```
 
 ### Eval-harness operator scripts (retrieval-improvement program, wave 2)

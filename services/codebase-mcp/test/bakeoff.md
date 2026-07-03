@@ -40,6 +40,35 @@ split is spent only by flip gates, and its every change is recorded in the eval 
 changelog header. Metrics, artifact format (`test/runs/`, `retrievalConfig()` snapshot),
 and gate semantics: [`../../memory-mcp/test/eval.md`](../../memory-mcp/test/eval.md).
 
+## Rerank bakeoff (wave-6, WS5)
+
+This section is filled in by the operator after running the paid, live rerank bakeoff
+against a live `DATABASE_URL` + `VOYAGE_API_KEY`, per AC-501/AC-502:
+
+```bash
+DATABASE_URL=<live> VOYAGE_API_KEY=<live> \
+  npm --prefix services/codebase-mcp run bakeoff:rerank -- --yes <projectId> [repositoryId]
+```
+
+| Field | BEFORE / incumbent | AFTER / candidate |
+| --- | --- | --- |
+| Date | _TBD_ | _TBD_ |
+| Models compared | `rerank-2.5-lite` | `rerank-2.5` |
+| Aggregate nDCG@10 | _TBD_ | _TBD_ |
+| Paired-bootstrap CI (full-minus-lite, seed 42) | _TBD_ | _TBD_ |
+| Verdict | _TBD_ | _TBD_ |
+
+**Decision note:** _TBD_. The script verdict is `SWAP` only when full-minus-lite mean is
+positive and the paired-bootstrap CI excludes zero on the win side; `KEEP LITE` only when
+the CI excludes zero on the loss side; otherwise the operator records "no significant
+difference" and makes the cost-immaterial call.
+
+On a `SWAP` verdict only, the operator would add
+`VOYAGE_RERANK_MODEL: ${VOYAGE_RERANK_MODEL:-rerank-2.5}` to both compose environment
+blocks: `memory-mcp` around `compose.yaml` lines 137-143 and `codebase-mcp` around lines
+166-168. This task intentionally does **not** edit `compose.yaml`; the live run and compose
+pin remain operator-only.
+
 ## Operator runbook (the paid measurement)
 
 Prerequisites: Waves 1–4 merged, the codebase corpus indexed (`embedding` populated),
