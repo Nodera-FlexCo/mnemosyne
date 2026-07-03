@@ -84,6 +84,11 @@ export function meanReciprocalRank(
  * switch — the function is key-agnostic strings). This IS the regression-gate metric;
  * a bug here silently green-lights a bad flip. Edge cases mirror `recallAtK`: empty
  * `relevant` -> 0, k <= 0 -> 0.
+ *
+ * ONE-CREDIT rule: each relevant key gains at its FIRST occurrence only — chunk-keyed
+ * hit lists routinely carry the same file path twice, and crediting every occurrence
+ * lets DCG exceed the IDCG anchor (nDCG > 1), silently biasing the regression gate.
+ * This matches `mrr`/`recallAtK` first-occurrence semantics.
  */
 export function ndcgAtK(
   hits: RankedPaths,
@@ -92,11 +97,16 @@ export function ndcgAtK(
 ): number {
   if (k <= 0 || relevant.length === 0) return 0;
   const rel = relevantSet(relevant);
+  const credited = new Set<string>();
   let dcg = 0;
   const topK = hits.slice(0, k);
   for (let i = 0; i < topK.length; i++) {
     // 1-based rank = i+1 → gain discount 1/log2(rank+1) = 1/log2(i+2)
-    if (rel.has(normalizePath(topK[i]))) dcg += 1 / Math.log2(i + 2);
+    const key = normalizePath(topK[i]);
+    if (rel.has(key) && !credited.has(key)) {
+      credited.add(key);
+      dcg += 1 / Math.log2(i + 2);
+    }
   }
   let idcg = 0;
   const idealCount = Math.min(rel.size, k);

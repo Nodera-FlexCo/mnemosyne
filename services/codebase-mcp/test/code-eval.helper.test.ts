@@ -170,6 +170,31 @@ describe("ndcgAtK (gate math)", () => {
   it("normalizes paths (case, whitespace, leading ./)", () => {
     expect(ndcgAtK(["  ./A/One.TS  "], ["a/one.ts"], 1)).toBe(1);
   });
+
+  it("credits a duplicated relevant path ONCE (same file at ranks 1+2 -> exactly 1.0)", () => {
+    // one-credit rule: DCG = 1/log2(2) = 1 — the rank-2 duplicate adds NOTHING.
+    // IDCG (1 item) = 1 → 1.0. Per-occurrence crediting would give
+    // 1 + 1/log2(3) ≈ 1.63 > 1, biasing the regression gate (chunk-keyed hit lists
+    // routinely carry the same file twice).
+    const v = ndcgAtK(["a/one.ts", "a/one.ts", "b/two.ts"], ["a/one.ts"], 10);
+    expect(v).toBe(1);
+    expect(v).toBeLessThanOrEqual(1);
+  });
+
+  it("a duplicate occupies a rank slot (masks a later second relevant) but never double-credits", () => {
+    // hits = [one, one, two], relevant = {one, two}:
+    // DCG  = 1/log2(2) [one@1] + 0 [duplicate] + 1/log2(4) [two pushed to rank 3]
+    // IDCG = 1/log2(2) + 1/log2(3)
+    const dcg = 1 + 1 / Math.log2(4);
+    const idcg = 1 + 1 / Math.log2(3);
+    expect(
+      ndcgAtK(
+        ["a/one.ts", "a/one.ts", "b/two.ts"],
+        ["a/one.ts", "b/two.ts"],
+        10,
+      ),
+    ).toBeCloseTo(dcg / idcg, 10);
+  });
 });
 
 describe("mulberry32 (deterministic PRNG)", () => {

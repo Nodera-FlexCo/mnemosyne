@@ -382,7 +382,7 @@ export async function fuseCandidates(input: {
     )
     SELECT m.id, m.title, m.content, m.type, m.importance, m.created_at, m.event_date,
            bm25.rank::int AS bm25_rank, vec.rank::int AS vec_rank,
-           COALESCE(1.0/(${RRF_K}+bm25.rank),0) + COALESCE(1.0/(${RRF_K}+vec.rank),0) AS rrf
+           (COALESCE(1.0/(${RRF_K}+bm25.rank),0) + COALESCE(1.0/(${RRF_K}+vec.rank),0))::float8 AS rrf
     FROM memory.memories m
     LEFT JOIN bm25 ON bm25.id = m.id
     LEFT JOIN vec  ON vec.id  = m.id

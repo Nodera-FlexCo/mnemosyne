@@ -113,7 +113,7 @@ export async function fuseCodeCandidates(input: {
     )
     SELECT c.id, c.file_path, c.start_line, c.end_line, c.symbol_name, c.language, c.content,
            bm25.rank::int AS bm25_rank, vec.rank::int AS vec_rank,
-           COALESCE(1.0/(${RRF_K}+bm25.rank),0) + COALESCE(1.0/(${RRF_K}+vec.rank),0) AS rrf
+           (COALESCE(1.0/(${RRF_K}+bm25.rank),0) + COALESCE(1.0/(${RRF_K}+vec.rank),0))::float8 AS rrf
     FROM codebase.code_chunks c
     LEFT JOIN bm25 ON bm25.id = c.id
     LEFT JOIN vec  ON vec.id  = c.id

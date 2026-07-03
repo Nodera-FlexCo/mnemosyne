@@ -109,6 +109,7 @@ describe.skipIf(skip)("runCodeEval v2 (two-layer divergence)", () => {
       PROJ,
     ]);
 
+    let favoredFileId = "";
     for (let n = 1; n <= N; n++) {
       const p = pathOf(n);
       const content =
@@ -122,6 +123,7 @@ describe.skipIf(skip)("runCodeEval v2 (two-layer divergence)", () => {
          VALUES ($1, $2, $3, 'typescript', 'sha-' || $3) RETURNING id`,
         [REPO, PROJ, p],
       );
+      if (n === 2) favoredFileId = rows[0].id;
       await pool.query(
         `INSERT INTO codebase.code_chunks
            (file_id, repository_id, project_id, file_path, language, symbol_name,
@@ -138,6 +140,24 @@ describe.skipIf(skip)("runCodeEval v2 (two-layer divergence)", () => {
         ],
       );
     }
+    // HIGH-001 regression: a SECOND chunk of the favored file (also "favorme", so the
+    // mocked reranker puts BOTH at the top). searchCode then returns the same file path
+    // at ranks 1+2; the runner must dedupe to the first occurrence before path-keyed
+    // scoring — c-002 below pins ndcg EXACTLY 1 (per-occurrence crediting gave ≈ 1.63).
+    await pool.query(
+      `INSERT INTO codebase.code_chunks
+         (file_id, repository_id, project_id, file_path, language, symbol_name,
+          start_line, end_line, content, content_sha256, embedding)
+       VALUES ($1, $2, $3, $4, 'typescript', 'sym2b', 4, 6, $5, 'csha2-' || $4, $6::halfvec)`,
+      [
+        favoredFileId,
+        REPO,
+        PROJ,
+        GOLD_FAVORED,
+        "export function favormeToo() { /* favorme: duplicate-path chunk */ }",
+        `[${H.fakeVec(`chunk2:${GOLD_FAVORED}`).join(",")}]`,
+      ],
+    );
   });
 
   afterAll(async () => {
@@ -197,6 +217,8 @@ describe.skipIf(skip)("runCodeEval v2 (two-layer divergence)", () => {
     const favored = result.perQuery[1];
     expect(favored.poolRecall).toBe(1);
     expect(favored.rank).toBe(1);
+    // Two "favorme" chunks of the SAME file sit at final ranks 1+2 — the duplicate path
+    // is deduped before scoring, so the single gold credits exactly once (never > 1).
     expect(favored.ndcg).toBe(1);
     expect(favored.mrr).toBe(1);
 

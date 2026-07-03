@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalizeRanked,
   loadRecallEval,
   meanRecallAtK,
   meanReciprocalRank,
@@ -144,6 +145,65 @@ describe("ndcgAtK (gate math)", () => {
 
   it("matches case-insensitively with surrounding whitespace (normalize)", () => {
     expect(ndcgAtK(["  Alpha  "], ["alpha"], 1)).toBe(1);
+  });
+
+  it("credits a duplicated relevant key ONCE (same key at ranks 1+2 -> exactly 1.0)", () => {
+    // one-credit rule: DCG = 1/log2(2) = 1 — the rank-2 duplicate adds NOTHING.
+    // IDCG (1 item) = 1 → 1.0. Per-occurrence crediting would give
+    // 1 + 1/log2(3) ≈ 1.63 > 1, biasing the regression gate.
+    const v = ndcgAtK(["alpha", "alpha", "beta"], ["alpha"], 10);
+    expect(v).toBe(1);
+    expect(v).toBeLessThanOrEqual(1);
+  });
+
+  it("a duplicate occupies a rank slot (masks a later second relevant) but never double-credits", () => {
+    // hits = [alpha, alpha, beta], relevant = {alpha, beta}:
+    // DCG  = 1/log2(2) [alpha@1] + 0 [duplicate] + 1/log2(4) [beta pushed to rank 3]
+    // IDCG = 1/log2(2) + 1/log2(3)
+    const dcg = 1 + 1 / Math.log2(4);
+    const idcg = 1 + 1 / Math.log2(3);
+    expect(
+      ndcgAtK(["alpha", "alpha", "beta"], ["alpha", "beta"], 10),
+    ).toBeCloseTo(dcg / idcg, 10);
+  });
+});
+
+describe("canonicalizeRanked (AC-106 gold-chain canonicalization)", () => {
+  // Two gold ids whose supersession chains CONVERGE on one winner `w` (consolidation
+  // merged both gold-referenced memories into the same survivor).
+  const converging = () =>
+    new Map<string, Set<string>>([
+      ["g1", new Set(["g1", "w"])],
+      ["g2", new Set(["g2", "w"])],
+    ]);
+
+  it("two golds converging on one winner: a shared-member hit credits any not-yet-credited gold", () => {
+    // g1 is consumed by its OWN member at rank 1; the shared winner at rank 2 must then
+    // stand for g2 (a first-wins member→gold map would map w→g1 and orphan g2).
+    expect(canonicalizeRanked(["g1", "w"], converging())).toEqual(["g1", "g2"]);
+  });
+
+  it("a single shared-member hit credits exactly one gold (chains insertion order)", () => {
+    expect(canonicalizeRanked(["w"], converging())).toEqual(["g1"]);
+  });
+
+  it("exhausted golds pass through as the raw id — no gold is ever credited twice", () => {
+    expect(canonicalizeRanked(["w", "w", "x"], converging())).toEqual([
+      "g1",
+      "g2",
+      "x",
+    ]);
+  });
+
+  it("single chain: a second member of an already-credited gold passes through raw", () => {
+    const chains = new Map<string, Set<string>>([
+      ["g", new Set(["g", "mid", "w"])],
+    ]);
+    expect(canonicalizeRanked(["mid", "w"], chains)).toEqual(["g", "w"]);
+  });
+
+  it("ids matching no chain pass through unchanged", () => {
+    expect(canonicalizeRanked(["x", "y"], new Map())).toEqual(["x", "y"]);
   });
 });
 

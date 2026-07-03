@@ -16,6 +16,7 @@ import {
   meanReciprocalRank,
   mrr,
   ndcgAtK,
+  normalizePath,
   recallAtK,
   type CodeEvalFile,
   type CodeRecallEvalResult,
@@ -124,6 +125,18 @@ export async function runCodeEval(
 ): Promise<RunArtifact> {
   const { fuseCodeCandidates, searchCode, retrievalConfig } =
     await import("../src/search.js");
+  const snapshot = retrievalConfig();
+  // The pool-layer metric NAME is fixed (Recall@25) while config.candidatePool is
+  // env-variable — refuse to record a mislabeled number rather than silently scoring a
+  // different cutoff (the cutoff is deliberately NOT dynamic; the metric must stay
+  // comparable across runs).
+  if (snapshot.candidatePool !== POOL_RECALL_K) {
+    throw new Error(
+      `pool-recall cutoff mismatch: config.candidatePool = ${snapshot.candidatePool} ` +
+        `but the pool metric is fixed at Recall@${POOL_RECALL_K} — unset CANDIDATE_POOL ` +
+        `(or restore ${POOL_RECALL_K}) before running the eval.`,
+    );
+  }
   const rows = opts.split
     ? filterRowsBySplit(evalFile, opts.split)
     : evalFile.rows;
@@ -139,14 +152,25 @@ export async function runCodeEval(
     const poolPaths = pool.map((c) => c.file_path);
     const poolRecall = recallAtK(poolPaths, row.relevantPaths, POOL_RECALL_K);
 
-    // Layer 2: the full live pipeline.
+    // Layer 2: the full live pipeline. Hits are CHUNK-keyed, so the same file path can
+    // appear more than once in the top-k — dedupe to the FIRST occurrence before the
+    // path-keyed scoring (a duplicate is not a second relevant document; letting it
+    // through both inflated nDCG past 1.0 and buried later distinct paths).
     const hits = await searchCode({
       projectId: opts.projectId,
       query: row.query,
       repo: opts.repo,
       k: FINAL_NDCG_K,
     });
-    const finalPaths = hits.map((h) => h.filePath);
+    const seen = new Set<string>();
+    const finalPaths = hits
+      .map((h) => h.filePath)
+      .filter((p) => {
+        const key = normalizePath(p);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
 
     perQuery.push({
       id: row.id ?? row.query,
@@ -162,7 +186,7 @@ export async function runCodeEval(
   const mean = (f: (q: RunPerQuery) => number) =>
     n === 0 ? 0 : perQuery.reduce((a, q) => a + f(q), 0) / n;
   return {
-    retrievalConfig: retrievalConfig(),
+    retrievalConfig: snapshot,
     evalVersion: evalFile.version ?? 1,
     split: opts.split ?? "all",
     rows: n,

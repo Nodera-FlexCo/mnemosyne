@@ -93,6 +93,12 @@ export function meanReciprocalRank(
  * today and stable ids after the wave-2 key switch. This IS the regression-gate metric;
  * a bug here silently passes a bad flip. Edge cases mirror `recallAtK`: empty
  * `relevant` -> 0, k <= 0 -> 0.
+ *
+ * ONE-CREDIT rule: each relevant key gains at its FIRST occurrence only — canonicalized
+ * hit lists can carry the same key twice (e.g. two supersession-chain members mapping to
+ * one gold id), and crediting every occurrence lets DCG exceed the IDCG anchor
+ * (nDCG > 1), silently biasing the regression gate. This matches `mrr`/`recallAtK`
+ * first-occurrence semantics.
  */
 export function ndcgAtK(
   hits: RankedTitles,
@@ -101,11 +107,16 @@ export function ndcgAtK(
 ): number {
   if (k <= 0 || relevant.length === 0) return 0;
   const rel = relevantSet(relevant);
+  const credited = new Set<string>();
   let dcg = 0;
   const topK = hits.slice(0, k);
   for (let i = 0; i < topK.length; i++) {
     // 1-based rank = i+1 → gain discount 1/log2(rank+1) = 1/log2(i+2)
-    if (rel.has(normalize(topK[i]))) dcg += 1 / Math.log2(i + 2);
+    const key = normalize(topK[i]);
+    if (rel.has(key) && !credited.has(key)) {
+      credited.add(key);
+      dcg += 1 / Math.log2(i + 2);
+    }
   }
   let idcg = 0;
   const idealCount = Math.min(rel.size, k);
@@ -310,6 +321,42 @@ export async function resolveGoldIds(
   return chains;
 }
 
+/**
+ * Canonicalize a ranked id list against the gold chains (AC-106): walk the hits in rank
+ * order and let each hit CONSUME one not-yet-credited gold id whose chain contains it.
+ * Overlapping chains can converge on one winner (consolidating two gold-referenced
+ * memories into the same survivor), so a member may belong to SEVERAL gold ids — a
+ * first-wins member→gold map would let a hit on the shared member credit only one fixed
+ * gold, orphaning the other even when a separate hit could have stood for it. Hits whose
+ * golds are all consumed (or that match no chain) pass through as their raw id, so a
+ * duplicate can never credit the same gold twice.
+ */
+export function canonicalizeRanked(
+  ids: string[],
+  chains: Map<string, Set<string>>,
+): string[] {
+  // member -> gold ids whose chain contains it, in `chains` insertion order
+  // (= relevantIds order) for determinism.
+  const goldsByMember = new Map<string, string[]>();
+  for (const [gold, members] of chains) {
+    for (const m of members) {
+      const list = goldsByMember.get(m);
+      if (list) list.push(gold);
+      else goldsByMember.set(m, [gold]);
+    }
+  }
+  const credited = new Set<string>();
+  return ids.map((id) => {
+    for (const gold of goldsByMember.get(id) ?? []) {
+      if (!credited.has(gold)) {
+        credited.add(gold);
+        return gold;
+      }
+    }
+    return id;
+  });
+}
+
 // ── Two-layer eval runner + artifacts (wave-2, AC-104) ───────────────────────────────
 
 /** Pool-layer Recall@k cutoff (matches `config.candidatePool`'s documented ceiling). */
@@ -375,6 +422,18 @@ export async function runRecallEval(
 ): Promise<RunArtifact> {
   const { fuseCandidates, searchMemory, retrievalConfig } =
     await import("../src/memory.js");
+  const snapshot = retrievalConfig();
+  // The pool-layer metric NAME is fixed (Recall@25) while config.candidatePool is
+  // env-variable — refuse to record a mislabeled number rather than silently scoring a
+  // different cutoff (the cutoff is deliberately NOT dynamic; the metric must stay
+  // comparable across runs).
+  if (snapshot.candidatePool !== POOL_RECALL_K) {
+    throw new Error(
+      `pool-recall cutoff mismatch: config.candidatePool = ${snapshot.candidatePool} ` +
+        `but the pool metric is fixed at Recall@${POOL_RECALL_K} — unset CANDIDATE_POOL ` +
+        `(or restore ${POOL_RECALL_K}) before running the eval.`,
+    );
+  }
   const pool = opts.pool ?? (await import("../src/db/pool.js")).pool;
   const rows = opts.split
     ? filterRowsBySplit(evalFile, opts.split)
@@ -383,15 +442,7 @@ export async function runRecallEval(
   const perQuery: RunPerQuery[] = [];
   for (const row of rows) {
     const chains = await resolveGoldIds(pool, row.relevantIds);
-    // reverse lookup: chain member -> its gold (canonical) id
-    const goldByMember = new Map<string, string>();
-    for (const [gold, members] of chains) {
-      for (const m of members) {
-        if (!goldByMember.has(m)) goldByMember.set(m, gold);
-      }
-    }
-    const canonical = (ids: string[]) =>
-      ids.map((id) => goldByMember.get(id) ?? id);
+    const canonical = (ids: string[]) => canonicalizeRanked(ids, chains);
 
     // Layer 1: candidate pool only.
     const cands = await fuseCandidates({
@@ -432,7 +483,7 @@ export async function runRecallEval(
   const mean = (f: (q: RunPerQuery) => number) =>
     n === 0 ? 0 : perQuery.reduce((a, q) => a + f(q), 0) / n;
   return {
-    retrievalConfig: retrievalConfig(),
+    retrievalConfig: snapshot,
     evalVersion: evalFile.version,
     split: opts.split ?? "all",
     rows: n,
