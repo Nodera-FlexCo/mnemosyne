@@ -1,8 +1,26 @@
-import { pool } from './db/pool.js';
-import { embed, rerank, toVectorLiteral } from './voyage.js';
-import { config } from './config.js';
+import { pool } from "./db/pool.js";
+import {
+  embed,
+  embedContextualSingle,
+  rerank,
+  toVectorLiteral,
+} from "./voyage.js";
+import { config } from "./config.js";
 
-export type MemoryType = 'episodic' | 'semantic' | 'procedural' | 'entity';
+// ── Tuned fusion/blend constants (Wave P) ───────────────────────────────────────────
+// These are the RRF k + the rerank/recency/importance blend weights. They are the
+// "retune-before-flip" knobs (AC-024): the operator finalizes them from the held-out
+// recall run documented in test/retune.md AFTER the live backfill. Defaults below match
+// the pre-flip behavior (RRF k=60; 0.7·rel + 0.2·recency + 0.1·importance) so the flip
+// is no-regression-by-default; adjust only with a recall measurement in hand.
+// TODO(operator/retune): finalize these from test/retune.md after the live backfill.
+const RRF_K = 60;
+const BLEND_RELEVANCE = 0.7;
+const BLEND_RECENCY = 0.2;
+const BLEND_IMPORTANCE = 0.1;
+const RECENCY_HALFLIFE_DAYS = 30;
+
+export type MemoryType = "episodic" | "semantic" | "procedural" | "entity";
 
 export interface Hit {
   id: string;
@@ -26,35 +44,194 @@ interface CandidateRow {
 
 const RECALL_LIMIT = 50; // per-arm (BM25 / vector) recall before fusion
 
-export async function storeMemory(input: {
-  projectId: string;
-  type: MemoryType;
+// Named (and exported) so retrievalConfig() serializes the SAME values the code runs
+// with — the snapshot can never drift from the pipeline (AC-104 groundwork).
+export const RERANK_DOC_TRUNCATION = 1200; // chars of title+content handed to the reranker
+export const SNIPPET_CHARS = 180; // whitespace-collapsed snippet length in Hit
+
+/**
+ * The FULL retrieval configuration, serialized into every eval-run artifact (AC-104)
+ * so any recorded number is reproducible. JSON-safe by construction (plain literals —
+ * no functions, no Dates); wave-2's artifact writer and wave-6's bakeoff serialize it
+ * verbatim.
+ */
+export function retrievalConfig() {
+  return {
+    service: "memory-mcp",
+    rrfK: RRF_K,
+    blend: {
+      relevance: BLEND_RELEVANCE,
+      recency: BLEND_RECENCY,
+      importance: BLEND_IMPORTANCE,
+    },
+    recencyHalfLifeDays: RECENCY_HALFLIFE_DAYS,
+    candidatePool: config.candidatePool,
+    recallLimit: RECALL_LIMIT,
+    embedModel: config.embedModel,
+    contextModel: config.contextModel,
+    rerankModel: config.rerankModel,
+    rerankDocTruncation: RERANK_DOC_TRUNCATION,
+    snippetChars: SNIPPET_CHARS,
+  };
+}
+
+// ── Decision-log typed shape (Wave 6, AC-040) ────────────────────────────────────────
+// A sparse typed shape carried on memory.memories for source_kind='decision' rows. These
+// fields are NULL on every other row. See sql/005_decision_log.sql for the axis split
+// (decision_status vs status; supersedes_id vs superseded_by).
+export const DECISION_STATUSES = ["active", "superseded", "deferred"] as const;
+export type DecisionStatus = (typeof DECISION_STATUSES)[number];
+
+export interface DecisionFields {
+  decisionProject?: string;
+  decisionStatus?: DecisionStatus;
+  decidedAt?: string | Date;
+  supersedesId?: string;
+  decidedIn?: string;
+  relatedIds?: string[];
+}
+
+export async function storeMemory(
+  input: {
+    projectId: string;
+    type: MemoryType;
+    title: string;
+    content: string;
+    importance?: number;
+    metadata?: Record<string, unknown>;
+    sourceSessionId?: string;
+    sourceKind?: string;
+  } & DecisionFields,
+): Promise<{ id: string; title: string }> {
+  const isDecision = input.sourceKind === "decision";
+  // AC-040: validate the typed shape in code (the DB CHECK is the backstop) so the
+  // connector gets a clean error instead of a raw constraint violation.
+  if (isDecision && input.decisionStatus !== undefined) {
+    if (!DECISION_STATUSES.includes(input.decisionStatus)) {
+      throw new Error(
+        `invalid decisionStatus "${input.decisionStatus}" — must be one of ${DECISION_STATUSES.join(", ")}`,
+      );
+    }
+  }
+  // Decision columns: only populated for source_kind='decision' rows; NULL otherwise so
+  // non-decision memories keep their existing shape. decided_at defaults to now() for a
+  // decision when not supplied.
+  const decisionStatus = isDecision ? (input.decisionStatus ?? "active") : null;
+  const decidedAt = isDecision
+    ? input.decidedAt
+      ? new Date(input.decidedAt)
+      : new Date()
+    : null;
+  const decisionProject = isDecision ? (input.decisionProject ?? null) : null;
+  const supersedesId = isDecision ? (input.supersedesId ?? null) : null;
+  const decidedIn = isDecision ? (input.decidedIn ?? null) : null;
+  const relatedIds = isDecision ? (input.relatedIds ?? null) : null;
+
+  // Burn-in: write BOTH the legacy `embedding` (voyage-4-large) and the contextual
+  // `embedding_v2` (voyage-context-4) so a rollback stays possible. After the Step 8
+  // burn-in window, the legacy column + its embed() call are dropped.
+  const text = `${input.title}\n${input.content}`;
+  const [vec] = await embed([text], "document");
+  const [vec2] = await embedContextualSingle([text], "document");
+
+  // A transaction so the supersession bookkeeping (insert the new decision + flip the
+  // superseded row) stays consistent — the chain never half-updates.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ id: string; title: string }>(
+      `INSERT INTO memory.memories
+         (project_id, type, title, content, importance, metadata, source_session_id, source_kind,
+          embedding, embedding_v2,
+          decision_project, decision_status, decided_at, supersedes_id, decided_in, related_ids)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::halfvec,$10::halfvec,
+               $11,$12,$13,$14,$15,$16)
+       RETURNING id, title`,
+      [
+        input.projectId,
+        input.type,
+        input.title,
+        input.content,
+        input.importance ?? 0.5,
+        JSON.stringify(input.metadata ?? {}),
+        input.sourceSessionId ?? null,
+        input.sourceKind ?? null,
+        toVectorLiteral(vec),
+        toVectorLiteral(vec2),
+        decisionProject,
+        decisionStatus,
+        decidedAt,
+        supersedesId,
+        decidedIn,
+        relatedIds,
+      ],
+    );
+    const newId = rows[0].id;
+
+    // AC-041 supersession write: mark the superseded decision as superseded and set its
+    // forward pointer (superseded_by) to this new decision, keeping the inverse of
+    // supersedes_id in sync. Canonical chain direction stays supersedes_id (backward).
+    if (supersedesId) {
+      // Scope the supersession to a DECISION in the SAME project (Fix 4): a decision must
+      // not flip another project's row or a non-decision memory. The id/project/kind guard
+      // makes a cross-project or wrong-kind supersedesId a silent no-op (0 rows updated).
+      await client.query(
+        `UPDATE memory.memories
+           SET decision_status = 'superseded', superseded_by = $1
+         WHERE id = $2 AND project_id = $3 AND source_kind = 'decision'`,
+        [newId, supersedesId, input.projectId],
+      );
+    }
+
+    await client.query("COMMIT");
+    return rows[0];
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// ── Supersession chain (Wave 6, AC-041) ──────────────────────────────────────────────
+export interface DecisionChainRow {
+  id: string;
   title: string;
-  content: string;
-  importance?: number;
-  metadata?: Record<string, unknown>;
-  sourceSessionId?: string;
-  sourceKind?: string;
-}): Promise<{ id: string; title: string }> {
-  const [vec] = await embed([`${input.title}\n${input.content}`], 'document');
-  const { rows } = await pool.query<{ id: string; title: string }>(
-    `INSERT INTO memory.memories
-       (project_id, type, title, content, importance, metadata, source_session_id, source_kind, embedding)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::halfvec)
-     RETURNING id, title`,
-    [
-      input.projectId,
-      input.type,
-      input.title,
-      input.content,
-      input.importance ?? 0.5,
-      JSON.stringify(input.metadata ?? {}),
-      input.sourceSessionId ?? null,
-      input.sourceKind ?? null,
-      toVectorLiteral(vec),
-    ],
+  decision_status: string | null;
+  decision_project: string | null;
+  decided_at: Date | null;
+  supersedes_id: string | null;
+  decided_in: string | null;
+  depth: number;
+}
+
+/**
+ * Walk the supersession chain BACKWARD from a decision via supersedes_id
+ * (this decision → the one it superseded → …), as a recursive CTE. Carries a `path`
+ * array + a `NOT (id = ANY(path))` guard so a malformed supersedes_id cycle terminates
+ * instead of infinite-looping. Returns the chain ordered by depth (seed = depth 0).
+ */
+export async function decisionChain(id: string): Promise<DecisionChainRow[]> {
+  const { rows } = await pool.query<DecisionChainRow>(
+    `WITH RECURSIVE chain AS (
+       SELECT m.id, m.title, m.decision_status, m.decision_project, m.decided_at,
+              m.supersedes_id, m.decided_in, 0 AS depth, ARRAY[m.id] AS path
+       FROM memory.memories m
+       WHERE m.id = $1
+       UNION ALL
+       SELECT m.id, m.title, m.decision_status, m.decision_project, m.decided_at,
+              m.supersedes_id, m.decided_in, c.depth + 1, c.path || m.id
+       FROM memory.memories m
+       JOIN chain c ON m.id = c.supersedes_id
+       WHERE NOT (m.id = ANY(c.path))
+     )
+     SELECT id, title, decision_status, decision_project, decided_at,
+            supersedes_id, decided_in, depth
+     FROM chain
+     ORDER BY depth`,
+    [id],
   );
-  return rows[0];
+  return rows;
 }
 
 export interface MemoryRow {
@@ -79,19 +256,33 @@ export async function listMemories(input: {
   status?: string;
   tag?: string;
   limit: number;
-}): Promise<{ rows: MemoryRow[]; total: number; active: number; resolved: number }> {
+}): Promise<{
+  rows: MemoryRow[];
+  total: number;
+  active: number;
+  resolved: number;
+}> {
   const params: unknown[] = [input.projectId];
   let where = `project_id = $1 AND archived_at IS NULL`;
   // default to active unless a specific status (or 'all') is requested
-  if (input.status && input.status !== 'all') {
+  if (input.status && input.status !== "all") {
     params.push(input.status);
     where += ` AND COALESCE(status,'active') = $${params.length}`;
   } else if (!input.status) {
     where += ` AND COALESCE(status,'active') = 'active'`;
   }
-  if (input.sourceKind) { params.push(input.sourceKind); where += ` AND source_kind = $${params.length}`; }
-  if (input.type) { params.push(input.type); where += ` AND type = $${params.length}::memory.memory_type`; }
-  if (input.tag) { params.push(input.tag); where += ` AND metadata->'tags' ? $${params.length}`; }
+  if (input.sourceKind) {
+    params.push(input.sourceKind);
+    where += ` AND source_kind = $${params.length}`;
+  }
+  if (input.type) {
+    params.push(input.type);
+    where += ` AND type = $${params.length}::memory.memory_type`;
+  }
+  if (input.tag) {
+    params.push(input.tag);
+    where += ` AND metadata->'tags' ? $${params.length}`;
+  }
 
   const listParams = [...params, input.limit];
   const { rows } = await pool.query<MemoryRow>(
@@ -104,10 +295,20 @@ export async function listMemories(input: {
 
   // counts over the same kind filter (ignoring the status filter), for "X open / Y resolved"
   const countParams: unknown[] = [input.projectId];
-  let cf = '';
-  if (input.sourceKind) { countParams.push(input.sourceKind); cf = `AND source_kind = $${countParams.length}`; }
-  if (input.type) { countParams.push(input.type); cf += ` AND type = $${countParams.length}::memory.memory_type`; }
-  const c = await pool.query<{ total: string; active: string; resolved: string }>(
+  let cf = "";
+  if (input.sourceKind) {
+    countParams.push(input.sourceKind);
+    cf = `AND source_kind = $${countParams.length}`;
+  }
+  if (input.type) {
+    countParams.push(input.type);
+    cf += ` AND type = $${countParams.length}::memory.memory_type`;
+  }
+  const c = await pool.query<{
+    total: string;
+    active: string;
+    resolved: string;
+  }>(
     `SELECT count(*) AS total,
             count(*) FILTER (WHERE COALESCE(status,'active')='active') AS active,
             count(*) FILTER (WHERE status='resolved') AS resolved
@@ -122,16 +323,45 @@ export async function listMemories(input: {
   };
 }
 
-export async function searchMemory(input: {
+// ── Two-phase search core (Wave 1) ───────────────────────────────────────────────────
+// searchMemory = fuseCandidates (ONE RRF SQL path → candidate pool) → rerankAndBlend
+// (rerank → blend → shape). Both phases are exported so the eval harness can score the
+// pool layer (Recall@25) and the full pipeline (nDCG@10) through the SAME code the live
+// handler runs (AC-102) — never a duplicated SQL path.
+
+/** A pooled candidate with its per-arm RRF ranks (NULL when absent from that arm). */
+export interface FusedCandidate extends CandidateRow {
+  bm25_rank: number | null;
+  vec_rank: number | null;
+}
+
+/**
+ * Phase 1: hybrid recall + RRF fusion. Embeds the query (contextual — the corpus is
+ * voyage-context-4) and returns the fused candidate pool: `config.candidatePool` rows
+ * max, RRF-ordered, with per-arm ranks. `input.limit` is the FINAL hit limit used by
+ * `rerankAndBlend`, NOT the pool size — it is accepted here so `searchMemory` can pass
+ * its input through unchanged.
+ */
+export async function fuseCandidates(input: {
   projectId: string;
   query: string;
   type?: MemoryType;
-  limit: number;
-}): Promise<Hit[]> {
-  const [qvec] = await embed([input.query], 'query');
-  const typeFilter = input.type ? 'AND m.type = $5::memory.memory_type' : '';
-  const params: unknown[] = [input.query, toVectorLiteral(qvec), input.projectId, config.candidatePool];
-  if (input.type) params.push(input.type);
+  limit?: number;
+}): Promise<FusedCandidate[]> {
+  // BOTH sides contextual (critical): the corpus is voyage-context-4 (embedding_v2), so
+  // the query MUST be embedded by the same model family or recall craters.
+  const [qvec] = await embedContextualSingle([input.query], "query");
+  const params: unknown[] = [
+    input.query,
+    toVectorLiteral(qvec),
+    input.projectId,
+    config.candidatePool,
+  ];
+  let typeFilter = "";
+  if (input.type) {
+    params.push(input.type);
+    typeFilter = `AND m.type = $${params.length}::memory.memory_type`;
+  }
 
   const sql = `
     WITH q AS (SELECT plainto_tsquery('english', $1) AS tsq),
@@ -143,15 +373,16 @@ export async function searchMemory(input: {
       LIMIT ${RECALL_LIMIT}
     ),
     vec AS (
-      SELECT m.id, row_number() OVER (ORDER BY m.embedding <=> $2::halfvec) AS rank
+      SELECT m.id, row_number() OVER (ORDER BY m.embedding_v2 <=> $2::halfvec) AS rank
       FROM memory.memories m
       WHERE m.archived_at IS NULL AND COALESCE(m.status,'active') = 'active' AND m.project_id = $3
-        AND m.embedding IS NOT NULL ${typeFilter}
-      ORDER BY m.embedding <=> $2::halfvec
+        AND m.embedding_v2 IS NOT NULL ${typeFilter}
+      ORDER BY m.embedding_v2 <=> $2::halfvec
       LIMIT ${RECALL_LIMIT}
     )
     SELECT m.id, m.title, m.content, m.type, m.importance, m.created_at, m.event_date,
-           COALESCE(1.0/(60+bm25.rank),0) + COALESCE(1.0/(60+vec.rank),0) AS rrf
+           bm25.rank::int AS bm25_rank, vec.rank::int AS vec_rank,
+           (COALESCE(1.0/(${RRF_K}+bm25.rank),0) + COALESCE(1.0/(${RRF_K}+vec.rank),0))::float8 AS rrf
     FROM memory.memories m
     LEFT JOIN bm25 ON bm25.id = m.id
     LEFT JOIN vec  ON vec.id  = m.id
@@ -159,36 +390,120 @@ export async function searchMemory(input: {
     ORDER BY rrf DESC
     LIMIT $4`;
 
-  const { rows } = await pool.query<CandidateRow>(sql, params);
-  if (rows.length === 0) return [];
+  const { rows } = await pool.query<FusedCandidate>(sql, params);
+  return rows;
+}
 
+/**
+ * Phase 2: rerank the candidate pool, blend relevance with recency + importance, and
+ * shape the top-`limit` hits (180-char whitespace-collapsed snippet, 4-decimal score).
+ */
+export async function rerankAndBlend(
+  query: string,
+  rows: FusedCandidate[],
+  limit: number,
+): Promise<Hit[]> {
   // Rerank candidate pool, then blend relevance with recency + importance.
-  const docs = rows.map((r) => `${r.title}\n${r.content}`.slice(0, 1200));
-  const ranked = await rerank(input.query, docs, rows.length);
+  const docs = rows.map((r) =>
+    `${r.title}\n${r.content}`.slice(0, RERANK_DOC_TRUNCATION),
+  );
+  const ranked = await rerank(query, docs, rows.length);
   const relById = new Map<string, number>();
   for (const r of ranked) relById.set(rows[r.index].id, r.score);
 
   const now = Date.now();
   const scored = rows.map((r) => {
     const rel = relById.get(r.id) ?? 0;
-    const ageDays = (now - new Date(r.event_date ?? r.created_at).getTime()) / 86_400_000;
-    const recency = Math.exp(-ageDays / 30);
-    const final = 0.7 * rel + 0.2 * recency + 0.1 * r.importance;
+    const ageDays =
+      (now - new Date(r.event_date ?? r.created_at).getTime()) / 86_400_000;
+    const recency = Math.exp(-ageDays / RECENCY_HALFLIFE_DAYS);
+    const final =
+      BLEND_RELEVANCE * rel +
+      BLEND_RECENCY * recency +
+      BLEND_IMPORTANCE * r.importance;
     return { r, final };
   });
   scored.sort((a, b) => b.final - a.final);
 
-  return scored.slice(0, input.limit).map(({ r, final }) => ({
+  return scored.slice(0, limit).map(({ r, final }) => ({
     id: r.id,
     title: r.title,
     type: r.type,
-    snippet: r.content.replace(/\s+/g, ' ').slice(0, 180),
+    snippet: r.content.replace(/\s+/g, " ").slice(0, SNIPPET_CHARS),
     importance: r.importance,
     score: Number(final.toFixed(4)),
   }));
 }
 
-export async function getMemory(id: string): Promise<Record<string, unknown> | null> {
+// ── search_log (Wave 2, AC-107) ──────────────────────────────────────────────────────
+
+/** One live search's log entry. Wave-4 extends `filters` (tags/after) — add fields
+ *  there, not new columns. */
+export interface SearchLogEntry {
+  projectId: string;
+  query: string;
+  filters: Record<string, unknown>;
+  poolIds: string[];
+  finalIds: string[];
+  poolMs: number;
+  totalMs: number;
+}
+
+/**
+ * FIRE-AND-FORGET write to memory.search_log (the harvest-eval raw material). Never
+ * awaited, error swallowed (AC-107): a failed insert — or a missing table on a
+ * pre-006 DB — must not affect search results or add latency. The promise is created
+ * before `searchMemory` returns but deliberately not attached to the result.
+ */
+export function logSearch(entry: SearchLogEntry): void {
+  void pool
+    .query(
+      `INSERT INTO memory.search_log
+         (project_id, query, filters, pool_ids, final_ids, pool_ms, total_ms)
+       VALUES ($1, $2, $3, $4::uuid[], $5::uuid[], $6, $7)`,
+      [
+        entry.projectId,
+        entry.query,
+        JSON.stringify(entry.filters),
+        entry.poolIds,
+        entry.finalIds,
+        entry.poolMs,
+        entry.totalMs,
+      ],
+    )
+    .catch(() => {
+      /* AC-107: logging must never surface into the search path */
+    });
+}
+
+export async function searchMemory(input: {
+  projectId: string;
+  query: string;
+  type?: MemoryType;
+  limit: number;
+}): Promise<Hit[]> {
+  const t0 = Date.now();
+  const rows = await fuseCandidates(input);
+  const poolMs = Date.now() - t0;
+  const hits =
+    rows.length === 0
+      ? []
+      : await rerankAndBlend(input.query, rows, input.limit);
+  logSearch({
+    projectId: input.projectId,
+    query: input.query,
+    filters: input.type ? { type: input.type } : {},
+    poolIds: rows.map((r) => r.id),
+    finalIds: hits.map((h) => h.id),
+    poolMs,
+    totalMs: Date.now() - t0,
+  });
+  return hits;
+}
+
+export async function getMemory(
+  id: string,
+): Promise<Record<string, unknown> | null> {
   const { rows } = await pool.query(
     `UPDATE memory.memories
        SET access_count = access_count + 1, last_accessed_at = now()
@@ -206,9 +521,9 @@ export async function getRecent(input: {
   type?: MemoryType;
 }): Promise<Hit[]> {
   const params: unknown[] = [input.projectId, input.limit];
-  let typeFilter = '';
+  let typeFilter = "";
   if (input.type) {
-    typeFilter = 'AND type = $3::memory.memory_type';
+    typeFilter = "AND type = $3::memory.memory_type";
     params.push(input.type);
   }
   const { rows } = await pool.query<CandidateRow>(
@@ -223,7 +538,7 @@ export async function getRecent(input: {
     id: r.id,
     title: r.title,
     type: r.type,
-    snippet: r.content.replace(/\s+/g, ' ').slice(0, 180),
+    snippet: r.content.replace(/\s+/g, " ").slice(0, SNIPPET_CHARS),
     importance: r.importance,
     score: 0,
   }));
@@ -231,30 +546,61 @@ export async function getRecent(input: {
 
 export async function updateMemory(
   id: string,
-  fields: { title?: string; content?: string; importance?: number; pinned?: boolean; status?: string },
+  fields: {
+    title?: string;
+    content?: string;
+    importance?: number;
+    pinned?: boolean;
+    status?: string;
+  },
 ): Promise<{ id: string } | null> {
   const sets: string[] = [];
   const params: unknown[] = [];
   let i = 1;
-  if (fields.title !== undefined) { sets.push(`title = $${i++}`); params.push(fields.title); }
-  if (fields.content !== undefined) { sets.push(`content = $${i++}`); params.push(fields.content); }
-  if (fields.importance !== undefined) { sets.push(`importance = $${i++}`); params.push(fields.importance); }
-  if (fields.pinned !== undefined) { sets.push(`pinned = $${i++}`); params.push(fields.pinned); }
-  if (fields.status !== undefined) { sets.push(`status = $${i++}`); params.push(fields.status); }
+  if (fields.title !== undefined) {
+    sets.push(`title = $${i++}`);
+    params.push(fields.title);
+  }
+  if (fields.content !== undefined) {
+    sets.push(`content = $${i++}`);
+    params.push(fields.content);
+  }
+  if (fields.importance !== undefined) {
+    sets.push(`importance = $${i++}`);
+    params.push(fields.importance);
+  }
+  if (fields.pinned !== undefined) {
+    sets.push(`pinned = $${i++}`);
+    params.push(fields.pinned);
+  }
+  if (fields.status !== undefined) {
+    sets.push(`status = $${i++}`);
+    params.push(fields.status);
+  }
 
   if (fields.title !== undefined || fields.content !== undefined) {
     const cur = await pool.query<{ title: string; content: string }>(
-      `SELECT title, content FROM memory.memories WHERE id = $1`, [id]);
+      `SELECT title, content FROM memory.memories WHERE id = $1`,
+      [id],
+    );
     if (cur.rows.length === 0) return null;
     const title = fields.title ?? cur.rows[0].title;
     const content = fields.content ?? cur.rows[0].content;
-    const [vec] = await embed([`${title}\n${content}`], 'document');
-    sets.push(`embedding = $${i++}::halfvec`); params.push(toVectorLiteral(vec));
+    // Burn-in: re-embed into BOTH columns (legacy + contextual) so a rollback works.
+    const text = `${title}\n${content}`;
+    const [vec] = await embed([text], "document");
+    const [vec2] = await embedContextualSingle([text], "document");
+    sets.push(`embedding = $${i++}::halfvec`);
+    params.push(toVectorLiteral(vec));
+    sets.push(`embedding_v2 = $${i++}::halfvec`);
+    params.push(toVectorLiteral(vec2));
   }
   if (sets.length === 0) return { id };
   params.push(id);
   const { rows } = await pool.query<{ id: string }>(
-    `UPDATE memory.memories SET ${sets.join(', ')} WHERE id = $${i} RETURNING id`, params);
+    `UPDATE memory.memories SET ${sets.join(", ")} WHERE id = $${i} RETURNING id`,
+    params,
+  );
   return rows[0] ?? null;
 }
 
@@ -289,8 +635,11 @@ export async function getEntity(input: {
 }
 
 export function formatHits(hits: Hit[]): string {
-  if (hits.length === 0) return 'No matching memories.';
+  if (hits.length === 0) return "No matching memories.";
   return hits
-    .map((h, i) => `${i + 1}. [${h.type}] ${h.title}  (id: ${h.id})\n   ${h.snippet}`)
-    .join('\n');
+    .map(
+      (h, i) =>
+        `${i + 1}. [${h.type}] ${h.title}  (id: ${h.id})\n   ${h.snippet}`,
+    )
+    .join("\n");
 }

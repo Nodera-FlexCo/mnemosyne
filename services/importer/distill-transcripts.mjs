@@ -5,7 +5,8 @@
 //
 // For each session: Haiku extracts 0..N durable items (decisions, learnings,
 // tech-debt, requirements). Each item is content-hash deduped against the DB,
-// embedded with voyage-4-large, and inserted with source_kind set for enumeration.
+// embedded with $VOYAGE_EMBED_MODEL (default voyage-4-large), and inserted with
+// source_kind set for enumeration.
 //
 //   DRY_RUN=true  node distill-transcripts.mjs ./condensed         # extract+print, no writes
 //   DRY_RUN=false VOYAGE_API_KEY=… node distill-transcripts.mjs ./condensed
@@ -22,6 +23,8 @@ const DRY_RUN = process.env.DRY_RUN !== 'false';
 const PROJECT_ID = process.env.PROJECT_ID || 'nodex';
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY || '';
 const MODEL = process.env.MODEL || 'claude-haiku-4-5';
+const EMBED_MODEL = process.env.VOYAGE_EMBED_MODEL || 'voyage-4-large';
+const CONTEXT_MODEL = process.env.VOYAGE_CONTEXT_MODEL || 'voyage-context-4';
 const CONCURRENCY = Number(process.env.CONCURRENCY || 4);
 const LIMIT = Number(process.env.LIMIT || 0);
 const DIR = process.argv[2] || './condensed';
@@ -89,10 +92,32 @@ async function embed(text) {
   const res = await fetch('https://api.voyageai.com/v1/embeddings', {
     method: 'POST',
     headers: { Authorization: `Bearer ${VOYAGE_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ input: [text], model: 'voyage-4-large', input_type: 'document' }),
+    body: JSON.stringify({ input: [text], model: EMBED_MODEL, input_type: 'document' }),
   });
   if (!res.ok) throw new Error(`voyage ${res.status}: ${await res.text()}`);
   return (await res.json()).data[0].embedding;
+}
+
+// Contextual embedding for embedding_v2 (voyage-context-3). After the contextual flip,
+// searchMemory filters `embedding_v2 IS NOT NULL`, so memories ingested with ONLY the legacy
+// `embedding` are invisible to recall until a manual backfill. Compute it here too, the same
+// dual-write storeMemory does. One-chunk-per-doc: inputs=[[text]], dim 1024, int8.
+// Once the legacy `embedding` column is dropped post burn-in, drop the legacy `embed()` write.
+async function embedContextual(text) {
+  const res = await fetch('https://api.voyageai.com/v1/contextualizedembeddings', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${VOYAGE_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      inputs: [[text]],
+      model: CONTEXT_MODEL,
+      input_type: 'document',
+      output_dimension: 1024,
+      output_dtype: 'int8',
+    }),
+  });
+  if (!res.ok) throw new Error(`voyage ctx ${res.status}: ${await res.text()}`);
+  // Response: { data: [ { data: [ { embedding } ] } ] } — one doc, one chunk.
+  return (await res.json()).data[0].data[0].embedding;
 }
 
 // ---------- load manifest ----------
@@ -139,18 +164,22 @@ async function processSession(m) {
       console.log(`   [${type}/${sourceKind}] ${title}`);
       continue;
     }
-    let vec;
-    try { vec = await embed(`${title}\n${content}`); }
+    let vec, vec2;
+    try {
+      const embedInput = `${title}\n${content}`;
+      vec = await embed(embedInput);
+      vec2 = await embedContextual(embedInput);
+    }
     catch (e) { console.error(`  embed failed: ${e.message}`); continue; }
     await pool.query(
       `INSERT INTO memory.memories
-         (project_id,type,title,content,importance,metadata,embedding,status,source_kind,content_sha256,event_date)
-       VALUES ($1,$2,$3,$4,$5,$6,$7::halfvec,'active',$8,$9,$10)`,
+         (project_id,type,title,content,importance,metadata,embedding,embedding_v2,status,source_kind,content_sha256,event_date)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::halfvec,$8::halfvec,'active',$9,$10,$11)`,
       [PROJECT_ID, type, title, content, importance,
        JSON.stringify({ ...(it.metadata && typeof it.metadata === 'object' ? it.metadata : {}),
          sessionId: m.sessionId, project: m.project, gitBranch: m.gitBranch || null,
          tags: ['claude-session', 'distilled', ...tags] }),
-       `[${vec.join(',')}]`, sourceKind, hash, m.eventDate || null],
+       `[${vec.join(',')}]`, `[${vec2.join(',')}]`, sourceKind, hash, m.eventDate || null],
     );
     inserted++;
   }

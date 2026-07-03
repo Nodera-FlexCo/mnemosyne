@@ -135,6 +135,17 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       VOYAGE_API_KEY: ${VOYAGE_API_KEY:?set in .env}
+      VOYAGE_EMBED_MODEL: ${VOYAGE_EMBED_MODEL:-voyage-4-large}    # legacy embed() model (burn-in)
+      # HARD-PINNED (not .env-overridable): the contextual model is coupled to the
+      # embedding_v2 column contents — a per-box override silently mismatches the
+      # query-vs-corpus embedders (this exact drift shipped a context-3 backfill after
+      # the context-4 code swap). Changing this pin REQUIRES a full column re-embed
+      # (backfill:context) + REINDEX (docs/Runbooks-CodeGraph-ContextEmbeddings.md).
+      VOYAGE_CONTEXT_MODEL: voyage-context-4
+      # Operator-script inputs only (distill-eval / consolidate, wave 5) — optional,
+      # NOT part of assertServerConfig; the server never reads them.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CONSOLIDATE_MODEL: ${CONSOLIDATE_MODEL:-}
       MNEMO_TOKEN: ${MNEMO_TOKEN:-}
       DEFAULT_PROJECT_ID: ${DEFAULT_PROJECT_ID:-nodex}
       PORT: "8080"
@@ -162,6 +173,8 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       VOYAGE_API_KEY: ${VOYAGE_API_KEY:?set in .env}
+      VOYAGE_CODE_MODEL: ${VOYAGE_CODE_MODEL:-voyage-code-3}   # code embedder (Wave 5 bake-off flips this)
+      VOYAGE_CODE_CONTEXT_MODEL: ${VOYAGE_CODE_CONTEXT_MODEL:-voyage-context-3}   # Wave 5 bake-off contextual arm (scratch only)
       MNEMO_TOKEN: ${MNEMO_TOKEN:-}
       DEFAULT_PROJECT_ID: ${DEFAULT_PROJECT_ID:-nodex}
       PORT: "8081"

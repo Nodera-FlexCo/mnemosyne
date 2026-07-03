@@ -64,5 +64,7 @@ CREATE TABLE IF NOT EXISTS codebase.symbol_edges (
   to_symbol     uuid NOT NULL REFERENCES codebase.symbols(id) ON DELETE CASCADE,
   kind          text NOT NULL
 );
-CREATE INDEX IF NOT EXISTS symedge_from ON codebase.symbol_edges (from_symbol);
-CREATE INDEX IF NOT EXISTS symedge_to   ON codebase.symbol_edges (to_symbol);
+-- symbol_edges traversal indexes live in 006_edge_covering_indexes.sql (the original
+-- single-column symedge_from/symedge_to were removed from this file — the runner
+-- re-executes every file per run, and recreating them here only for 006 to re-drop them
+-- churned two index builds inside every migrate).

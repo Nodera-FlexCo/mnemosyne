@@ -1,0 +1,384 @@
+{
+  "retrievalConfig": {
+    "service": "codebase-mcp",
+    "rrfK": 60,
+    "candidatePool": 25,
+    "recallLimit": 50,
+    "codeEmbedModel": "voyage-code-3",
+    "codeContextModel": "voyage-context-3",
+    "rerankModel": "rerank-2.5-lite",
+    "rerankDocTruncation": 1500,
+    "snippetLines": 4,
+    "snippetChars": 240
+  },
+  "evalVersion": 2,
+  "split": "dev",
+  "rows": 45,
+  "perQuery": [
+    {
+      "id": "c-001",
+      "query": "where is bearer token authentication handled in the MCP services",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-002",
+      "query": "how do we verify Cloudflare Access JWT assertions",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-004",
+      "query": "where is the postgres connection pool created in the MCP services",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-005",
+      "query": "where are SQL migrations applied at startup",
+      "poolRecall": 1,
+      "ndcg": 0.5706417189553201,
+      "mrr": 0.3333333333333333,
+      "rank": 3
+    },
+    {
+      "id": "c-007",
+      "query": "hybrid code search RRF fusion and rerank",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-008",
+      "query": "the repository indexer that walks files and embeds chunks",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-010",
+      "query": "tree-sitter symbol and edge extraction",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-011",
+      "query": "graph traversal expanding symbol edges",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-013",
+      "query": "formatting index run status for display",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-014",
+      "query": "environment-driven configuration object for the codebase MCP service",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-016",
+      "query": "how do we serialize a vector into a halfvec literal",
+      "poolRecall": 1,
+      "ndcg": 0.5249810332008933,
+      "mrr": 0.3333333333333333,
+      "rank": 3
+    },
+    {
+      "id": "c-017",
+      "query": "how do we hold a per-repo advisory lock during indexing",
+      "poolRecall": 1,
+      "ndcg": 0.6309297535714575,
+      "mrr": 0.5,
+      "rank": 2
+    },
+    {
+      "id": "c-019",
+      "query": "how do we batch embed chunks in groups of 64",
+      "poolRecall": 1,
+      "ndcg": 0,
+      "mrr": 0,
+      "rank": null
+    },
+    {
+      "id": "c-020",
+      "query": "how does the Voyage client retry backoff honor the Retry-After header",
+      "poolRecall": 0,
+      "ndcg": 0,
+      "mrr": 0,
+      "rank": null
+    },
+    {
+      "id": "c-022",
+      "query": "how do we map file extensions to languages",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-023",
+      "query": "how do we cancel an in-flight index run cooperatively",
+      "poolRecall": 1,
+      "ndcg": 0.6309297535714575,
+      "mrr": 0.5,
+      "rank": 2
+    },
+    {
+      "id": "c-025",
+      "query": "how is recall at k and MRR computed for the code embedder bake-off gate",
+      "poolRecall": 1,
+      "ndcg": 0.5,
+      "mrr": 0.3333333333333333,
+      "rank": 3
+    },
+    {
+      "id": "c-026",
+      "query": "embedCode function",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-028",
+      "query": "searchCode",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-029",
+      "query": "indexRepo",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-031",
+      "query": "extractGraph",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-032",
+      "query": "toVectorLiteral",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-034",
+      "query": "requireBearer token check",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-035",
+      "query": "Voyage rerank documents against a query",
+      "poolRecall": 1,
+      "ndcg": 0.7977228895450266,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-037",
+      "query": "scoreArm per-arm recall scoring",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-038",
+      "query": "the code_search MCP tool wiring to searchCode",
+      "poolRecall": 1,
+      "ndcg": 0.6934264036172708,
+      "mrr": 0.5,
+      "rank": 2
+    },
+    {
+      "id": "c-040",
+      "query": "code_graph_expand tool calling graph traversal",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-041",
+      "query": "code_index_status tool reading index_runs",
+      "poolRecall": 1,
+      "ndcg": 0.9197207891481876,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-043",
+      "query": "where is the candidate pool config used by code search",
+      "poolRecall": 0,
+      "ndcg": 0,
+      "mrr": 0,
+      "rank": null
+    },
+    {
+      "id": "c-044",
+      "query": "which code reads VOYAGE_CODE_MODEL",
+      "poolRecall": 1,
+      "ndcg": 0.38685280723454163,
+      "mrr": 0.5,
+      "rank": 2
+    },
+    {
+      "id": "c-046",
+      "query": "code_chunks table schema with tsvector and hnsw index",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-047",
+      "query": "symbol graph unique constraints migration",
+      "poolRecall": 1,
+      "ndcg": 0.5,
+      "mrr": 0.3333333333333333,
+      "rank": 3
+    },
+    {
+      "id": "c-049",
+      "query": "bake-off scratch embedding column migration",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-050",
+      "query": "memory-mcp blue green contextual embedding backfill",
+      "poolRecall": 1,
+      "ndcg": 0.6309297535714575,
+      "mrr": 0.5,
+      "rank": 2
+    },
+    {
+      "id": "c-052",
+      "query": "concurrent HNSW index build outside the batch runner",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-053",
+      "query": "where does the API verify Supabase access tokens via JWKS",
+      "poolRecall": 1,
+      "ndcg": 0.5,
+      "mrr": 0.3333333333333333,
+      "rank": 3
+    },
+    {
+      "id": "c-055",
+      "query": "Drizzle schema for the invoices table",
+      "poolRecall": 1,
+      "ndcg": 0,
+      "mrr": 0,
+      "rank": null
+    },
+    {
+      "id": "c-056",
+      "query": "RO-CIUS UBL 2.1 XML builder for e-Factura invoices",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-058",
+      "query": "Stripe webhook signature verification and event enqueue",
+      "poolRecall": 1,
+      "ndcg": 0.6131471927654584,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-059",
+      "query": "BullMQ base processor with CLS context and lock renewal handling",
+      "poolRecall": 1,
+      "ndcg": 0.6309297535714575,
+      "mrr": 0.5,
+      "rank": 2
+    },
+    {
+      "id": "c-061",
+      "query": "invoice creation page in the web app",
+      "poolRecall": 1,
+      "ndcg": 0.6131471927654584,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-062",
+      "query": "how are MFA recovery codes hashed and consumed one-time",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-064",
+      "query": "duplicate invoice detection heuristic with trigram similarity",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "c-065",
+      "query": "Cloudflare R2 storage provider with bucket lock posture",
+      "poolRecall": 1,
+      "ndcg": 0.6309297535714575,
+      "mrr": 0.5,
+      "rank": 2
+    },
+    {
+      "id": "c-067",
+      "query": "gap-less invoice number allocation on finalize",
+      "poolRecall": 1,
+      "ndcg": 0.23719771276929622,
+      "mrr": 0.2,
+      "rank": 5
+    }
+  ],
+  "aggregates": {
+    "recallAt25": 0.9555555555555556,
+    "ndcgAt10": 0.7558108112857498,
+    "mrr10": 0.7414814814814815
+  }
+}

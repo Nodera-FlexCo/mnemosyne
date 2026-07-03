@@ -10,7 +10,12 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
-    "index": "node dist/indexer.js"
+    "index": "node dist/indexer.js",
+    "migrate": "tsx src/db/migrate.ts",
+    "bakeoff": "tsx src/db/bakeoff-embed.ts",
+    "distill-eval": "tsx src/db/distill-eval.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
@@ -18,6 +23,8 @@
     "ignore": "^6.0.0",
     "jose": "^6.2.3",
     "pg": "^8.21.0",
+    "tree-sitter": "0.25.0",
+    "tree-sitter-typescript": "0.23.2",
     "zod": "^3.23.0"
   },
   "devDependencies": {
@@ -25,6 +32,7 @@
     "@types/node": "^22.0.0",
     "@types/pg": "^8.20.0",
     "tsx": "^4.22.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.0"
   }
 }
