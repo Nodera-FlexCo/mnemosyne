@@ -41,11 +41,14 @@ Nothing enters either split without a human approving every gold id/path and rec
 
 ## Run artifacts + the baseline convention (AC-104)
 
-Every run writes `test/runs/<ISO-date>-<label>.json` via `writeRunArtifact()`:
-the full `retrievalConfig()` snapshot (verbatim — so every number is reproducible
-against the exact configuration that produced it), per-query scores for both layers,
-and the aggregates. Artifacts under `test/runs/` are **committed** — they are the
-baselines.
+**Recording runs** (`EVAL_RECORD=1` on the gate test) write
+`test/runs/<ISO-date>-<label>.json` via `writeRunArtifact()`: the full
+`retrievalConfig()` snapshot (verbatim — so every number is reproducible against the
+exact configuration that produced it), per-query scores for both layers, and the
+aggregates. Ordinary gate runs recompute in memory and write nothing — a failing gate
+reports the per-query-delta statistics (mean + 95% CI) in its assertion message; test
+suites write artifacts to a tmp dir. Artifacts under `test/runs/` are **committed** —
+they are the baselines.
 
 `test/runs/baseline-dev.json` is THE committed baseline the CI gate joins against: a
 copy of one artifact, chosen by the operator at a flip gate and refreshed **only** at

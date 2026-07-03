@@ -8,9 +8,10 @@
 -- today, so a plain build is instant. At >1M edges, build replacements by hand instead:
 --   CREATE INDEX CONCURRENTLY ... ; DROP INDEX CONCURRENTLY ...
 --
--- The single-column 001 indexes (symedge_from / symedge_to) are strict prefixes of the
--- covering ones and therefore redundant — dropped here. Idempotence note: a re-run after
--- 001 recreates them (IF NOT EXISTS) and this file re-drops them; harmless.
+-- The original single-column 001 indexes (symedge_from / symedge_to) were strict
+-- prefixes of the covering ones and therefore redundant. 001 no longer creates them
+-- (removed so re-runs stop rebuilding them just for this file to drop them again); the
+-- DROPs below stay for live DBs migrated before that cleanup, and are no-ops elsewhere.
 
 CREATE INDEX IF NOT EXISTS symedge_from_kind
   ON codebase.symbol_edges (from_symbol, kind) INCLUDE (to_symbol);

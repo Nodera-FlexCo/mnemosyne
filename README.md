@@ -48,6 +48,10 @@ DATABASE_URL=<loopback> npm --prefix services/memory-mcp run migrate
 DATABASE_URL=<loopback> npm --prefix services/codebase-mcp run migrate
 ```
 
+Tests: the pre-existing DB suites do NOT self-migrate — before the FIRST test run
+against a pristine disposable DB, run `npm run migrate` (both services) against it
+(e.g. `DATABASE_URL=postgres://postgres:postgres@localhost:5544/mnemosyne`).
+
 ### Deliberate, paid ops actions (operator-run, NOT auto-on-deploy)
 
 These spend Voyage API quota and are gated, one-time, per-rollout steps. They are

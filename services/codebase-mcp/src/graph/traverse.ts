@@ -272,7 +272,8 @@ async function queryWithWorkMem<T extends pg.QueryResultRow>(
 /**
  * Expand the graph from a set of seed symbol ids along call edges. `direction` controls
  * which way call edges are followed; `both` returns the union of callers + callees over
- * the seeds (the def rows are supplied by the caller via resolveSeed and prepended).
+ * the seeds. Both engines emit their own depth-0 `def` rows for the seeds — callers do
+ * NOT prepend them.
  *
  * Router (AC-401): depth ≤ 4 → recursive CTE (`expandCte`); depth ≥ 5 → app-side
  * iterative BFS (`expandBfs`). Both engines return the identical GraphRow contract

@@ -112,6 +112,51 @@ describe("migrateGold (gold v1 -> v2 proposal)", () => {
     ]);
   });
 
+  it("reports duplicate-title collisions in the log AND the review file's changelog", async () => {
+    const { pool } = fakePool([
+      { id: "11111111-1111-4111-8111-111111111111", title: "RRF fusion" },
+      // TWO memories share the normalized title -> ambiguous resolution
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        title: "Voyage model decision",
+      },
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        title: "  voyage MODEL decision ",
+      },
+      { id: "33333333-3333-4333-8333-333333333333", title: "A Ghost Title" },
+    ]);
+    const logs: string[] = [];
+    const { file, duplicateTitles } = await migrateGold(
+      { pool, log: (m) => logs.push(m) },
+      {
+        projectId: "proj",
+        evalPath: writeV1("v1-dup.json"),
+        outPath: join(tmp, "out-dup.v2.json"),
+      },
+    );
+
+    expect(duplicateTitles).toEqual([
+      {
+        title: "voyage model decision",
+        ids: [
+          "22222222-2222-4222-8222-222222222222",
+          "44444444-4444-4444-8444-444444444444",
+        ],
+      },
+    ]);
+    // first id wins on the row itself …
+    expect(file.rows[1].relevantIds[0]).toBe(
+      "22222222-2222-4222-8222-222222222222",
+    );
+    // … and the ambiguity is visible to the approver in BOTH surfaces
+    const changelog = file.changelog.join("\n");
+    expect(changelog).toContain('AMBIGUOUS title "voyage model decision"');
+    expect(changelog).toContain("44444444-4444-4444-8444-444444444444");
+    expect(logs.join("\n")).toContain("AMBIGUOUS title(s)");
+    expect(logs.join("\n")).toContain("voyage model decision");
+  });
+
   it("matches titles case-insensitively and trimmed", async () => {
     const { pool, queries } = fakePool([
       { id: "11111111-1111-4111-8111-111111111111", title: "  RRF Fusion  " },

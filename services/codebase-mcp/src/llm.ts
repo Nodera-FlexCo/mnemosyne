@@ -25,8 +25,9 @@ export async function llmFetch(path: string, body: unknown): Promise<Response> {
         "The MCP server itself does not need this key (deliberately absent from assertServerConfig).",
     );
   }
-  let lastText = "";
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+  // `for (;;)` so every exit is explicit: the final (or non-retryable) attempt always
+  // throws below — no unreachable post-loop throw.
+  for (let attempt = 0; ; attempt++) {
     const res = await fetch(`${BASE}${path}`, {
       method: "POST",
       headers: {
@@ -40,6 +41,9 @@ export async function llmFetch(path: string, body: unknown): Promise<Response> {
 
     const retryable = res.status === 429 || res.status >= 500;
     if (retryable && attempt < MAX_ATTEMPTS - 1) {
+      // Drain the failed body so the connection is released before the retry (an
+      // unconsumed fetch body pins its socket); the content is irrelevant here.
+      await res.text().catch(() => {});
       const retryAfter = Number(res.headers.get("retry-after"));
       const waitMs =
         retryAfter > 0
@@ -49,12 +53,8 @@ export async function llmFetch(path: string, body: unknown): Promise<Response> {
       await sleep(waitMs);
       continue;
     }
-    lastText = await res.text();
-    throw new Error(`anthropic ${path} ${res.status}: ${lastText}`);
+    throw new Error(`anthropic ${path} ${res.status}: ${await res.text()}`);
   }
-  throw new Error(
-    `anthropic ${path} failed after ${MAX_ATTEMPTS} attempts: ${lastText}`,
-  );
 }
 
 /**
