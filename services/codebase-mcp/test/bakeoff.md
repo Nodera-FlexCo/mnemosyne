@@ -126,6 +126,20 @@ file-grouped contextual arm has to beat a strong incumbent. **Do not force a swa
      so the re-embed is "free" in the same run).
    - `config.ts` + `compose.yaml` + `.env.example` — set `VOYAGE_CODE_MODEL` to the winner.
    - Apply the retuned RRF constant in `search.ts`.
+   - **After the winning-arm re-embed of `code_chunks.embedding` (and after ANY future
+     mass re-embed of it), reindex + vacuum** — the re-embed leaves the live HNSW graph
+     full of dead tuples, which silently degrades result counts, and VACUUM alone is slow
+     against a bloated index (reindex first, then vacuum). Run via psql on the live DB;
+     CONCURRENTLY needs its own connection, takes ~2× the plain build, keeps writes
+     flowing:
+     ```sql
+     REINDEX INDEX CONCURRENTLY chunk_hnsw;
+     VACUUM (VERBOSE) codebase.code_chunks;
+     ```
+     Cache caveat: the indexer's chunk-level embed cache (AC-404) reuses stored vectors
+     by `content_sha256`, model-blind — the truncate above is what makes the forced
+     reindex actually re-embed under the new model (old-model rows left in place would
+     be cache-hit and survive the flip).
 
 5. **Burn-in, then drop the scratch.** After the new live `embedding` serves `code_search`
    with no recall regression, apply the HELD `005_drop_bakeoff_scratch.sql`. Freeze the

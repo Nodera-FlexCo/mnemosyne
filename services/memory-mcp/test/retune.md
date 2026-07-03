@@ -35,6 +35,18 @@ These are the steps I (the operator) run; they are NOT run by the implementer/CI
    ```
    DATABASE_URL=<live> npm run index:v2
    ```
+   **Then, after this (and after ANY future mass re-embed of `embedding_v2`), reindex +
+   vacuum** — a mass re-embed leaves the HNSW graph full of dead tuples, which silently
+   degrades result counts, and VACUUM alone is slow against a bloated index (reindex
+   first, then vacuum). Run via psql on the live DB; CONCURRENTLY needs its own
+   connection (not the batch migrate runner), takes ~2× the plain build, and keeps
+   writes flowing:
+   ```sql
+   REINDEX INDEX CONCURRENTLY mem_hnsw_v2;
+   VACUUM (VERBOSE) memory.memories;
+   ```
+   (Skip the REINDEX only when `index:v2` just created `mem_hnsw_v2` from scratch on an
+   already-backfilled column — a fresh build has no dead tuples; still VACUUM.)
 4. **Freeze a held-out eval set.** Expand `fixtures/recall-eval.json` from the seed rows
    to ≥30–50 `query → relevantTitles` rows drawn from the LIVE corpus, using verbatim
    memory titles. Mark each row `"heldOut": true`; keep the originals `"seed": true`.

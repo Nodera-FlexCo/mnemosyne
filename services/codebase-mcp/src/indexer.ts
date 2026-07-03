@@ -250,8 +250,10 @@ export async function indexRepo(
       //    vector whose content_sha256 matches — only cache MISSES are embedded. The
       //    file-level sha-skip above stays the outer gate; this covers moved/renamed
       //    files and `force` runs. Reuse crosses files/repos on purpose: the embed model
-      //    is deterministic per content, and all rows share ONE model today — a model
-      //    flip (bakeoff winner) requires a forced full re-embed, which repopulates.
+      //    is deterministic per content, and all rows share ONE model today. The cache
+      //    is model-BLIND, so a model flip (bakeoff winner) must CLEAR stored vectors
+      //    (the truncate in the bakeoff.md flip step) before its forced reindex —
+      //    otherwise old-model vectors would be cache-hit and survive the flip.
       //    The stored halfvec is carried as its ::text literal (already `[...]`-shaped)
       //    straight back into the $::halfvec insert — never through toVectorLiteral
       //    again, so there is no float round-trip. ───────────────────────────────────

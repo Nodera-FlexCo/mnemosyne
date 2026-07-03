@@ -53,6 +53,16 @@ constants) — it goes live at the **gated redeploy**, not before.
    ```bash
    DATABASE_URL=<live> npm --prefix services/memory-mcp run index:v2
    ```
+   **Post-re-embed hygiene (also after ANY future mass re-embed of `embedding_v2`):**
+   a mass re-embed leaves dead tuples in the HNSW graph, silently degrading result
+   counts; VACUUM alone is slow against a bloated index, so reindex first. Via psql
+   (CONCURRENTLY needs its own connection; ~2× build time; writes keep flowing):
+   ```sql
+   REINDEX INDEX CONCURRENTLY mem_hnsw_v2;
+   VACUUM (VERBOSE) memory.memories;
+   ```
+   (A `index:v2` build fresh from scratch has no dead tuples — skip the REINDEX then,
+   but still VACUUM.)
 
 4. **Freeze a held-out eval set.** Expand `fixtures/recall-eval.json` from the seed rows to
    ≥30–50 `query → relevantTitles` rows drawn from the LIVE corpus (verbatim titles), each
@@ -136,6 +146,17 @@ live `code_search` keeps serving from `embedding` the whole time.
    `indexer.ts`'s `embedCode` → `embedCodeContextual`, embed the QUERY with the winning
    embedder, set `VOYAGE_CODE_MODEL` in `config.ts` + `compose.yaml` + `.env.example`, and
    apply the retuned RRF constant.
+   **Post-re-embed hygiene (after the winning-arm re-embed — and ANY future mass
+   re-embed of `code_chunks.embedding`):** reindex + vacuum, same reason as Runbook A
+   step 3 (dead HNSW tuples degrade result counts; VACUUM is slow without reindex first):
+   ```sql
+   REINDEX INDEX CONCURRENTLY chunk_hnsw;
+   VACUUM (VERBOSE) codebase.code_chunks;
+   ```
+   Note: the indexer's chunk-level embed cache (Wave 3, AC-404) reuses stored vectors by
+   `content_sha256`, model-blind — so a model flip MUST clear the stored vectors first
+   (the truncate in the flip step above) before the forced reindex; a forced run against
+   surviving old-model rows would cache-hit and resurrect old-model vectors.
 
 7. **Burn-in, then drop the scratch.** After the new live `embedding` serves `code_search`
    with no regression, apply the HELD `005_drop_bakeoff_scratch.sql` and freeze the
