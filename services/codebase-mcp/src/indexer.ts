@@ -149,6 +149,10 @@ export async function indexRepo(
       "*.lock",
       "pnpm-lock.yaml",
       "package-lock.json",
+      // Claude Code parallel-agent worktrees: full duplicate checkouts of the same
+      // repo. Indexing them floods search with near-identical copies that outrank
+      // the canonical files (observed on the nodex corpus: ~14.6k duplicate rows).
+      ".claude/worktrees/",
     ]);
 
     const files: string[] = [];

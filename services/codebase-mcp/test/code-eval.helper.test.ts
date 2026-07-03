@@ -269,7 +269,11 @@ describe("regressionExcluded (gate semantics)", () => {
   });
 });
 
-describe("seed code-eval fixture (AC-030, v2)", () => {
+// The fixture graduated at gate G0 (2026-07-03): paths re-verified against the live
+// index, cross-repo disambiguation applied, 15 nodex-corpus rows added, splits
+// assigned and the test split FROZEN (AC-109). The pre-freeze seed-state assertions
+// (`_seed === true`, all-dev, all seed-v1) are retired for the frozen-gold contract.
+describe("frozen code-eval fixture (AC-030, v2, approved at G0)", () => {
   it("loads and is shaped { k, rows } with ≥50 rows", () => {
     const ev = loadCodeEval();
     expect(typeof ev.k).toBe("number");
@@ -295,20 +299,17 @@ describe("seed code-eval fixture (AC-030, v2)", () => {
       expect(row.id).toMatch(/^c-\d{3}$/);
       ids.add(row.id!);
       expect(["dev", "test"]).toContain(row.split);
-      expect(row.provenance).toBe("seed-v1");
+      expect(["seed-v1", "distilled"]).toContain(row.provenance);
     }
     expect(ids.size).toBe(ev.rows.length); // ids are unique (they key the gate join)
   });
 
-  it("all seed rows start in the dev split (operator promotes ~1/3 to test at G0)", () => {
+  it("has a frozen non-empty test split (~1/3, promoted at G0) and is no longer a seed", () => {
     const ev = loadCodeEval();
-    expect(filterRowsBySplit(ev, "dev").length).toBe(ev.rows.length);
-    expect(filterRowsBySplit(ev, "test").length).toBe(0);
-  });
-
-  it("is flagged as a seed (operator must expand + freeze before the AC-030 decision)", () => {
-    const ev = loadCodeEval();
-    expect(ev._seed).toBe(true);
+    const test = filterRowsBySplit(ev, "test");
+    expect(test.length).toBeGreaterThanOrEqual(15);
+    expect(test.length).toBeLessThan(ev.rows.length / 2);
+    expect(ev._seed).toBe(false);
   });
 
   it("covers the documented query archetypes", () => {

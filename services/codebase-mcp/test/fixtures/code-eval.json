@@ -1,11 +1,35 @@
 {
   "version": 2,
-  "_seed": true,
-  "_note": "SEED rows describe the SHAPE of a code-search eval set over the REAL indexed mnemosyne corpus (repository_id = the repo dir, file_path = repo-relative). Each row is query -> the relevant FILE PATH(s); a hit on ANY relevant path in the top-k counts as recall. Paths are matched case-insensitively (leading ./ stripped) by the bake-off scorer. These 50 rows point at files that exist in THIS repo today, but they are a SEED, not a frozen held-out set: before the AC-030 bake-off decision the OPERATOR must (1) confirm each relevant path is the truly-relevant file for the query (a human picks it), (2) EXPAND toward representative coverage of the live corpora the tool indexes (nodex + mnemosyne), and (3) freeze it. The research caveat applies: validate Voyage's paper numbers on YOUR TS repo — this set IS that instrument, so keep labels honest.",
+  "_seed": false,
+  "_note": "FROZEN GOLD EVAL SET (G0, AC-109) over the live two-repo index (project `nodex`: repos `nodex` + `mnemosyne-impl`; file_path repo-relative). Each row is query -> relevant FILE PATH(s); a hit on ANY relevant path in the top-k counts as recall. Paths are matched case-insensitively (leading ./ stripped) by the scorer. Searches run project-wide, so BOTH repos compete in one ranked list: queries were disambiguated (or sibling paths added) wherever an equally-relevant answer exists in the other repo or in a sibling MCP service. Labels are CANONICAL paths only \u2014 never `.claude/worktrees/**` duplicates (see changelog corpus-hygiene note). The test split is spent only by flip gates.",
   "_archetypes": "where-is-X (subsystem location), how-do-we-X (mechanism), symbol-lookup (named function/type), route->handler trace, cross-file usage. The `archetype` field on each row is informational only (the loader ignores it).",
-  "_expand": "Operator: add rows until coverage is representative (target 80-150 for a stable number), then set _seed=false and freeze. The DB-backed code-recall.test.ts asserts the chosen-arm baseline once frozen.",
   "changelog": [
-    "2026-07-03: v2 — rows gain stable id (c-001..c-052), split (all \"dev\"; operator promotes ~1/3 to \"test\" at G0 and freezes it — the test split is modified only by flip gates, AC-109) and provenance (seed-v1, from the _seed flag). Paths remain the stable ID for code (chunk ids churn on every reindex)."
+    "2026-07-03: v2 \u2014 rows gain stable id (c-001..c-052), split (all \"dev\"; operator promotes ~1/3 to \"test\" at G0 and freezes it \u2014 the test split is modified only by flip gates, AC-109) and provenance (seed-v1, from the _seed flag). Paths remain the stable ID for code (chunk ids churn on every reindex).",
+    "2026-07-03: G0 curation \u2014 all 52 seed rows' relevantPaths verified to exist by exact match in codebase.files (repository_id=mnemosyne-impl); _seed=false.",
+    "2026-07-03: c-001 \u2014 sibling auth.ts added (memory-mcp, secrets-mcp: near-identical requireBearer) + query scoped to 'MCP services' (nodex has its own bearer auth layer).",
+    "2026-07-03: c-002 \u2014 memory-mcp cfAccess.ts added (byte-identical file).",
+    "2026-07-03: c-003 \u2014 sibling origin.ts added (memory-mcp byte-identical, secrets-mcp comment-only diff).",
+    "2026-07-03: c-004 \u2014 sibling db/pool.ts added (memory-mcp identical, secrets-mcp max-size-only diff) + query scoped to 'MCP services' (nodex packages/db also creates a postgres pool).",
+    "2026-07-03: c-005 \u2014 memory-mcp db/migrate.ts added (near-identical startup migration runner).",
+    "2026-07-03: c-006 \u2014 memory-mcp voyage.ts added (same 429-retry Voyage client).",
+    "2026-07-03: c-012 \u2014 query scoped to 'codebase MCP' (all three MCP servers register tools; server.ts bodies diverge, so scoping keeps the row discriminative).",
+    "2026-07-03: c-014 \u2014 query scoped to the codebase MCP service (three sibling config.ts with divergent bodies).",
+    "2026-07-03: c-016 \u2014 memory-mcp voyage.ts added (same toVectorLiteral serializer).",
+    "2026-07-03: c-020 \u2014 query scoped to the Voyage client (nodex handles Retry-After in rate-limit/ANAF code) + memory-mcp voyage.ts added (identical backoff).",
+    "2026-07-03: c-025 \u2014 query scoped to the CODE embedder bake-off (memory-mcp carries a sibling recall/MRR helper for its own gate).",
+    "2026-07-03: c-032 \u2014 memory-mcp voyage.ts added (defines the same toVectorLiteral symbol).",
+    "2026-07-03: c-033 \u2014 sibling config.ts added (assertServerConfig defined in all three services).",
+    "2026-07-03: c-034 \u2014 query fixed: the symbol is requireBearer (verifyBearer never existed); sibling auth.ts added (defined in all three services).",
+    "2026-07-03: c-035 \u2014 query scoped to Voyage (nodex documents-index has its own reranker) + memory-mcp voyage.ts added (same rerank export).",
+    "2026-07-03: c-042 \u2014 query scoped to 'codebase MCP' (origin.ts is identical across the three services; the server.ts wiring target stays discriminative).",
+    "2026-07-03: c-043 \u2014 query scoped to CODE search (memory-mcp shares the CANDIDATE_POOL env/config name).",
+    "2026-07-03: c-045 \u2014 query scoped to the code chunk column (memory-mcp sql also defines halfvec(1024) columns).",
+    "2026-07-03: c-049 \u2014 sql/005_drop_bakeoff_scratch.sql added (create + drop are both 'the bake-off scratch embedding column migration').",
+    "2026-07-03: c-052 \u2014 memory-mcp db/create-decision-index.ts added (same concurrent-HNSW-outside-the-batch-runner pattern).",
+    "2026-07-03: nodex expansion \u2014 c-053..c-067 (provenance=distilled): 15 rows over the nodex corpus spanning auth (Supabase JWKS strategy), RLS (with-rls), Drizzle schema, e-Factura (UBL builder + ANAF submit processor), Stripe webhooks, BullMQ base processor, fiscal invoice math, Next.js surfaces (invoice-new pages, org switcher), MFA recovery codes, duplicate-invoice detection (H6), R2 storage, documents-index RRF retrieval, and gap-less invoice numbering. Every relevantPaths entry verified by exact match in codebase.files (repository_id=nodex).",
+    "2026-07-03: splits frozen \u2014 deterministic rule: numeric id mod 3 == 0 -> test (22 rows: 17 seed + 5 distilled; every archetype, both repos, and both provenances represented), else dev (45 rows).",
+    "2026-07-03: corpus-hygiene caveat \u2014 the live nodex index contains ~14.6k duplicate source copies under .claude/worktrees/** (3 stale worktrees) that outrank or tie canonical files. Gold labels are canonical paths only; exclude .claude/worktrees/** from the index (or suffix-normalize worktree prefixes in the scorer) before reading the frozen numbers as retrieval quality.",
+    "2026-07-03: APPROVED under operator blanket G0 sign-off. All 55 unique paths verified in the live index (36 mnemosyne-impl + 19 nodex, 0 missing); 20 seed rows disambiguated (siblings added / queries sharpened); 15 nodex rows distilled by in-session curation. Splits: 22 test / 45 dev (id mod 3). TEST SPLIT IS NOW FROZEN \u2014 modified only by flip gates (AC-109). Baseline recording deferred until the .claude/worktrees/** duplicate rows are pruned from the live index (see changelog caveat above)."
   ],
   "k": 10,
   "rows": [
@@ -14,10 +38,13 @@
       "split": "dev",
       "provenance": "seed-v1",
       "archetype": "where-is-X",
-      "query": "where is bearer token authentication handled",
+      "query": "where is bearer token authentication handled in the MCP services",
       "relevantPaths": [
-        "services/codebase-mcp/src/auth.ts"
-      ]
+        "services/codebase-mcp/src/auth.ts",
+        "services/memory-mcp/src/auth.ts",
+        "services/secrets-mcp/src/auth.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-002",
@@ -26,28 +53,36 @@
       "archetype": "where-is-X",
       "query": "how do we verify Cloudflare Access JWT assertions",
       "relevantPaths": [
-        "services/codebase-mcp/src/cfAccess.ts"
-      ]
+        "services/codebase-mcp/src/cfAccess.ts",
+        "services/memory-mcp/src/cfAccess.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-003",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "where-is-X",
       "query": "DNS rebinding origin allowlist guard",
       "relevantPaths": [
-        "services/codebase-mcp/src/origin.ts"
-      ]
+        "services/codebase-mcp/src/origin.ts",
+        "services/memory-mcp/src/origin.ts",
+        "services/secrets-mcp/src/origin.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-004",
       "split": "dev",
       "provenance": "seed-v1",
       "archetype": "where-is-X",
-      "query": "where is the postgres connection pool created",
+      "query": "where is the postgres connection pool created in the MCP services",
       "relevantPaths": [
-        "services/codebase-mcp/src/db/pool.ts"
-      ]
+        "services/codebase-mcp/src/db/pool.ts",
+        "services/memory-mcp/src/db/pool.ts",
+        "services/secrets-mcp/src/db/pool.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-005",
@@ -56,18 +91,22 @@
       "archetype": "where-is-X",
       "query": "where are SQL migrations applied at startup",
       "relevantPaths": [
-        "services/codebase-mcp/src/db/migrate.ts"
-      ]
+        "services/codebase-mcp/src/db/migrate.ts",
+        "services/memory-mcp/src/db/migrate.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-006",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "where-is-X",
       "query": "voyage embeddings client with retry on 429",
       "relevantPaths": [
-        "services/codebase-mcp/src/voyage.ts"
-      ]
+        "services/codebase-mcp/src/voyage.ts",
+        "services/memory-mcp/src/voyage.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-007",
@@ -77,7 +116,8 @@
       "query": "hybrid code search RRF fusion and rerank",
       "relevantPaths": [
         "services/codebase-mcp/src/search.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-008",
@@ -87,17 +127,19 @@
       "query": "the repository indexer that walks files and embeds chunks",
       "relevantPaths": [
         "services/codebase-mcp/src/indexer.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-009",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "where-is-X",
       "query": "sliding window code chunker",
       "relevantPaths": [
         "services/codebase-mcp/src/chunker.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-010",
@@ -107,7 +149,8 @@
       "query": "tree-sitter symbol and edge extraction",
       "relevantPaths": [
         "services/codebase-mcp/src/graph/extractor.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-011",
@@ -117,17 +160,19 @@
       "query": "graph traversal expanding symbol edges",
       "relevantPaths": [
         "services/codebase-mcp/src/graph/traverse.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-012",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "where-is-X",
-      "query": "MCP tool registration and HTTP server entrypoint",
+      "query": "codebase MCP tool registration and HTTP server entrypoint",
       "relevantPaths": [
         "services/codebase-mcp/src/server.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-013",
@@ -137,27 +182,30 @@
       "query": "formatting index run status for display",
       "relevantPaths": [
         "services/codebase-mcp/src/status-format.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-014",
       "split": "dev",
       "provenance": "seed-v1",
       "archetype": "where-is-X",
-      "query": "environment-driven service configuration object",
+      "query": "environment-driven configuration object for the codebase MCP service",
       "relevantPaths": [
         "services/codebase-mcp/src/config.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-015",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "how-do-we-X",
       "query": "how do we skip unchanged files during reindex",
       "relevantPaths": [
         "services/codebase-mcp/src/indexer.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-016",
@@ -166,8 +214,10 @@
       "archetype": "how-do-we-X",
       "query": "how do we serialize a vector into a halfvec literal",
       "relevantPaths": [
-        "services/codebase-mcp/src/voyage.ts"
-      ]
+        "services/codebase-mcp/src/voyage.ts",
+        "services/memory-mcp/src/voyage.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-017",
@@ -177,17 +227,19 @@
       "query": "how do we hold a per-repo advisory lock during indexing",
       "relevantPaths": [
         "services/codebase-mcp/src/indexer.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-018",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "how-do-we-X",
       "query": "how do we resolve by-name call edges after the walk",
       "relevantPaths": [
         "services/codebase-mcp/src/indexer.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-019",
@@ -197,27 +249,31 @@
       "query": "how do we batch embed chunks in groups of 64",
       "relevantPaths": [
         "services/codebase-mcp/src/indexer.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-020",
       "split": "dev",
       "provenance": "seed-v1",
       "archetype": "how-do-we-X",
-      "query": "how does retry backoff honor the Retry-After header",
+      "query": "how does the Voyage client retry backoff honor the Retry-After header",
       "relevantPaths": [
-        "services/codebase-mcp/src/voyage.ts"
-      ]
+        "services/codebase-mcp/src/voyage.ts",
+        "services/memory-mcp/src/voyage.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-021",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "how-do-we-X",
       "query": "how do we guess a symbol name from a chunk",
       "relevantPaths": [
         "services/codebase-mcp/src/chunker.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-022",
@@ -227,7 +283,8 @@
       "query": "how do we map file extensions to languages",
       "relevantPaths": [
         "services/codebase-mcp/src/chunker.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-023",
@@ -237,27 +294,30 @@
       "query": "how do we cancel an in-flight index run cooperatively",
       "relevantPaths": [
         "services/codebase-mcp/src/indexer.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-024",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "how-do-we-X",
       "query": "how do we run the contextual embedding bake-off scratch re-embed",
       "relevantPaths": [
         "services/codebase-mcp/src/db/bakeoff-embed.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-025",
       "split": "dev",
       "provenance": "seed-v1",
       "archetype": "how-do-we-X",
-      "query": "how is recall at k and MRR computed for the embedder gate",
+      "query": "how is recall at k and MRR computed for the code embedder bake-off gate",
       "relevantPaths": [
         "services/codebase-mcp/src/recall-math.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-026",
@@ -267,17 +327,19 @@
       "query": "embedCode function",
       "relevantPaths": [
         "services/codebase-mcp/src/voyage.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-027",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "symbol-lookup",
       "query": "embedCodeContextual contextualized embeddings",
       "relevantPaths": [
         "services/codebase-mcp/src/voyage.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-028",
@@ -287,7 +349,8 @@
       "query": "searchCode",
       "relevantPaths": [
         "services/codebase-mcp/src/search.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-029",
@@ -297,17 +360,19 @@
       "query": "indexRepo",
       "relevantPaths": [
         "services/codebase-mcp/src/indexer.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-030",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "symbol-lookup",
       "query": "chunkFile",
       "relevantPaths": [
         "services/codebase-mcp/src/chunker.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-031",
@@ -317,7 +382,8 @@
       "query": "extractGraph",
       "relevantPaths": [
         "services/codebase-mcp/src/graph/extractor.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-032",
@@ -326,48 +392,59 @@
       "archetype": "symbol-lookup",
       "query": "toVectorLiteral",
       "relevantPaths": [
-        "services/codebase-mcp/src/voyage.ts"
-      ]
+        "services/codebase-mcp/src/voyage.ts",
+        "services/memory-mcp/src/voyage.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-033",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "symbol-lookup",
       "query": "assertServerConfig",
       "relevantPaths": [
-        "services/codebase-mcp/src/config.ts"
-      ]
+        "services/codebase-mcp/src/config.ts",
+        "services/memory-mcp/src/config.ts",
+        "services/secrets-mcp/src/config.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-034",
       "split": "dev",
       "provenance": "seed-v1",
       "archetype": "symbol-lookup",
-      "query": "verifyBearer token check",
+      "query": "requireBearer token check",
       "relevantPaths": [
-        "services/codebase-mcp/src/auth.ts"
-      ]
+        "services/codebase-mcp/src/auth.ts",
+        "services/memory-mcp/src/auth.ts",
+        "services/secrets-mcp/src/auth.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-035",
       "split": "dev",
       "provenance": "seed-v1",
       "archetype": "symbol-lookup",
-      "query": "rerank documents against a query",
+      "query": "Voyage rerank documents against a query",
       "relevantPaths": [
-        "services/codebase-mcp/src/voyage.ts"
-      ]
+        "services/codebase-mcp/src/voyage.ts",
+        "services/memory-mcp/src/voyage.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-036",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "symbol-lookup",
       "query": "bakeoffEmbedContextual scratch embedder",
       "relevantPaths": [
         "services/codebase-mcp/src/db/bakeoff-embed.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-037",
@@ -377,7 +454,8 @@
       "query": "scoreArm per-arm recall scoring",
       "relevantPaths": [
         "services/codebase-mcp/src/db/bakeoff-embed.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-038",
@@ -388,18 +466,20 @@
       "relevantPaths": [
         "services/codebase-mcp/src/server.ts",
         "services/codebase-mcp/src/search.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-039",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "route-to-handler",
       "query": "code_reindex tool spawning the indexer",
       "relevantPaths": [
         "services/codebase-mcp/src/server.ts",
         "services/codebase-mcp/src/indexer.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-040",
@@ -410,7 +490,8 @@
       "relevantPaths": [
         "services/codebase-mcp/src/server.ts",
         "services/codebase-mcp/src/graph/traverse.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-041",
@@ -421,29 +502,32 @@
       "relevantPaths": [
         "services/codebase-mcp/src/server.ts",
         "services/codebase-mcp/src/status-format.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-042",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "route-to-handler",
-      "query": "request origin validation before handling MCP calls",
+      "query": "codebase MCP request origin validation before handling MCP calls",
       "relevantPaths": [
         "services/codebase-mcp/src/origin.ts",
         "services/codebase-mcp/src/server.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-043",
       "split": "dev",
       "provenance": "seed-v1",
       "archetype": "cross-file-usage",
-      "query": "where is the candidate pool config used by search",
+      "query": "where is the candidate pool config used by code search",
       "relevantPaths": [
         "services/codebase-mcp/src/search.ts",
         "services/codebase-mcp/src/config.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-044",
@@ -454,18 +538,20 @@
       "relevantPaths": [
         "services/codebase-mcp/src/config.ts",
         "services/codebase-mcp/src/voyage.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-045",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "cross-file-usage",
-      "query": "where the embedding halfvec 1024 column is defined and written",
+      "query": "where the code chunk embedding halfvec 1024 column is defined and written",
       "relevantPaths": [
         "services/codebase-mcp/sql/001_codebase.sql",
         "services/codebase-mcp/src/indexer.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-046",
@@ -475,7 +561,8 @@
       "query": "code_chunks table schema with tsvector and hnsw index",
       "relevantPaths": [
         "services/codebase-mcp/sql/001_codebase.sql"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-047",
@@ -485,17 +572,19 @@
       "query": "symbol graph unique constraints migration",
       "relevantPaths": [
         "services/codebase-mcp/sql/003_graph_constraints.sql"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-048",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "cross-file-usage",
       "query": "index_runs observability table migration",
       "relevantPaths": [
         "services/codebase-mcp/sql/002_index_jobs.sql"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-049",
@@ -504,8 +593,10 @@
       "archetype": "cross-file-usage",
       "query": "bake-off scratch embedding column migration",
       "relevantPaths": [
-        "services/codebase-mcp/sql/004_bakeoff_scratch.sql"
-      ]
+        "services/codebase-mcp/sql/004_bakeoff_scratch.sql",
+        "services/codebase-mcp/sql/005_drop_bakeoff_scratch.sql"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-050",
@@ -515,17 +606,19 @@
       "query": "memory-mcp blue green contextual embedding backfill",
       "relevantPaths": [
         "services/memory-mcp/src/db/backfill-context.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-051",
-      "split": "dev",
+      "split": "test",
       "provenance": "seed-v1",
       "archetype": "cross-file-usage",
       "query": "memory search hybrid rrf and relevance blend",
       "relevantPaths": [
         "services/memory-mcp/src/memory.ts"
-      ]
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     },
     {
       "id": "c-052",
@@ -534,8 +627,179 @@
       "archetype": "cross-file-usage",
       "query": "concurrent HNSW index build outside the batch runner",
       "relevantPaths": [
-        "services/memory-mcp/src/db/create-v2-index.ts"
-      ]
+        "services/memory-mcp/src/db/create-v2-index.ts",
+        "services/memory-mcp/src/db/create-decision-index.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "c-053",
+      "split": "dev",
+      "provenance": "distilled",
+      "archetype": "where-is-X",
+      "query": "where does the API verify Supabase access tokens via JWKS",
+      "relevantPaths": [
+        "apps/api/src/auth/strategies/jwt.strategy.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "c-054",
+      "split": "test",
+      "provenance": "distilled",
+      "archetype": "how-do-we-X",
+      "query": "how does withRls set request.jwt.claims for row level security",
+      "relevantPaths": [
+        "packages/db/src/with-rls.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "c-055",
+      "split": "dev",
+      "provenance": "distilled",
+      "archetype": "where-is-X",
+      "query": "Drizzle schema for the invoices table",
+      "relevantPaths": [
+        "packages/db/src/schema/invoices.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "c-056",
+      "split": "dev",
+      "provenance": "distilled",
+      "archetype": "where-is-X",
+      "query": "RO-CIUS UBL 2.1 XML builder for e-Factura invoices",
+      "relevantPaths": [
+        "apps/api/src/efactura/ubl-builder.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "c-057",
+      "split": "test",
+      "provenance": "distilled",
+      "archetype": "where-is-X",
+      "query": "queue processor that submits invoice XML to ANAF SPV",
+      "relevantPaths": [
+        "apps/api/src/efactura/efactura-submit.processor.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "c-058",
+      "split": "dev",
+      "provenance": "distilled",
+      "archetype": "route-to-handler",
+      "query": "Stripe webhook signature verification and event enqueue",
+      "relevantPaths": [
+        "apps/api/src/billing/billing-webhook.controller.ts",
+        "apps/api/src/billing/billing-webhook.processor.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "c-059",
+      "split": "dev",
+      "provenance": "distilled",
+      "archetype": "where-is-X",
+      "query": "BullMQ base processor with CLS context and lock renewal handling",
+      "relevantPaths": [
+        "apps/api/src/queues/base-processor.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "c-060",
+      "split": "test",
+      "provenance": "distilled",
+      "archetype": "how-do-we-X",
+      "query": "how are invoice line VAT amounts computed and rounded in minor units",
+      "relevantPaths": [
+        "packages/fiscal/src/utils/invoice-math.ts",
+        "packages/fiscal/src/utils/money-math.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "c-061",
+      "split": "dev",
+      "provenance": "distilled",
+      "archetype": "where-is-X",
+      "query": "invoice creation page in the web app",
+      "relevantPaths": [
+        "apps/web/app/(app)/invoices/new/page.tsx",
+        "apps/web/app/(shell)/e/[entitySlug]/(books)/invoices/new/page.tsx"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "c-062",
+      "split": "dev",
+      "provenance": "distilled",
+      "archetype": "how-do-we-X",
+      "query": "how are MFA recovery codes hashed and consumed one-time",
+      "relevantPaths": [
+        "apps/api/src/mfa/mfa.service.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "c-063",
+      "split": "test",
+      "provenance": "distilled",
+      "archetype": "where-is-X",
+      "query": "organization switcher combobox in the web app",
+      "relevantPaths": [
+        "apps/web/components/app/org-switcher.tsx"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "c-064",
+      "split": "dev",
+      "provenance": "distilled",
+      "archetype": "how-do-we-X",
+      "query": "duplicate invoice detection heuristic with trigram similarity",
+      "relevantPaths": [
+        "apps/api/src/copilot/anomaly.service.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "c-065",
+      "split": "dev",
+      "provenance": "distilled",
+      "archetype": "where-is-X",
+      "query": "Cloudflare R2 storage provider with bucket lock posture",
+      "relevantPaths": [
+        "apps/api/src/storage/providers/r2.provider.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "c-066",
+      "split": "test",
+      "provenance": "distilled",
+      "archetype": "how-do-we-X",
+      "query": "document vault hybrid retrieval with reciprocal rank fusion",
+      "relevantPaths": [
+        "apps/api/src/documents-index/semantic-search.service.ts"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "c-067",
+      "split": "dev",
+      "provenance": "distilled",
+      "archetype": "cross-file-usage",
+      "query": "gap-less invoice number allocation on finalize",
+      "relevantPaths": [
+        "apps/api/src/invoices/invoices.service.ts",
+        "packages/db/drizzle/0002_business_functions.sql"
+      ],
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
     }
   ]
 }
