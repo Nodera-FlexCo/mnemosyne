@@ -174,8 +174,8 @@ describe.skipIf(skip)("search_log fire-and-forget (AC-107)", () => {
       (c) => c.id,
     );
 
-    const hits = await searchMemory({ projectId: PROJ, query, limit: 2 });
-    expect(hits.length).toBeGreaterThan(0);
+    const result = await searchMemory({ projectId: PROJ, query, limit: 2 });
+    expect(result.hits.length).toBeGreaterThan(0);
 
     const row = await poll(async () => {
       const { rows } = await pool.query<{
@@ -195,7 +195,7 @@ describe.skipIf(skip)("search_log fire-and-forget (AC-107)", () => {
 
     expect(row).not.toBeNull();
     expect(row!.pool_ids).toEqual(expectedPool);
-    expect(row!.final_ids).toEqual(hits.map((h) => h.id));
+    expect(row!.final_ids).toEqual(result.hits.map((h) => h.id));
     expect(row!.filters).toEqual({});
     expect(row!.pool_ms).not.toBeNull();
     expect(row!.total_ms).not.toBeNull();
@@ -222,12 +222,12 @@ describe.skipIf(skip)("search_log fire-and-forget (AC-107)", () => {
     const { searchMemory } = await import("../src/memory.js");
     await pool.query(`DROP TABLE memory.search_log`);
 
-    const hits = await searchMemory({
+    const result = await searchMemory({
       projectId: PROJ,
       query: "hnsw halfvec index",
       limit: 2,
     });
-    expect(hits.length).toBeGreaterThan(0);
+    expect(result.hits.length).toBeGreaterThan(0);
 
     // Give the swallowed rejection a couple of ticks to settle INSIDE this test — an
     // unhandled rejection here would fail the vitest run, so surviving this wait IS

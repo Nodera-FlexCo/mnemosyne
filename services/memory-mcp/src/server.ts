@@ -1,4 +1,5 @@
 import express from "express";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
@@ -9,31 +10,75 @@ import * as mem from "./memory.js";
 
 const MEMORY_TYPES = ["episodic", "semantic", "procedural", "entity"] as const;
 
-function buildServer(projectId: string): McpServer {
+export const TOOL_DESCRIPTIONS = {
+  memory_search:
+    "Hybrid semantic and lexical search over durable cross-session memory. Use when: recalling decisions, facts, incidents, or procedures by topic; finding the most relevant memory when exact metadata is unknown; optionally narrowing broad searches with type, tags (ANY-of), or after. Do NOT use when: enumerating by kind/status/tag (memory_list) or browsing newest memories first (memory_get_recent). Example: query='postgres pool sizing', tags=['infra'], after='2026-06-01T00:00:00Z'.",
+  memory_store:
+    "Persist a distilled durable memory, not a raw transcript. Use when: the user explicitly asks to remember something; a durable decision, fact, or reusable procedure was established; storing sourceKind/tags will help later enumeration. Do NOT use when: fetching existing memory (memory_get), searching prior memory (memory_search), or recording temporary working notes. Example: store a semantic decision with sourceKind='decision' and tags=['retrieval'].",
+  memory_get:
+    "Fetch the full JSON body for one known memory id. Use when: memory_search, memory_get_recent, memory_list, or a prior response returned the exact id; auditing status, metadata, event_date, or supersession fields; reading complete content beyond a snippet. Do NOT use when: discovering memories by topic (memory_search) or enumerating sets by metadata (memory_list). Example: id='00000000-0000-4000-8000-000000000001'.",
+  memory_get_recent:
+    "Return recently created active memories for this project. Use when: checking what was stored most recently; browsing a short recent timeline; optionally narrowing by memory type. Do NOT use when: searching by meaning or topic (memory_search) or counting/listing by sourceKind/status/tag (memory_list). Example: limit=10, type='semantic'.",
+  memory_update:
+    "Edit fields or lifecycle status on an existing memory. Use when: correcting title/content/importance; marking a memory resolved, superseded, archived, or closed; pinning or unpinning a known id. Do NOT use when: storing a new memory (memory_store) or soft-deleting only (memory_delete). Example: id='<memory id>', status='resolved'.",
+  memory_list:
+    "Structured enumeration and counts by sourceKind, type, status, or tag. Use when: listing open tech debts, shipped implementations, decisions, or counts; filtering exact metadata; reviewing active vs resolved totals. Do NOT use when: recalling by meaning/topic (memory_search) or fetching one known id (memory_get). Example: sourceKind='tech-debt', status='active', tag='retrieval'.",
+  memory_delete:
+    "Soft-archive one known memory id so it is excluded from search. Use when: a specific memory is obsolete, duplicated, or should be hidden from active retrieval; preserving recoverability matters; the id is already known. Do NOT use when: changing lifecycle status without archiving (memory_update) or removing an unknown set (memory_list first). Example: id='<memory id>'.",
+  memory_get_entity:
+    "Fetch one tracked entity and its relationship edges. Use when: looking up a known person, project, issue, repo, or entity id; inspecting stored relationships; resolving entity metadata rather than free-form memories. Do NOT use when: searching memory prose (memory_search) or listing memories by sourceKind/status (memory_list). Example: nameOrId='mnemosyne'.",
+  memory_decision_chain:
+    "Resolve a decision memory's supersession lineage backward through supersedes_id. Use when: auditing what a known decision replaced; explaining decision history; checking active/superseded decision context. Do NOT use when: searching for decisions by topic (memory_search) or listing all decisions (memory_list). Example: id='<decision memory id>'.",
+} as const;
+
+export function buildServer(projectId: string): McpServer {
   const server = new McpServer({ name: "memory-mcp-server", version: "1.0.0" });
 
   server.registerTool(
     "memory_search",
     {
       title: "Search long-term memory",
-      description:
-        "Hybrid (semantic + lexical) search over durable cross-session memory. " +
-        'Returns compact top-k {id, title, type, snippet}. Use for "what did we decide about X". ' +
-        "Fetch full text with memory_get using a returned id.",
+      description: TOOL_DESCRIPTIONS.memory_search,
       inputSchema: {
         query: z.string().describe("What to recall"),
         type: z
           .enum(MEMORY_TYPES)
           .optional()
-          .describe("Restrict to one memory type"),
+          .describe(
+            "Optional refinement — never required; restrict to one memory type",
+          ),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Optional refinement — never required; ANY matching tag narrows the pool",
+          ),
+        after: z
+          .string()
+          .datetime()
+          .optional()
+          .describe(
+            "Optional refinement — never required; ISO timestamp for eventDate/createdAt cutoff",
+          ),
         limit: z.number().int().min(1).max(20).default(5),
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ query, type, limit }) => {
+    async ({ query, type, tags, after, limit }) => {
       try {
-        const hits = await mem.searchMemory({ projectId, query, type, limit });
-        return { content: [{ type: "text", text: mem.formatHits(hits) }] };
+        const result = await mem.searchMemory({
+          projectId,
+          query,
+          type,
+          tags,
+          after,
+          limit,
+        });
+        return {
+          content: [
+            { type: "text", text: mem.formatHits(result.hits, result) },
+          ],
+        };
       } catch (e) {
         return {
           isError: true,
@@ -52,9 +97,7 @@ function buildServer(projectId: string): McpServer {
     "memory_store",
     {
       title: "Store a distilled memory",
-      description:
-        "Persist a DISTILLED fact/decision/learning (not raw transcript). Call when a durable " +
-        'decision is made or the user says "remember this".',
+      description: TOOL_DESCRIPTIONS.memory_store,
       inputSchema: {
         type: z
           .enum(MEMORY_TYPES)
@@ -166,8 +209,7 @@ function buildServer(projectId: string): McpServer {
     "memory_get",
     {
       title: "Fetch a memory by id",
-      description:
-        "Return the full body of one memory (bumps its access count).",
+      description: TOOL_DESCRIPTIONS.memory_get,
       inputSchema: {
         id: z.string().describe("Memory id from a search result"),
       },
@@ -190,7 +232,7 @@ function buildServer(projectId: string): McpServer {
     "memory_get_recent",
     {
       title: "Recent memories",
-      description: "List the most recently created memories for this project.",
+      description: TOOL_DESCRIPTIONS.memory_get_recent,
       inputSchema: {
         type: z.enum(MEMORY_TYPES).optional(),
         limit: z.number().int().min(1).max(20).default(10),
@@ -207,8 +249,7 @@ function buildServer(projectId: string): McpServer {
     "memory_update",
     {
       title: "Edit / re-score a memory",
-      description:
-        "Update fields of an existing memory (re-embeds if title/content change).",
+      description: TOOL_DESCRIPTIONS.memory_update,
       inputSchema: {
         id: z.string(),
         title: z.string().optional(),
@@ -239,11 +280,7 @@ function buildServer(projectId: string): McpServer {
     "memory_list",
     {
       title: "List / enumerate memories (structured, not search)",
-      description:
-        "Enumerate + COUNT memories by source_kind / type / status / tag, newest first. " +
-        'Use for "list all open tech debts", "which implementations shipped", "count research". ' +
-        "Returns compact rows + counts (X active / Y resolved / Z total). " +
-        'This is NOT semantic search — for "what did we decide about X" use memory_search.',
+      description: TOOL_DESCRIPTIONS.memory_list,
       inputSchema: {
         sourceKind: z
           .string()
@@ -287,7 +324,7 @@ function buildServer(projectId: string): McpServer {
     "memory_delete",
     {
       title: "Archive (soft-delete) a memory",
-      description: "Soft-delete a memory (excluded from search, recoverable).",
+      description: TOOL_DESCRIPTIONS.memory_delete,
       inputSchema: { id: z.string() },
       annotations: {
         readOnlyHint: false,
@@ -312,8 +349,7 @@ function buildServer(projectId: string): McpServer {
     "memory_get_entity",
     {
       title: "Fetch an entity + relationships",
-      description:
-        "Look up a tracked entity (person/project/Linear issue/repo) and its edges.",
+      description: TOOL_DESCRIPTIONS.memory_get_entity,
       inputSchema: { nameOrId: z.string().describe("Entity name or id") },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -334,11 +370,7 @@ function buildServer(projectId: string): McpServer {
     "memory_decision_chain",
     {
       title: "Resolve a decision's supersession chain",
-      description:
-        "Walk the supersession chain backward from a decision via supersedes_id " +
-        "(this decision → the one it superseded → …). Returns the ordered chain with " +
-        "decision_status + decided_at. Use for source_kind='decision' memories to see " +
-        "what a decision replaced and the full lineage.",
+      description: TOOL_DESCRIPTIONS.memory_decision_chain,
       inputSchema: {
         id: z
           .string()
@@ -362,31 +394,36 @@ function buildServer(projectId: string): McpServer {
   return server;
 }
 
-assertServerConfig();
+function bootstrap(): void {
+  assertServerConfig();
+  const app = express();
+  app.use(express.json({ limit: "4mb" }));
 
-const app = express();
-app.use(express.json({ limit: "4mb" }));
-
-app.get("/healthz", (_req, res) => {
-  res.json({ ok: true, service: "memory-mcp-server" });
-});
-
-app.use(originGuard);
-app.use(requireBearer);
-
-app.post("/mcp", async (req, res) => {
-  const auth = (req as express.Request & { auth?: MnemoAuth }).auth;
-  const projectId = auth?.extra.projectId ?? config.defaultProjectId;
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-    enableJsonResponse: true,
+  app.get("/healthz", (_req, res) => {
+    res.json({ ok: true, service: "memory-mcp-server" });
   });
-  res.on("close", () => void transport.close());
-  const server = buildServer(projectId);
-  await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
-});
 
-app.listen(config.port, "0.0.0.0", () => {
-  console.error(`memory-mcp-server listening on :${config.port}`);
-});
+  app.use(originGuard);
+  app.use(requireBearer);
+
+  app.post("/mcp", async (req, res) => {
+    const auth = (req as express.Request & { auth?: MnemoAuth }).auth;
+    const projectId = auth?.extra.projectId ?? config.defaultProjectId;
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
+    res.on("close", () => void transport.close());
+    const server = buildServer(projectId);
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  });
+
+  app.listen(config.port, "0.0.0.0", () => {
+    console.error(`memory-mcp-server listening on :${config.port}`);
+  });
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  bootstrap();
+}

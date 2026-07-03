@@ -28,6 +28,13 @@ export interface Hit {
   type: MemoryType;
   snippet: string;
   importance: number;
+  createdAt: string;
+  eventDate: string | null;
+  effectiveDate: string;
+  status: string;
+}
+
+export interface ScoredHit extends Hit {
   score: number;
 }
 
@@ -39,6 +46,7 @@ interface CandidateRow {
   importance: number;
   created_at: Date;
   event_date?: Date | null;
+  status: string;
   rrf: number;
 }
 
@@ -335,6 +343,49 @@ export interface FusedCandidate extends CandidateRow {
   vec_rank: number | null;
 }
 
+export interface SearchMemoryResult {
+  hits: Hit[];
+  poolSize: number;
+  requestedLimit: number;
+  truncated: boolean;
+  retriedWithoutFilters: boolean;
+  droppedFilters: Record<string, string>;
+}
+
+function definedFilters(
+  filters: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(filters).filter(([, v]) => {
+      if (Array.isArray(v)) return v.length > 0;
+      return v !== undefined;
+    }),
+  );
+}
+
+function formatDroppedFilters(filters: Record<string, string>): string {
+  return Object.entries(filters)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(", ");
+}
+
+function toIsoDateFields(row: {
+  created_at: Date;
+  event_date?: Date | null;
+}): Pick<Hit, "createdAt" | "eventDate" | "effectiveDate"> {
+  const createdAt = row.created_at.toISOString();
+  const eventDate = row.event_date ? row.event_date.toISOString() : null;
+  return {
+    createdAt,
+    eventDate,
+    effectiveDate: eventDate ?? createdAt,
+  };
+}
+
+export function toPublicHits(hits: ScoredHit[]): Hit[] {
+  return hits.map(({ score: _score, ...hit }) => hit);
+}
+
 /**
  * Phase 1: hybrid recall + RRF fusion. Embeds the query (contextual — the corpus is
  * voyage-context-4) and returns the fused candidate pool: `config.candidatePool` rows
@@ -346,6 +397,8 @@ export async function fuseCandidates(input: {
   projectId: string;
   query: string;
   type?: MemoryType;
+  tags?: string[];
+  after?: string;
   limit?: number;
 }): Promise<FusedCandidate[]> {
   // BOTH sides contextual (critical): the corpus is voyage-context-4 (embedding_v2), so
@@ -362,6 +415,15 @@ export async function fuseCandidates(input: {
     params.push(input.type);
     typeFilter = `AND m.type = $${params.length}::memory.memory_type`;
   }
+  let refinementFilter = "";
+  if (input.tags && input.tags.length > 0) {
+    params.push(input.tags);
+    refinementFilter += ` AND m.metadata->'tags' ?| $${params.length}::text[]`;
+  }
+  if (input.after) {
+    params.push(input.after);
+    refinementFilter += ` AND COALESCE(m.event_date, m.created_at) >= $${params.length}::timestamptz`;
+  }
 
   const sql = `
     WITH q AS (SELECT plainto_tsquery('english', $1) AS tsq),
@@ -369,18 +431,19 @@ export async function fuseCandidates(input: {
       SELECT m.id, row_number() OVER (ORDER BY ts_rank_cd(m.search_tsv, q.tsq) DESC) AS rank
       FROM memory.memories m, q
       WHERE m.archived_at IS NULL AND COALESCE(m.status,'active') = 'active' AND m.project_id = $3
-        AND m.search_tsv @@ q.tsq ${typeFilter}
+        AND m.search_tsv @@ q.tsq ${typeFilter}${refinementFilter}
       LIMIT ${RECALL_LIMIT}
     ),
     vec AS (
       SELECT m.id, row_number() OVER (ORDER BY m.embedding_v2 <=> $2::halfvec) AS rank
       FROM memory.memories m
       WHERE m.archived_at IS NULL AND COALESCE(m.status,'active') = 'active' AND m.project_id = $3
-        AND m.embedding_v2 IS NOT NULL ${typeFilter}
+        AND m.embedding_v2 IS NOT NULL ${typeFilter}${refinementFilter}
       ORDER BY m.embedding_v2 <=> $2::halfvec
       LIMIT ${RECALL_LIMIT}
     )
     SELECT m.id, m.title, m.content, m.type, m.importance, m.created_at, m.event_date,
+           COALESCE(m.status,'active') AS status,
            bm25.rank::int AS bm25_rank, vec.rank::int AS vec_rank,
            (COALESCE(1.0/(${RRF_K}+bm25.rank),0) + COALESCE(1.0/(${RRF_K}+vec.rank),0))::float8 AS rrf
     FROM memory.memories m
@@ -402,7 +465,7 @@ export async function rerankAndBlend(
   query: string,
   rows: FusedCandidate[],
   limit: number,
-): Promise<Hit[]> {
+): Promise<ScoredHit[]> {
   // Rerank candidate pool, then blend relevance with recency + importance.
   const docs = rows.map((r) =>
     `${r.title}\n${r.content}`.slice(0, RERANK_DOC_TRUNCATION),
@@ -431,6 +494,8 @@ export async function rerankAndBlend(
     type: r.type,
     snippet: r.content.replace(/\s+/g, " ").slice(0, SNIPPET_CHARS),
     importance: r.importance,
+    ...toIsoDateFields(r),
+    status: r.status,
     score: Number(final.toFixed(4)),
   }));
 }
@@ -480,25 +545,56 @@ export async function searchMemory(input: {
   projectId: string;
   query: string;
   type?: MemoryType;
+  tags?: string[];
+  after?: string;
   limit: number;
-}): Promise<Hit[]> {
+}): Promise<SearchMemoryResult> {
   const t0 = Date.now();
-  const rows = await fuseCandidates(input);
+  let rows = await fuseCandidates(input);
   const poolMs = Date.now() - t0;
-  const hits =
+  const droppedFilters: Record<string, string> = {};
+  if (input.tags && input.tags.length > 0) {
+    droppedFilters.tags = input.tags.join(",");
+  }
+  if (input.after) droppedFilters.after = input.after;
+  const hasOptionalFilters = Object.keys(droppedFilters).length > 0;
+  let retriedWithoutFilters = false;
+  if (rows.length === 0 && hasOptionalFilters) {
+    retriedWithoutFilters = true;
+    rows = await fuseCandidates({
+      projectId: input.projectId,
+      query: input.query,
+      type: input.type,
+      limit: input.limit,
+    });
+  }
+  const scoredHits =
     rows.length === 0
       ? []
       : await rerankAndBlend(input.query, rows, input.limit);
+  const hits = toPublicHits(scoredHits);
   logSearch({
     projectId: input.projectId,
     query: input.query,
-    filters: input.type ? { type: input.type } : {},
+    filters: definedFilters({
+      type: input.type,
+      tags: input.tags,
+      after: input.after,
+      retried: retriedWithoutFilters ? true : undefined,
+    }),
     poolIds: rows.map((r) => r.id),
     finalIds: hits.map((h) => h.id),
     poolMs,
     totalMs: Date.now() - t0,
   });
-  return hits;
+  return {
+    hits,
+    poolSize: rows.length,
+    requestedLimit: input.limit,
+    truncated: hits.length === input.limit && rows.length > input.limit,
+    retriedWithoutFilters,
+    droppedFilters,
+  };
 }
 
 export async function getMemory(
@@ -527,7 +623,8 @@ export async function getRecent(input: {
     params.push(input.type);
   }
   const { rows } = await pool.query<CandidateRow>(
-    `SELECT id, title, content, type, importance, created_at, 0 AS rrf
+    `SELECT id, title, content, type, importance, created_at, event_date,
+            COALESCE(status,'active') AS status, 0 AS rrf
      FROM memory.memories
      WHERE archived_at IS NULL AND COALESCE(status,'active') = 'active' AND project_id = $1 ${typeFilter}
      ORDER BY created_at DESC
@@ -540,7 +637,8 @@ export async function getRecent(input: {
     type: r.type,
     snippet: r.content.replace(/\s+/g, " ").slice(0, SNIPPET_CHARS),
     importance: r.importance,
-    score: 0,
+    ...toIsoDateFields(r),
+    status: r.status,
   }));
 }
 
@@ -634,12 +732,33 @@ export async function getEntity(input: {
   return { ...entity, edges: edges.rows };
 }
 
-export function formatHits(hits: Hit[]): string {
-  if (hits.length === 0) return "No matching memories.";
-  return hits
-    .map(
-      (h, i) =>
-        `${i + 1}. [${h.type}] ${h.title}  (id: ${h.id})\n   ${h.snippet}`,
-    )
-    .join("\n");
+export function formatHits(
+  hits: Hit[],
+  options: Partial<SearchMemoryResult> = {},
+): string {
+  const lines: string[] = [];
+  if (options.retriedWithoutFilters && options.droppedFilters) {
+    lines.push(
+      `Note: no results matched filters {${formatDroppedFilters(options.droppedFilters)}}; showing unfiltered results. Filters are optional — retry with different values to narrow.`,
+    );
+  }
+  if (hits.length === 0) return [...lines, "No matching memories."].join("\n");
+  lines.push(
+    hits
+      .map(
+        (h, i) =>
+          `${i + 1}. [${h.type}] ${h.title}  (${h.effectiveDate.slice(0, 10)}, status: ${h.status}, id: ${h.id})\n   ${h.snippet}`,
+      )
+      .join("\n"),
+  );
+  if (
+    options.truncated &&
+    options.requestedLimit !== undefined &&
+    options.poolSize !== undefined
+  ) {
+    lines.push(
+      `Showing top ${options.requestedLimit} of ${options.poolSize} candidates. Prefer several small targeted searches over one broad one — optionally narrow with type, tags, or after.`,
+    );
+  }
+  return lines.join("\n");
 }

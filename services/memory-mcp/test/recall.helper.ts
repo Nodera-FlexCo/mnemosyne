@@ -453,11 +453,12 @@ export async function runRecallEval(
     const poolRecall = recallAtK(poolIds, row.relevantIds, POOL_RECALL_K);
 
     // Layer 2: the full live pipeline.
-    const hits = await searchMemory({
+    const result = await searchMemory({
       projectId: opts.projectId,
       query: row.query,
       limit: FINAL_NDCG_K,
     });
+    const hits = result.hits;
     const finalIds = canonical(hits.map((h) => h.id));
 
     const rel = new Set(row.relevantIds.map(normalize));

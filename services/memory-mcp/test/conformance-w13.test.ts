@@ -8,7 +8,7 @@
 // gate, additive to the Implementer's own tests.
 //
 // AC map (memory-mcp scope):
-//   AC-101 — composed pipeline output contract (snippet/score/limit/ordering/[])
+//   AC-101 — composed pipeline output contract (snippet/rank-only/limit/[])
 //            + determinism + two-phase composition ≡ one-shot searchMemory
 //   AC-102 — fuseCandidates pool: ≤ candidatePool rows, per-arm RRF ranks,
 //            live handler consumes exactly this pool (finals ⊆ pool)
@@ -552,6 +552,10 @@ const SEARCH_FIXTURES: SearchFixture[] = [
 ];
 const searchById = new Map(SEARCH_FIXTURES.map((f) => [f.id, f]));
 
+function iso(s: string): string {
+  return new Date(s).toISOString();
+}
+
 // Supersession chain fixtures (AC-106): A → B → C forward via superseded_by.
 const CHAIN_A = mid(101);
 const CHAIN_B = mid(102);
@@ -739,7 +743,7 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (memory-mcp)", () => {
   // ── AC-101: composed pipeline output contract ──────────────────────────────
 
   function assertHitShape(
-    hits: Awaited<ReturnType<typeof searchMemory>>,
+    hits: Awaited<ReturnType<typeof searchMemory>>["hits"],
     limit: number,
   ): void {
     expect(hits.length).toBeLessThanOrEqual(limit);
@@ -751,54 +755,56 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (memory-mcp)", () => {
       expect(h.snippet.length).toBeLessThanOrEqual(180);
       expect(h.title).toBe(f.title);
       expect(h.type).toBe(f.type);
-      // score is a 4-decimal number
-      expect(h.score).toBe(Number(h.score.toFixed(4)));
-    }
-    // blend-sorted: strictly descending finals (fixtures are tie-free)
-    for (let i = 1; i < hits.length; i++) {
-      expect(hits[i - 1].score).toBeGreaterThan(hits[i].score);
+      expect("score" in h).toBe(false);
+      expect(h.createdAt).toBe(iso(f.createdAt));
+      expect(h.eventDate).toBeNull();
+      expect(h.effectiveDate).toBe(h.createdAt);
+      expect(h.status).toBe("active");
     }
   }
 
-  it("AC-101: hit shape — snippet(180, collapsed), 4-decimal score, ≤ limit, blend-ordered", async () => {
-    const hits = await searchMemory({
+  it("AC-101/AC-203/AC-207: hit shape — snippet(180, collapsed), rank-only, dates/status, ≤ limit", async () => {
+    const result = await searchMemory({
       projectId: P_SEARCH,
       query: "postgres connection pool",
       limit: 5,
     });
+    const { hits } = result;
     expect(hits.length).toBeGreaterThan(0);
     assertHitShape(hits, 5);
   });
 
   it("AC-101: whitespace in content is collapsed in the snippet", async () => {
-    const hits = await searchMemory({
+    const result = await searchMemory({
       projectId: P_SEARCH,
       query: "incident connection storm retry",
       limit: 8,
     });
+    const { hits } = result;
     const noisy = hits.find((h) => h.id === mid(3));
     expect(noisy).toBeTruthy();
     expect(noisy!.snippet).not.toMatch(/\n| {2}/);
   });
 
   it("AC-101: type filter returns only that type", async () => {
-    const hits = await searchMemory({
+    const result = await searchMemory({
       projectId: P_SEARCH,
       query: "embedder index rebuild",
       type: "semantic",
       limit: 5,
     });
+    const { hits } = result;
     expect(hits.length).toBeGreaterThan(0);
     for (const h of hits) expect(h.type).toBe("semantic");
   });
 
   it("AC-101: empty corpus → []", async () => {
-    const hits = await searchMemory({
+    const result = await searchMemory({
       projectId: P_EMPTY,
       query: "anything at all",
       limit: 5,
     });
-    expect(hits).toEqual([]);
+    expect(result.hits).toEqual([]);
   });
 
   it("AC-101: identical inputs → identical output (deterministic pipeline)", async () => {
@@ -809,7 +815,7 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (memory-mcp)", () => {
     };
     const a = await searchMemory(input);
     const b = await searchMemory(input);
-    expect(b).toEqual(a);
+    expect(b.hits).toEqual(a.hits);
   });
 
   it("AC-101/AC-102: two-phase composition ≡ one-shot searchMemory", async () => {
@@ -822,7 +828,9 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (memory-mcp)", () => {
     const pool = await fuseCandidates(input);
     expect(pool.length).toBeGreaterThan(0);
     const composed = await rerankAndBlend(input.query, pool, input.limit);
-    expect(composed).toEqual(oneShot);
+    expect(composed.map(({ score: _score, ...hit }) => hit)).toEqual(
+      oneShot.hits,
+    );
   });
 
   // ── AC-102: fuseCandidates pool contract ───────────────────────────────────
@@ -850,7 +858,8 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (memory-mcp)", () => {
     const query = "shared retrieval conformance token";
     const pool = await fuseCandidates({ projectId: P_POOL, query });
     const poolIds = new Set(pool.map((c) => c.id));
-    const hits = await searchMemory({ projectId: P_POOL, query, limit: 10 });
+    const result = await searchMemory({ projectId: P_POOL, query, limit: 10 });
+    const { hits } = result;
     expect(hits.length).toBe(10);
     for (const h of hits) expect(poolIds.has(h.id)).toBe(true);
   });
@@ -946,7 +955,12 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (memory-mcp)", () => {
 
   it("AC-107: a search eventually lands one search_log row with matching ids", async () => {
     const query = "conf-w13 log landing probe backup restore";
-    const hits = await searchMemory({ projectId: P_SEARCH, query, limit: 3 });
+    const result = await searchMemory({
+      projectId: P_SEARCH,
+      query,
+      limit: 3,
+    });
+    const { hits } = result;
     const landed = await until(async () => {
       const { rows } = await db.query(
         `SELECT pool_ids, final_ids, filters FROM memory.search_log
@@ -979,9 +993,9 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (memory-mcp)", () => {
       );
       const query = "conf-w13 lock probe hnsw rebuild guidance";
       const result = await Promise.race([
-        searchMemory({ projectId: P_SEARCH, query, limit: 3 }).then((h) => ({
+        searchMemory({ projectId: P_SEARCH, query, limit: 3 }).then((r) => ({
           resolved: true as const,
-          hits: h,
+          hits: r.hits,
         })),
         new Promise<{ resolved: false }>((r) =>
           setTimeout(() => r({ resolved: false }), 4000),
@@ -1017,7 +1031,7 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (memory-mcp)", () => {
     );
     try {
       const broken = await searchMemory(input);
-      expect(broken).toEqual(baseline);
+      expect(broken.hits).toEqual(baseline.hits);
     } finally {
       await db.query(
         "ALTER TABLE memory.search_log_confw13bak RENAME TO search_log",

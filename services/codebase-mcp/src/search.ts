@@ -10,6 +10,9 @@ export interface CodeHit {
   symbolName: string | null;
   language: string | null;
   snippet: string;
+}
+
+export interface ScoredCodeHit extends CodeHit {
   score: number;
 }
 
@@ -68,6 +71,32 @@ export interface FusedCodeCandidate extends Row {
   vec_rank: number | null;
 }
 
+export interface SearchCodeResult {
+  hits: CodeHit[];
+  poolSize: number;
+  requestedLimit: number;
+  truncated: boolean;
+  retriedWithoutFilters: boolean;
+  droppedFilters: Record<string, string>;
+}
+
+function escapeLike(input: string): string {
+  return input
+    .replaceAll("\\", "\\\\")
+    .replaceAll("%", "\\%")
+    .replaceAll("_", "\\_");
+}
+
+function formatDroppedFilters(filters: Record<string, string>): string {
+  return Object.entries(filters)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(", ");
+}
+
+export function toPublicCodeHits(hits: ScoredCodeHit[]): CodeHit[] {
+  return hits.map(({ score: _score, ...hit }) => hit);
+}
+
 /**
  * Phase 1: hybrid recall + RRF fusion. Embeds the query with the live code embedder and
  * returns the fused candidate pool: `config.candidatePool` rows max, RRF-ordered, with
@@ -78,6 +107,8 @@ export async function fuseCodeCandidates(input: {
   query: string;
   repo?: string;
   language?: string;
+  path?: string;
+  extension?: string;
 }): Promise<FusedCodeCandidate[]> {
   const [qvec] = await embedCode([input.query], "query");
   const params: unknown[] = [
@@ -94,6 +125,15 @@ export async function fuseCodeCandidates(input: {
   if (input.language) {
     params.push(input.language);
     filt += ` AND c.language = $${params.length}`;
+  }
+  if (input.path) {
+    params.push(`%${escapeLike(input.path)}%`);
+    filt += ` AND c.file_path LIKE $${params.length} ESCAPE '\\'`;
+  }
+  if (input.extension) {
+    const ext = input.extension.replace(/^\.+/, "");
+    params.push(`%.${escapeLike(ext)}`);
+    filt += ` AND c.file_path LIKE $${params.length} ESCAPE '\\'`;
   }
 
   const sql = `
@@ -133,7 +173,7 @@ export async function rerankCodeHits(
   query: string,
   rows: FusedCodeCandidate[],
   k: number,
-): Promise<CodeHit[]> {
+): Promise<ScoredCodeHit[]> {
   const docs = rows.map((r) =>
     `${r.file_path}\n${r.content}`.slice(0, RERANK_DOC_TRUNCATION),
   );
@@ -166,19 +206,65 @@ export async function searchCode(input: {
   query: string;
   repo?: string;
   language?: string;
+  path?: string;
+  extension?: string;
   k: number;
-}): Promise<CodeHit[]> {
-  const rows = await fuseCodeCandidates(input);
-  if (rows.length === 0) return [];
-  return rerankCodeHits(input.query, rows, input.k);
+}): Promise<SearchCodeResult> {
+  let rows = await fuseCodeCandidates(input);
+  const droppedFilters: Record<string, string> = {};
+  if (input.path) droppedFilters.path = input.path;
+  if (input.extension) droppedFilters.extension = input.extension;
+  const hasOptionalFilters = Object.keys(droppedFilters).length > 0;
+  let retriedWithoutFilters = false;
+  if (rows.length === 0 && hasOptionalFilters) {
+    retriedWithoutFilters = true;
+    rows = await fuseCodeCandidates({
+      projectId: input.projectId,
+      query: input.query,
+      repo: input.repo,
+      language: input.language,
+    });
+  }
+  const scored =
+    rows.length === 0 ? [] : await rerankCodeHits(input.query, rows, input.k);
+  const hits = toPublicCodeHits(scored);
+  return {
+    hits,
+    poolSize: rows.length,
+    requestedLimit: input.k,
+    truncated: scored.length === input.k && rows.length > input.k,
+    retriedWithoutFilters,
+    droppedFilters,
+  };
 }
 
-export function formatHits(hits: CodeHit[]): string {
-  if (hits.length === 0) return "No matching code.";
-  return hits
-    .map(
-      (h, i) =>
-        `${i + 1}. ${h.filePath}:${h.startLine}-${h.endLine}${h.symbolName ? ` (${h.symbolName})` : ""}  [${h.chunkId}]\n   ${h.snippet.replace(/\n/g, " ⏎ ")}`,
-    )
-    .join("\n");
+export function formatHits(
+  hits: CodeHit[],
+  options: Partial<SearchCodeResult> = {},
+): string {
+  const lines: string[] = [];
+  if (options.retriedWithoutFilters && options.droppedFilters) {
+    lines.push(
+      `Note: no results matched filters {${formatDroppedFilters(options.droppedFilters)}}; showing unfiltered results. Filters are optional — retry with different values to narrow.`,
+    );
+  }
+  if (hits.length === 0) return [...lines, "No matching code."].join("\n");
+  lines.push(
+    hits
+      .map(
+        (h, i) =>
+          `${i + 1}. ${h.filePath}:${h.startLine}-${h.endLine}${h.symbolName ? ` (${h.symbolName})` : ""}  [${h.chunkId}]\n   ${h.snippet.replace(/\n/g, " ⏎ ")}`,
+      )
+      .join("\n"),
+  );
+  if (
+    options.truncated &&
+    options.requestedLimit !== undefined &&
+    options.poolSize !== undefined
+  ) {
+    lines.push(
+      `Showing top ${options.requestedLimit} of ${options.poolSize} candidates. Prefer several small targeted searches — optionally narrow with repo, path, extension, or language. Fetch full context with code_get_file.`,
+    );
+  }
+  return lines.join("\n");
 }

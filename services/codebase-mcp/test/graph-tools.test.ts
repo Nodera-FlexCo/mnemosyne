@@ -134,14 +134,21 @@ describe.skipIf(skip)("graph MCP tools (AC-009/010/011)", () => {
     expect(props).toEqual(["endLine", "path", "repo", "startLine"]);
   });
 
-  it("code_search input schema is unchanged (AC-011)", async () => {
+  it("code_search input schema: originals + wave-4 optional refinements (path, extension)", async () => {
     const { tools } = await client.listTools();
     const search = tools.find((t) => t.name === "code_search")!;
     const props = Object.keys(
       (search.inputSchema as { properties: Record<string, unknown> })
         .properties,
     ).sort();
-    expect(props).toEqual(["k", "language", "query", "repo"]);
+    expect(props).toEqual([
+      "extension",
+      "k",
+      "language",
+      "path",
+      "query",
+      "repo",
+    ]);
   });
 
   it("code_get_file still reads a file range exactly as before (AC-011)", async () => {

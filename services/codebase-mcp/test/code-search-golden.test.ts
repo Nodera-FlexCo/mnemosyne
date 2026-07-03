@@ -277,7 +277,7 @@ describe.skipIf(skip)("searchCode golden pins (AC-101)", () => {
 
   /** Shared shape assertions for every pinned query. */
   function assertShape(
-    hits: Awaited<ReturnType<typeof searchCode>>,
+    hits: Awaited<ReturnType<typeof searchCode>>["hits"],
     k: number,
   ): void {
     expect(hits.length).toBeLessThanOrEqual(k);
@@ -289,63 +289,65 @@ describe.skipIf(skip)("searchCode golden pins (AC-101)", () => {
       expect(h.symbolName).toBe(f.symbolName);
       expect(h.language).toBe(f.language);
       expect(h.snippet).toBe(expectedSnippet(h.chunkId));
-      // score is a 4-decimal number
-      expect(h.score).toBe(Number(h.score.toFixed(4)));
+      expect("score" in h).toBe(false);
     }
   }
 
   it("pins query 1 (plain): 'hash password bcrypt'", async () => {
-    const hits = await searchCode({
+    const result = await searchCode({
       projectId: PROJ,
       query: "hash password bcrypt",
       k: 5,
     });
+    const { hits } = result;
     assertShape(hits, 5);
     expect(hits.map((h) => h.chunkId)).toEqual(GOLDEN_C1);
   });
 
   it("pins query 2 (repo-filtered): 'database pool connection' in golden-repo-a", async () => {
-    const hits = await searchCode({
+    const result = await searchCode({
       projectId: PROJ,
       query: "database pool connection",
       repo: REPO_A,
       k: 5,
     });
+    const { hits } = result;
     assertShape(hits, 5);
     for (const h of hits) expect(byId.get(h.chunkId)!.repo).toBe(REPO_A);
     expect(hits.map((h) => h.chunkId)).toEqual(GOLDEN_C2);
   });
 
   it("pins query 3 (language-filtered): 'generate monthly report' in python", async () => {
-    const hits = await searchCode({
+    const result = await searchCode({
       projectId: PROJ,
       query: "generate monthly report",
       language: "python",
       k: 5,
     });
+    const { hits } = result;
     assertShape(hits, 5);
     for (const h of hits) expect(h.language).toBe("python");
     expect(hits.map((h) => h.chunkId)).toEqual(GOLDEN_C3);
   });
 
-  it("pins the rerank-empty fallback: RRF order, scores 0", async () => {
-    const hits = await searchCode({
+  it("pins the rerank-empty fallback: RRF order, rank-only output", async () => {
+    const result = await searchCode({
       projectId: PROJ,
       query: `${H.RERANK_EMPTY} database pool`,
       k: 5,
     });
+    const { hits } = result;
     assertShape(hits, 5);
-    for (const h of hits) expect(h.score).toBe(0);
     expect(hits.map((h) => h.chunkId)).toEqual(GOLDEN_C4);
   });
 
   it("pins the empty-corpus early return: []", async () => {
-    const hits = await searchCode({
+    const result = await searchCode({
       projectId: EMPTY_PROJ,
       query: "anything at all",
       k: 5,
     });
-    expect(hits).toEqual([]);
+    expect(result.hits).toEqual([]);
   });
 });
 
