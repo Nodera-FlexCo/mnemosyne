@@ -12,11 +12,11 @@ afterEach(() => {
 });
 
 describe("contextModel config default (AC-022)", () => {
-  it("falls back to voyage-context-3 when VOYAGE_CONTEXT_MODEL is unset", async () => {
+  it("falls back to voyage-context-4 when VOYAGE_CONTEXT_MODEL is unset", async () => {
     vi.resetModules();
     delete process.env.VOYAGE_CONTEXT_MODEL;
     const { config } = await import("../src/config.js");
-    expect(config.contextModel).toBe("voyage-context-3");
+    expect(config.contextModel).toBe("voyage-context-4");
   });
 
   it("honors VOYAGE_CONTEXT_MODEL when set", async () => {

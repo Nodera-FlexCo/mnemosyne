@@ -15,7 +15,7 @@ const DRY_RUN = process.env.DRY_RUN !== 'false';
 const PROJECT_ID = process.env.PROJECT_ID || 'nodex';
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY || '';
 const EMBED_MODEL = process.env.VOYAGE_EMBED_MODEL || 'voyage-4-large';
-const CONTEXT_MODEL = process.env.VOYAGE_CONTEXT_MODEL || 'voyage-context-3';
+const CONTEXT_MODEL = process.env.VOYAGE_CONTEXT_MODEL || 'voyage-context-4';
 const DATABASE_URL = process.env.DATABASE_URL ||
   `postgres://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.PGHOST || '127.0.0.1'}:5432/${process.env.POSTGRES_DB}`;
 

@@ -97,7 +97,7 @@ export async function storeMemory(
   const relatedIds = isDecision ? (input.relatedIds ?? null) : null;
 
   // Burn-in: write BOTH the legacy `embedding` (voyage-4-large) and the contextual
-  // `embedding_v2` (voyage-context-3) so a rollback stays possible. After the Step 8
+  // `embedding_v2` (voyage-context-4) so a rollback stays possible. After the Step 8
   // burn-in window, the legacy column + its embed() call are dropped.
   const text = `${input.title}\n${input.content}`;
   const [vec] = await embed([text], "document");
@@ -298,7 +298,7 @@ export async function searchMemory(input: {
   type?: MemoryType;
   limit: number;
 }): Promise<Hit[]> {
-  // BOTH sides contextual (critical): the corpus is voyage-context-3 (embedding_v2), so
+  // BOTH sides contextual (critical): the corpus is voyage-context-4 (embedding_v2), so
   // the query MUST be embedded by the same model family or recall craters.
   const [qvec] = await embedContextualSingle([input.query], "query");
   const typeFilter = input.type ? "AND m.type = $5::memory.memory_type" : "";

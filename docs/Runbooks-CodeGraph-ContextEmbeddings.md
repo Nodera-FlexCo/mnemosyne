@@ -23,7 +23,7 @@ The two per-wave decision records that these runbooks fill in:
 ## Runbook A — memory-mcp contextual blue/green re-embed (Wave P)
 
 Move durable memory recall from the legacy flat `embedding` (voyage-4-large) to
-`embedding_v2` (voyage-context-3 contextual, 1024-dim int8). Memory is durable, so this is
+`embedding_v2` (voyage-context-4 contextual, 1024-dim int8). Memory is durable, so this is
 a one-time backfill, not a scheduled re-embed. The code flip is already landed
 (`src/memory.ts` reads `embedding_v2`, embeds the query contextually, and reads the tuned
 constants) — it goes live at the **gated redeploy**, not before.
@@ -146,12 +146,16 @@ live `code_search` keeps serving from `embedding` the whole time.
 ## Why these are gated, paid, deliberate
 
 - **Money + quota.** Every backfill / bake-off re-embed POSTs the corpus to Voyage
-  (voyage-context-3 ≈ $0.18/M tokens). A container start hook that re-embedded on every
-  deploy would burn quota silently — so there is none.
+  (voyage-context-4 ≈ $0.12/M tokens, first 200M free). A container start hook that
+  re-embedded on every deploy would burn quota silently — so there is none.
 - **Recall coupling.** Flipping an embedding column without re-tuning RRF + blend + rerank
   regresses recall silently. Both runbooks gate the flip on a recorded recall number, never
   an eyeball.
 - **One-way drops.** The legacy/scratch columns are the rollback path; the `-- HOLD` marker
   keeps the migrate runner from dropping them prematurely. Apply the drop only at the
   burn-in step, by hand.
-- **voyage-context-4 is PREVIEW** — use voyage-context-3 (GA) only.
+- **Memory embeddings use voyage-context-4** (released 2026-06-29; drop-in successor to
+  context-3 — same endpoint/shape/1024-int8, ~33% cheaper, higher retrieval quality). A
+  model swap requires re-embedding the WHOLE `embedding_v2` column (v3 and v4 vectors are
+  not cross-compatible). The CODE bake-off arm below still names context-3; treat that as a
+  separate, not-yet-run measurement.

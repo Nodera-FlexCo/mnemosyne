@@ -32,7 +32,7 @@ function fakeContextualResponse(docChunkCounts: number[], dim = 1024) {
         ),
       })),
     })),
-    model: "voyage-context-3",
+    model: "voyage-context-4",
     usage: { total_tokens: 42 },
   };
 }
@@ -79,7 +79,7 @@ describe("embedContextual (AC-020)", () => {
     expect(body.inputs).toEqual(docs);
     expect(Array.isArray(body.inputs[0])).toBe(true);
     // model + flexible-dim + int8 quantization
-    expect(body.model).toBe("voyage-context-3");
+    expect(body.model).toBe("voyage-context-4");
     expect(body.input_type).toBe("document");
     expect(body.output_dimension).toBe(1024);
     expect(body.output_dtype).toBe("int8");

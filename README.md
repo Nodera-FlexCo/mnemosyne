@@ -124,7 +124,7 @@ depth cap, a limit, and a path-array cycle guard, and fall back to a file read w
 graph is empty.
 
 **Contextual embeddings (memory-mcp).** Memory embeddings move from the legacy flat
-`embedding` (voyage-4-large) to `embedding_v2` (voyage-context-3 contextual, 1024-dim int8
+`embedding` (voyage-4-large) to `embedding_v2` (voyage-context-4 contextual, 1024-dim int8
 `halfvec`) via a **blue/green** swap: a parallel column is added (`003_context_embeddings.sql`),
 backfilled out of band (`backfill:context`), indexed CONCURRENTLY (`index:v2`), then the
 query path flips — **gated on a recall check** against a held-out eval set, never an eyeball.
@@ -169,7 +169,7 @@ scripts: `npm run index:v2` and `npm run index:decision`.
 - [x] Stage 0: host hardening, Docker, data layer
 - [ ] Stage 0: cloudflare tunnel (needs domain + token)
 - [x] Stage 1: memory engine — durable hybrid (semantic + lexical) recall + entity graph;
-      contextual embeddings (voyage-context-3, blue/green) + structured decision log
+      contextual embeddings (voyage-context-4, blue/green) + structured decision log
 - [x] Stage 2: codebase engine — semantic + lexical code search + deterministic AST code
       graph (symbols + call/import edges) with the three graph tools + observable indexing
 - [ ] Stage 3: optimization — eval harness (Langfuse + Promptfoo); the code-embedder

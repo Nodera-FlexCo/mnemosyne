@@ -1,7 +1,7 @@
 // One-shot, RESUMABLE operator script: re-embed every active memory through the
-// contextual endpoint (voyage-context-3) into memory.memories.embedding_v2, in batches
-// of ≤500. This is a DELIBERATE ops action that spends Voyage quota ($0.18/M for
-// context-3) — it is NEVER run on container start. Gate: `npm run backfill:context`.
+// contextual endpoint (voyage-context-4) into memory.memories.embedding_v2, in batches
+// of ≤500. This is a DELIBERATE ops action that spends Voyage quota ($0.12/M for
+// context-4, first 200M free) — it is NEVER run on container start. Gate: `npm run backfill:context`.
 //
 // Resumability: it selects only active rows where embedding_v2 IS NULL, so re-running
 // continues where it stopped. The Retry-After/429 backoff is handled inside voyageFetch

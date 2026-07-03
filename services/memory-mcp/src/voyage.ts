@@ -54,7 +54,7 @@ export async function embed(
 }
 
 /**
- * Contextualized chunk embeddings (voyage-context-3) via POST /v1/contextualizedembeddings.
+ * Contextualized chunk embeddings (voyage-context-4) via POST /v1/contextualizedembeddings.
  *
  * `inputs` is NESTED: one inner array per document, each holding that document's
  * ordered chunks (`[[doc1_chunk1, doc1_chunk2], [doc2_chunk1], ...]`). Each chunk is
