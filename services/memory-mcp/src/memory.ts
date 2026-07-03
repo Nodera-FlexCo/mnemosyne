@@ -738,7 +738,11 @@ export function formatHits(
   options: Partial<SearchMemoryResult> = {},
 ): string {
   const lines: string[] = [];
-  if (options.retriedWithoutFilters && options.droppedFilters) {
+  if (
+    hits.length > 0 &&
+    options.retriedWithoutFilters &&
+    options.droppedFilters
+  ) {
     lines.push(
       `Note: no results matched filters {${formatDroppedFilters(options.droppedFilters)}}; showing unfiltered results. Filters are optional — retry with different values to narrow.`,
     );

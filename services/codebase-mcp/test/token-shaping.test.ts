@@ -75,6 +75,7 @@ import { formatHits, fuseCodeCandidates, searchCode } from "../src/search.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PROJ = "ws2-code-shaping";
+const EMPTY_PROJ = "ws2-code-shaping-empty";
 const REPO_A = "ws2-repo-a";
 const REPO_B = "ws2-repo-b";
 const cid = (n: number) => `30000000-0000-4000-8000-00000000000${n}`;
@@ -302,6 +303,18 @@ describe.skipIf(skip)("code token shaping (AC-201/202/203/204)", () => {
     expect(result.retriedWithoutFilters).toBe(true);
     expect(result.hits.length).toBe(1);
     expect(result.hits[0].filePath).toBe("scripts/gateway.py");
+  });
+
+  it("AC-202: filtered zero-corpus retry suppresses the unfiltered-results notice", async () => {
+    const result = await searchCode({
+      projectId: EMPTY_PROJ,
+      query: "gateway",
+      path: "no/such/path",
+      k: 5,
+    });
+    expect(result.hits).toEqual([]);
+    expect(result.retriedWithoutFilters).toBe(true);
+    expect(formatHits(result.hits, result)).toBe("No matching code.");
   });
 
   it("AC-203: formatted output contains no raw scores", async () => {

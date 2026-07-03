@@ -1,21 +1,28 @@
 import type { CodeHit } from "./search.js";
 
+export interface MergeableCodeHit extends CodeHit {
+  repositoryId: string;
+}
+
 interface RankedHit {
-  hit: CodeHit;
+  hit: MergeableCodeHit;
   rank: number;
 }
 
 interface Survivor {
-  hit: CodeHit;
+  hit: MergeableCodeHit;
   rank: number;
   mergedCount: number;
 }
 
-function chunkCount(hit: CodeHit): number {
+function chunkCount(hit: MergeableCodeHit): number {
   return hit.mergedCount ?? 1;
 }
 
-function unionRange(a: CodeHit, b: CodeHit): { startLine: number; endLine: number } {
+function unionRange(
+  a: MergeableCodeHit,
+  b: MergeableCodeHit,
+): { startLine: number; endLine: number } {
   return {
     startLine: Math.min(a.startLine, b.startLine),
     endLine: Math.max(a.endLine, b.endLine),
@@ -26,11 +33,15 @@ function lineSpan(range: { startLine: number; endLine: number }): number {
   return range.endLine - range.startLine + 1;
 }
 
-function overlapsOrTouches(a: CodeHit, b: CodeHit): boolean {
+function overlapsOrTouches(a: MergeableCodeHit, b: MergeableCodeHit): boolean {
   return a.startLine <= b.endLine + 1 && b.startLine <= a.endLine + 1;
 }
 
-function canMerge(a: CodeHit, b: CodeHit, maxSpan: number): boolean {
+function canMerge(
+  a: MergeableCodeHit,
+  b: MergeableCodeHit,
+  maxSpan: number,
+): boolean {
   if (!overlapsOrTouches(a, b)) return false;
   return lineSpan(unionRange(a, b)) <= maxSpan;
 }
@@ -50,12 +61,16 @@ function mergeIntoLeader(leader: Survivor, incoming: Survivor): Survivor {
   };
 }
 
-export function mergeAdjacentHits(hits: CodeHit[], maxSpan: number): CodeHit[] {
+export function mergeAdjacentHits(
+  hits: MergeableCodeHit[],
+  maxSpan: number,
+): MergeableCodeHit[] {
   const byFile = new Map<string, RankedHit[]>();
   hits.forEach((hit, rank) => {
-    const group = byFile.get(hit.filePath);
+    const key = `${hit.repositoryId} ${hit.filePath}`;
+    const group = byFile.get(key);
     if (group) group.push({ hit, rank });
-    else byFile.set(hit.filePath, [{ hit, rank }]);
+    else byFile.set(key, [{ hit, rank }]);
   });
 
   const survivors: Survivor[] = [];

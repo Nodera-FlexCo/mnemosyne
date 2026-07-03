@@ -1,7 +1,7 @@
 import { pool } from "./db/pool.js";
 import { embedCode, rerank, toVectorLiteral } from "./voyage.js";
 import { config } from "./config.js";
-import { mergeAdjacentHits } from "./merge-hits.js";
+import { mergeAdjacentHits, type MergeableCodeHit } from "./merge-hits.js";
 
 export interface CodeHit {
   chunkId: string;
@@ -20,6 +20,7 @@ export interface ScoredCodeHit extends CodeHit {
 
 interface Row {
   id: string;
+  repository_id: string;
   file_path: string;
   start_line: number;
   end_line: number;
@@ -154,7 +155,7 @@ export async function fuseCodeCandidates(input: {
       ORDER BY c.embedding <=> $2::halfvec
       LIMIT ${RECALL_LIMIT}
     )
-    SELECT c.id, c.file_path, c.start_line, c.end_line, c.symbol_name, c.language, c.content,
+    SELECT c.id, c.repository_id, c.file_path, c.start_line, c.end_line, c.symbol_name, c.language, c.content,
            bm25.rank::int AS bm25_rank, vec.rank::int AS vec_rank,
            (COALESCE(1.0/(${RRF_K}+bm25.rank),0) + COALESCE(1.0/(${RRF_K}+vec.rank),0))::float8 AS rrf
     FROM codebase.code_chunks c
@@ -204,6 +205,24 @@ export async function rerankCodeHits(
   });
 }
 
+function toMergeableCodeHits(
+  hits: CodeHit[],
+  rows: FusedCodeCandidate[],
+): MergeableCodeHit[] {
+  const repoByChunkId = new Map(rows.map((r) => [r.id, r.repository_id]));
+  return hits.map((hit) => {
+    const repositoryId = repoByChunkId.get(hit.chunkId);
+    if (repositoryId === undefined) {
+      throw new Error(`missing repository for code chunk ${hit.chunkId}`);
+    }
+    return { ...hit, repositoryId };
+  });
+}
+
+function stripMergeRepository(hits: MergeableCodeHit[]): CodeHit[] {
+  return hits.map(({ repositoryId: _repositoryId, ...hit }) => hit);
+}
+
 export async function searchCode(input: {
   projectId: string;
   query: string;
@@ -230,7 +249,12 @@ export async function searchCode(input: {
   }
   const scored =
     rows.length === 0 ? [] : await rerankCodeHits(input.query, rows, input.k);
-  const hits = mergeAdjacentHits(toPublicCodeHits(scored), config.maxMergedLines);
+  const hits = stripMergeRepository(
+    mergeAdjacentHits(
+      toMergeableCodeHits(toPublicCodeHits(scored), rows),
+      config.maxMergedLines,
+    ),
+  );
   return {
     hits,
     poolSize: rows.length,
@@ -246,7 +270,11 @@ export function formatHits(
   options: Partial<SearchCodeResult> = {},
 ): string {
   const lines: string[] = [];
-  if (options.retriedWithoutFilters && options.droppedFilters) {
+  if (
+    hits.length > 0 &&
+    options.retriedWithoutFilters &&
+    options.droppedFilters
+  ) {
     lines.push(
       `Note: no results matched filters {${formatDroppedFilters(options.droppedFilters)}}; showing unfiltered results. Filters are optional — retry with different values to narrow.`,
     );

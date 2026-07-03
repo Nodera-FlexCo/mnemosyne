@@ -1,17 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { mergeAdjacentHits } from "../src/merge-hits.js";
 import { formatHits } from "../src/search.js";
-import type { CodeHit } from "../src/search.js";
+import type { MergeableCodeHit } from "../src/merge-hits.js";
 
 function hit(
   chunkId: string,
   filePath: string,
   startLine: number,
   endLine: number,
-  extra: Partial<CodeHit> = {},
-): CodeHit {
+  extra: Partial<MergeableCodeHit> = {},
+): MergeableCodeHit {
   return {
     chunkId,
+    repositoryId: "repo",
     filePath,
     startLine,
     endLine,
@@ -89,6 +90,15 @@ describe("mergeAdjacentHits", () => {
     expect(mergeAdjacentHits(hits, 120)).toEqual(hits);
   });
 
+  it("never merges same-path chunks from different repositories", () => {
+    const hits = [
+      hit("a", "src/config.ts", 1, 60, { repositoryId: "repo-a" }),
+      hit("b", "src/config.ts", 49, 108, { repositoryId: "repo-b" }),
+    ];
+
+    expect(mergeAdjacentHits(hits, 120)).toEqual(hits);
+  });
+
   it("preserves the original rank order of survivor hits", () => {
     const hits = [
       hit("b1", "src/b.ts", 100, 120),
@@ -123,9 +133,13 @@ describe("mergeAdjacentHits", () => {
   });
 
   it("property: output line ranges within a file never overlap when mergeable components fit the cap", () => {
+    // When a mergeable component exceeds the span cap, survivors can overlap:
+    // adjacent chunks are built with a 12-line overlap, and cap-split survivors
+    // may retain that bounded overlap. The never-overlap property applies when
+    // each mergeable component fits under the cap.
     for (let seed = 1; seed <= 100; seed++) {
       const rnd = mulberry32(seed);
-      const hits: CodeHit[] = [];
+      const hits: MergeableCodeHit[] = [];
       for (const filePath of ["src/a.ts", "src/b.ts", "src/c.ts"]) {
         let cursor = 1;
         for (let i = 0; i < 12; i++) {
@@ -153,5 +167,24 @@ describe("mergeAdjacentHits", () => {
         }
       }
     }
+  });
+
+  it("bounds capped survivor overlap to the chunk overlap", () => {
+    const merged = mergeAdjacentHits(
+      [
+        hit("a", "src/a.ts", 1, 60),
+        hit("b", "src/a.ts", 49, 108),
+        hit("c", "src/a.ts", 97, 156),
+      ],
+      120,
+    ).sort((a, b) => a.startLine - b.startLine);
+
+    expect(merged).toHaveLength(2);
+    const overlap =
+      Math.min(merged[0].endLine, merged[1].endLine) -
+      Math.max(merged[0].startLine, merged[1].startLine) +
+      1;
+    expect(overlap).toBeGreaterThan(0);
+    expect(overlap).toBeLessThanOrEqual(12);
   });
 });

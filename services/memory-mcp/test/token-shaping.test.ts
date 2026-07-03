@@ -268,6 +268,23 @@ describe("memory tool descriptions (AC-205)", () => {
   });
 });
 
+describe("memory_search input validation", () => {
+  it("rejects an invalid after timestamp as a tool error before search runs", async () => {
+    const client = await connectClient();
+    try {
+      const got = await callTool(client, "memory_search", {
+        query: "gateway",
+        after: "not-a-date",
+      });
+
+      expect(got.isError).toBe(true);
+      expect(got.text).toMatch(/invalid.*datetime|iso.*datetime/i);
+    } finally {
+      await client.close();
+    }
+  });
+});
+
 describe.skipIf(skip)("memory token shaping (AC-201/202/203/204/207)", () => {
   let pool: pg.Pool;
   let client: Awaited<ReturnType<typeof connectClient>>;
@@ -424,6 +441,18 @@ describe.skipIf(skip)("memory token shaping (AC-201/202/203/204/207)", () => {
     });
     expect(result.hits).toEqual([]);
     expect(result.retriedWithoutFilters).toBe(false);
+    expect(formatHits(result.hits, result)).toBe("No matching memories.");
+  });
+
+  it("AC-202: filtered zero-corpus retry suppresses the unfiltered-results notice", async () => {
+    const result = await searchMemory({
+      projectId: EMPTY_PROJ,
+      query: "anything at all",
+      tags: ["no-such-tag"],
+      limit: 5,
+    });
+    expect(result.hits).toEqual([]);
+    expect(result.retriedWithoutFilters).toBe(true);
     expect(formatHits(result.hits, result)).toBe("No matching memories.");
   });
 
