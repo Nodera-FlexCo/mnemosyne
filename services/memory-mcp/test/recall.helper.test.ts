@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   canonicalizeRanked,
-  loadRecallEval,
   meanRecallAtK,
   meanReciprocalRank,
   mrr,
@@ -281,22 +280,28 @@ describe("regressionExcluded (gate semantics)", () => {
   });
 });
 
-describe("seed eval fixture", () => {
-  it("loads and is shaped { k, rows }", () => {
-    const ev = loadRecallEval();
-    expect(typeof ev.k).toBe("number");
-    expect(Array.isArray(ev.rows)).toBe(true);
-    expect(ev.rows.length).toBeGreaterThanOrEqual(15);
-    for (const row of ev.rows) {
+// The fixture graduated at gate G0 (2026-07-03): the operator approved the v2
+// stable-id gold and renamed it over recall-eval.json (AC-109), so the v1
+// seed-shape assertions are retired and the frozen-gold contract is pinned instead.
+// `loadRecallEval` stays exported as gold:migrate's v1-input reader.
+describe("frozen gold fixture (v2, approved at G0)", () => {
+  it("loads as v2 with ≥30 rows, every row carrying non-empty gold + approval", () => {
+    const ev = tryLoadRecallEvalV2();
+    expect(ev).not.toBeNull();
+    expect(typeof ev!.k).toBe("number");
+    expect(ev!.rows.length).toBeGreaterThanOrEqual(30);
+    for (const row of ev!.rows) {
       expect(typeof row.query).toBe("string");
-      expect(Array.isArray(row.relevantTitles)).toBe(true);
-      expect(row.relevantTitles.length).toBeGreaterThan(0);
+      expect(row.relevantIds.length).toBeGreaterThan(0);
+      expect(row.approvedBy).toBeTruthy();
     }
   });
 
-  it("is flagged as a seed (must be expanded before the Wave-P flip)", () => {
-    const ev = loadRecallEval();
-    expect(ev._seed).toBe(true);
+  it("has a frozen non-empty test split and a changelog recording approval", () => {
+    const ev = tryLoadRecallEvalV2()!;
+    const test = ev.rows.filter((r) => r.split === "test");
+    expect(test.length).toBeGreaterThanOrEqual(10);
+    expect(ev.changelog.some((line) => /APPROVED/.test(line))).toBe(true);
   });
 });
 

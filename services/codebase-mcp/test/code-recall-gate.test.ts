@@ -52,84 +52,90 @@ const POOL_RECALL_MAX_DROP = 0.05;
 describe.skipIf(!HAS_DB)(
   "code recall regression gate — dev split (AC-105)",
   () => {
-    it("per-query nDCG@10 deltas vs baseline-dev.json show no significant regression", async () => {
-      // Rung 2: no committed baseline (and not a recording run).
-      if (!existsSync(BASELINE_PATH) && !RECORD) {
-        console.error(
-          `code-recall-gate: no ${BASELINE_PATH} — skipping (record one with EVAL_RECORD=1 at a flip gate)`,
-        );
-        expect(existsSync(BASELINE_PATH)).toBe(false); // structural assertion
-        return;
-      }
-
-      // Rung 3: eval file not yet v2.
-      const evalFile = loadCodeEval();
-      if (evalFile.version !== 2) {
-        console.error(
-          "code-recall-gate: code-eval.json is not v2 — skipping (add ids/splits first)",
-        );
-        expect(evalFile.version).toBeUndefined();
-        return;
-      }
-
-      const pool = new pg.Pool({
-        connectionString: process.env.DATABASE_URL,
-        max: 2,
-      });
-      try {
-        const projectId = config.defaultProjectId;
-
-        // Rung 4: unindexed corpus (the disposable-CI state).
-        const { rows } = await pool.query<{ n: string }>(
-          `SELECT count(*) AS n FROM codebase.code_chunks WHERE project_id = $1`,
-          [projectId],
-        );
-        const populated = Number(rows[0].n);
-        if (populated === 0) {
+    // Live flip-gate runs embed every dev query through Voyage (~1s/query) — far past
+    // vitest's 5s default; mocked/disposable-DB runs finish in ms either way.
+    it(
+      "per-query nDCG@10 deltas vs baseline-dev.json show no significant regression",
+      { timeout: 900_000 },
+      async () => {
+        // Rung 2: no committed baseline (and not a recording run).
+        if (!existsSync(BASELINE_PATH) && !RECORD) {
           console.error(
-            "code-recall-gate: no indexed chunks for the project — skipping (index the corpus first)",
+            `code-recall-gate: no ${BASELINE_PATH} — skipping (record one with EVAL_RECORD=1 at a flip gate)`,
           );
-          expect(populated).toBe(0);
+          expect(existsSync(BASELINE_PATH)).toBe(false); // structural assertion
           return;
         }
 
-        // Fresh dev-split run through the LIVE two-layer pipeline (embeds each query —
-        // Voyage quota on the operator's live run; CI never reaches this rung).
-        const fresh = await runCodeEval(evalFile, {
-          projectId,
-          repo: process.env.CODE_RECALL_REPO, // optional repo scope, as in code-recall.test.ts
-          split: "dev",
-        });
-
-        if (RECORD) {
-          const p = writeRunArtifact(runsDir, "dev", fresh);
+        // Rung 3: eval file not yet v2.
+        const evalFile = loadCodeEval();
+        if (evalFile.version !== 2) {
           console.error(
-            `code-recall-gate: recorded ${p} — copy to baseline-dev.json (commit it) to freeze the baseline`,
+            "code-recall-gate: code-eval.json is not v2 — skipping (add ids/splits first)",
           );
-          if (!existsSync(BASELINE_PATH)) return; // record-only run, nothing to gate yet
+          expect(evalFile.version).toBeUndefined();
+          return;
         }
 
-        const baseline = JSON.parse(
-          readFileSync(BASELINE_PATH, "utf8"),
-        ) as RunArtifact;
+        const pool = new pg.Pool({
+          connectionString: process.env.DATABASE_URL,
+          max: 2,
+        });
+        try {
+          const projectId = config.defaultProjectId;
 
-        const deltas = perQueryDeltas(baseline, fresh); // throws loudly on split drift
-        const ci = pairedBootstrapCI(deltas, { seed: 42 });
-        expect(
-          regressionExcluded(ci),
-          `nDCG@10 regressed: mean delta ${ci.mean.toFixed(4)}, 95% CI [${ci.ciLow.toFixed(4)}, ${ci.ciHigh.toFixed(4)}] excludes zero on the regression side`,
-        ).toBe(false);
+          // Rung 4: unindexed corpus (the disposable-CI state).
+          const { rows } = await pool.query<{ n: string }>(
+            `SELECT count(*) AS n FROM codebase.code_chunks WHERE project_id = $1`,
+            [projectId],
+          );
+          const populated = Number(rows[0].n);
+          if (populated === 0) {
+            console.error(
+              "code-recall-gate: no indexed chunks for the project — skipping (index the corpus first)",
+            );
+            expect(populated).toBe(0);
+            return;
+          }
 
-        // Coarse recall floor at the pool layer — the reranker cannot fix recall.
-        expect(
-          fresh.aggregates.recallAt25,
-          `pool-layer mean Recall@25 dropped > ${POOL_RECALL_MAX_DROP} absolute vs baseline`,
-        ).toBeGreaterThanOrEqual(
-          baseline.aggregates.recallAt25 - POOL_RECALL_MAX_DROP,
-        );
-      } finally {
-        await pool.end();
-      }
-    });
+          // Fresh dev-split run through the LIVE two-layer pipeline (embeds each query —
+          // Voyage quota on the operator's live run; CI never reaches this rung).
+          const fresh = await runCodeEval(evalFile, {
+            projectId,
+            repo: process.env.CODE_RECALL_REPO, // optional repo scope, as in code-recall.test.ts
+            split: "dev",
+          });
+
+          if (RECORD) {
+            const p = writeRunArtifact(runsDir, "dev", fresh);
+            console.error(
+              `code-recall-gate: recorded ${p} — copy to baseline-dev.json (commit it) to freeze the baseline`,
+            );
+            if (!existsSync(BASELINE_PATH)) return; // record-only run, nothing to gate yet
+          }
+
+          const baseline = JSON.parse(
+            readFileSync(BASELINE_PATH, "utf8"),
+          ) as RunArtifact;
+
+          const deltas = perQueryDeltas(baseline, fresh); // throws loudly on split drift
+          const ci = pairedBootstrapCI(deltas, { seed: 42 });
+          expect(
+            regressionExcluded(ci),
+            `nDCG@10 regressed: mean delta ${ci.mean.toFixed(4)}, 95% CI [${ci.ciLow.toFixed(4)}, ${ci.ciHigh.toFixed(4)}] excludes zero on the regression side`,
+          ).toBe(false);
+
+          // Coarse recall floor at the pool layer — the reranker cannot fix recall.
+          expect(
+            fresh.aggregates.recallAt25,
+            `pool-layer mean Recall@25 dropped > ${POOL_RECALL_MAX_DROP} absolute vs baseline`,
+          ).toBeGreaterThanOrEqual(
+            baseline.aggregates.recallAt25 - POOL_RECALL_MAX_DROP,
+          );
+        } finally {
+          await pool.end();
+        }
+      },
+    );
   },
 );
