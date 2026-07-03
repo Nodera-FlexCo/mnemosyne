@@ -110,12 +110,13 @@ export async function rerank(
   query: string,
   documents: string[],
   topK: number,
+  model: string = config.rerankModel,
 ): Promise<Array<{ index: number; score: number }>> {
   if (documents.length === 0) return [];
   const res = await voyageFetch("/rerank", {
     query,
     documents,
-    model: config.rerankModel,
+    model,
     top_k: Math.min(topK, documents.length),
   });
   const json = (await res.json()) as {
