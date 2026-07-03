@@ -75,27 +75,51 @@ These are the steps I (the operator) run; they are NOT run by the implementer/CI
 8. After a burn-in window, apply `sql/004_drop_legacy_embedding.sql` (lift the HOLD) and
    remove the legacy `embed()` write from `memory.ts`.
 
-## Recorded numbers
+## Recorded numbers — G0, 2026-07-03 (operator record)
 
-Filled from the two run artifacts' `aggregates` (step 5):
+Corpus: 2124 active memories, project `nodex`, fully backfilled with
+**voyage-context-4** (AC-021 probe = 0), `mem_hnsw_v2` REINDEXed + VACUUMed.
+Gold: frozen v2 `recall-eval.json` (50 rows, 33 dev / 17 test). Artifact:
+`test/runs/baseline-dev.json` (= the committed `2026-07-03-dev.json` run).
 
-| Metric (artifact aggregates) | BEFORE (v1, `embedding`) | AFTER (v2, `embedding_v2`) |
-| ---------------------------- | ------------------------ | -------------------------- |
-| pool Recall@25               | TBD — filled by operator after the live backfill run | TBD |
-| nDCG@10                      | TBD                      | TBD                        |
-| MRR@10                       | TBD                      | TBD                        |
-| dev-split size               | TBD                      | (same set)                 |
+**BEFORE (v1, `embedding`) was never measured**: the scalar `V1_RECALL_AT_10_BASELINE`
+mechanism was retired before any v1 number was recorded, and the branch code cannot
+exercise the legacy query path (the flip is compiled in). The flip decision therefore
+rests on (a) healthy absolute v2 numbers below, (b) the research-grounded expectation
+for contextual embeddings, and (c) the intact rollback path (legacy `embedding` column
++ `mem_hnsw` stay until burn-in; `004` stays HOLD).
+
+| Metric (artifact aggregates) | context-3 v2 (accidental arm, see note) | **context-4 v2 (baseline)** |
+| ---------------------------- | --------------------------------------- | --------------------------- |
+| pool Recall@25               | 0.9394                                   | **0.9394**                  |
+| nDCG@10                      | 0.6917                                   | **0.7035**                  |
+| MRR@10                       | 0.7121                                   | **0.7321**                  |
+| dev-split size               | 33                                       | 33 (same set)               |
+
+> **Accidental context-3 vs context-4 comparison:** a compose env-default drift
+> (fixed the same day — the model is now hard-pinned in `compose.yaml`) first ran the
+> backfill AND the eval with voyage-context-3, producing a *matched* context-3 pipeline
+> measurement before the corrected context-4 re-run of the identical dev split on the
+> identical corpus rows. context-4 wins directionally: +0.012 nDCG@10, +0.020 MRR@10,
+> equal pool recall. N=33, not statistically gated — recorded as corroboration, not
+> proof. Zero-nDCG rows in both arms: m-018, m-023 (known-hard gold).
 
 ## Finalized tuned constants (set in `src/memory.ts`)
 
+Kept at the no-regression defaults for the G0 flip: the baseline is healthy and the
+step-6 sweep (RRF_K × blend × reranker) is deferred to the wave-5/6 harness machinery
+(`eval:compare` + `bakeoff:rerank`), where each arm becomes a recorded, paired-gated
+A/B instead of an eyeballed sweep. Constants remain the single source in `src/memory.ts`;
+any future retune lands there and re-records here.
+
 | Constant                 | Default (pre-flip) | Tuned (operator) |
 | ------------------------ | ------------------ | ---------------- |
-| `RRF_K`                  | 60                 | TBD              |
-| `BLEND_RELEVANCE`        | 0.7                | TBD              |
-| `BLEND_RECENCY`          | 0.2                | TBD              |
-| `BLEND_IMPORTANCE`       | 0.1                | TBD              |
-| `RECENCY_HALFLIFE_DAYS`  | 30                 | TBD              |
-| reranker                 | rerank-2.5-lite    | TBD (confirm still helps) |
+| `RRF_K`                  | 60                 | 60 (kept; sweep deferred to wave-5/6 A/B) |
+| `BLEND_RELEVANCE`        | 0.7                | 0.7 (kept)       |
+| `BLEND_RECENCY`          | 0.2                | 0.2 (kept)       |
+| `BLEND_IMPORTANCE`       | 0.1                | 0.1 (kept)       |
+| `RECENCY_HALFLIFE_DAYS`  | 30                 | 30 (kept)        |
+| reranker                 | rerank-2.5-lite    | rerank-2.5-lite (wave-6 bakeoff decides the 2.5 swap) |
 
 ## Why a recall gate, not eyeball
 
