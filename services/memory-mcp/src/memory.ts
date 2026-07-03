@@ -292,23 +292,45 @@ export async function listMemories(input: {
   };
 }
 
-export async function searchMemory(input: {
+// ── Two-phase search core (Wave 1) ───────────────────────────────────────────────────
+// searchMemory = fuseCandidates (ONE RRF SQL path → candidate pool) → rerankAndBlend
+// (rerank → blend → shape). Both phases are exported so the eval harness can score the
+// pool layer (Recall@25) and the full pipeline (nDCG@10) through the SAME code the live
+// handler runs (AC-102) — never a duplicated SQL path.
+
+/** A pooled candidate with its per-arm RRF ranks (NULL when absent from that arm). */
+export interface FusedCandidate extends CandidateRow {
+  bm25_rank: number | null;
+  vec_rank: number | null;
+}
+
+/**
+ * Phase 1: hybrid recall + RRF fusion. Embeds the query (contextual — the corpus is
+ * voyage-context-4) and returns the fused candidate pool: `config.candidatePool` rows
+ * max, RRF-ordered, with per-arm ranks. `input.limit` is the FINAL hit limit used by
+ * `rerankAndBlend`, NOT the pool size — it is accepted here so `searchMemory` can pass
+ * its input through unchanged.
+ */
+export async function fuseCandidates(input: {
   projectId: string;
   query: string;
   type?: MemoryType;
-  limit: number;
-}): Promise<Hit[]> {
+  limit?: number;
+}): Promise<FusedCandidate[]> {
   // BOTH sides contextual (critical): the corpus is voyage-context-4 (embedding_v2), so
   // the query MUST be embedded by the same model family or recall craters.
   const [qvec] = await embedContextualSingle([input.query], "query");
-  const typeFilter = input.type ? "AND m.type = $5::memory.memory_type" : "";
   const params: unknown[] = [
     input.query,
     toVectorLiteral(qvec),
     input.projectId,
     config.candidatePool,
   ];
-  if (input.type) params.push(input.type);
+  let typeFilter = "";
+  if (input.type) {
+    params.push(input.type);
+    typeFilter = `AND m.type = $${params.length}::memory.memory_type`;
+  }
 
   const sql = `
     WITH q AS (SELECT plainto_tsquery('english', $1) AS tsq),
@@ -328,6 +350,7 @@ export async function searchMemory(input: {
       LIMIT ${RECALL_LIMIT}
     )
     SELECT m.id, m.title, m.content, m.type, m.importance, m.created_at, m.event_date,
+           bm25.rank::int AS bm25_rank, vec.rank::int AS vec_rank,
            COALESCE(1.0/(${RRF_K}+bm25.rank),0) + COALESCE(1.0/(${RRF_K}+vec.rank),0) AS rrf
     FROM memory.memories m
     LEFT JOIN bm25 ON bm25.id = m.id
@@ -336,12 +359,22 @@ export async function searchMemory(input: {
     ORDER BY rrf DESC
     LIMIT $4`;
 
-  const { rows } = await pool.query<CandidateRow>(sql, params);
-  if (rows.length === 0) return [];
+  const { rows } = await pool.query<FusedCandidate>(sql, params);
+  return rows;
+}
 
+/**
+ * Phase 2: rerank the candidate pool, blend relevance with recency + importance, and
+ * shape the top-`limit` hits (180-char whitespace-collapsed snippet, 4-decimal score).
+ */
+export async function rerankAndBlend(
+  query: string,
+  rows: FusedCandidate[],
+  limit: number,
+): Promise<Hit[]> {
   // Rerank candidate pool, then blend relevance with recency + importance.
   const docs = rows.map((r) => `${r.title}\n${r.content}`.slice(0, 1200));
-  const ranked = await rerank(input.query, docs, rows.length);
+  const ranked = await rerank(query, docs, rows.length);
   const relById = new Map<string, number>();
   for (const r of ranked) relById.set(rows[r.index].id, r.score);
 
@@ -359,7 +392,7 @@ export async function searchMemory(input: {
   });
   scored.sort((a, b) => b.final - a.final);
 
-  return scored.slice(0, input.limit).map(({ r, final }) => ({
+  return scored.slice(0, limit).map(({ r, final }) => ({
     id: r.id,
     title: r.title,
     type: r.type,
@@ -367,6 +400,17 @@ export async function searchMemory(input: {
     importance: r.importance,
     score: Number(final.toFixed(4)),
   }));
+}
+
+export async function searchMemory(input: {
+  projectId: string;
+  query: string;
+  type?: MemoryType;
+  limit: number;
+}): Promise<Hit[]> {
+  const rows = await fuseCandidates(input);
+  if (rows.length === 0) return [];
+  return rerankAndBlend(input.query, rows, input.limit);
 }
 
 export async function getMemory(
