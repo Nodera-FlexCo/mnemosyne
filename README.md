@@ -106,6 +106,16 @@ DATABASE_URL=<live> VOYAGE_API_KEY=<live> EVAL_RECORD=1 \
 `memory_update` · `memory_list` · `memory_delete` · `memory_get_entity` ·
 `memory_decision_chain`
 
+- **`memory_search`** returns rank-only compact hits with
+  `createdAt`, `eventDate`, `effectiveDate` (`eventDate ?? createdAt`), and `status`.
+  Optional refinements: `type`, `tags` (ANY-of metadata tags), and `after` (ISO timestamp
+  compared to `COALESCE(event_date, created_at)`). If `tags`/`after` match no candidates,
+  the tool retries once without those optional filters and prepends the retry notice.
+- **`memory_get_recent`** returns the same public hit fields as `memory_search` and keeps
+  newest-created ordering (`created_at DESC`).
+- **`memory_get`** includes `status`, `event_date`, and `superseded_by` in its JSON. It
+  prepends `superseded — see <successor id>` for superseded rows with a successor, or
+  `status=<status>` for other non-active rows; the row is still returned.
 - **`memory_store`** now accepts a typed **decision-log** shape (only meaningful when
   `sourceKind='decision'`): `decisionProject`, `decisionStatus`
   (`active`|`superseded`|`deferred`), `decidedAt`, `supersedesId` (the prior decision
@@ -119,6 +129,13 @@ DATABASE_URL=<live> VOYAGE_API_KEY=<live> EVAL_RECORD=1 \
 `code_search` · `code_get_file` · `code_index_status` · `code_reindex` ·
 `code_graph_expand` · `code_symbol_lookup` · `code_trace_path`
 
+- **`code_search`** returns rank-only hits. Optional refinements: `repo`, `path`
+  (substring of repo-relative path), `extension` (with or without leading dot), and
+  `language`. If `path`/`extension` match no candidates, the tool retries once without
+  those optional filters while preserving `repo`/`language`, and prepends the retry
+  notice. When top-k contains adjacent/overlapping chunks of the same file, results merge
+  into a single line span capped by `MAX_MERGED_LINES` (default 120), annotated as
+  `(spans N chunks)`; merged responses are not backfilled.
 - **`code_graph_expand`** (new) — given a symbol name, a `file`(+`line`), or a
   `code_search` `chunkId`, returns its definition plus callers/callees from the AST call
   graph as structured rows `{name, file:line, depth, edge_type}`. `direction`

@@ -89,6 +89,29 @@ burns Voyage quota there; CI never reaches that rung).
 The gate machinery itself is proven fail-able by the `*-gate-sim.test.ts`
 test-of-the-test suites (synthetic baseline 0.2 above reality → FAIL; equal → PASS).
 
+## Response shaping (WS2)
+
+Tool responses are deliberately shaped for token efficiency, not raw scorer inspection
+(research: `.claude/research/2026-07-03-retrieval-improvement-scaling-token-efficiency.md`).
+Public search hits are rank-only: callers see rank, identifiers, dates, status, and
+snippets, but not raw rerank/blend scores. Internal scored hits remain available inside
+`rerankAndBlend()` / `rerankCodeHits()` for harness composition and scoring.
+
+Filters are plain SQL pre-filters in BOTH RRF arms before fusion:
+
+| Tool | Optional filters | Semantics |
+| --- | --- | --- |
+| `memory_search` | `tags`, `after` | `tags` is ANY-of metadata tag matching; `after` compares `COALESCE(event_date, created_at)` |
+| `code_search` | `path`, `extension` | `path` is a substring of the repo-relative path; `extension` matches the file suffix |
+
+If any optional refinement filter yields an empty candidate pool, the tool retries once
+without those optional filters and prepends the retry notice. Existing scoping filters
+(`type` for memory; `repo`/`language` for code) are preserved on the retry. Truncated
+responses append a steering line that recommends smaller targeted searches and names the
+available filters as optional refinements. Code hits additionally merge adjacent or
+overlapping same-file chunks after top-k reranking, capped by `MAX_MERGED_LINES`
+(default 120); k is a cap, so merged responses are not backfilled.
+
 ## Gold lifecycle: synthetic-now, logs-forever
 
 1. **Seed** (`provenance: "seed-v1"`) — the hand-written rows, migrated to stable ids
