@@ -44,7 +44,7 @@ describe("distill-eval (codebase) — end-to-end with injected deps", () => {
       query: vi.fn(async (_t: string, _p: unknown[]) => ({ rows: SAMPLE })),
     };
     const complete = vi.fn(
-      async () =>
+      async (_system: string, _user: string) =>
         `[{"query":"bearer token verification","suggestedGold":["${SAMPLE[0].file_path}"],"archetype":"exact-symbol"}]`,
     );
     const outPath = join(tmp, "candidates.json");

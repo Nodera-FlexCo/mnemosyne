@@ -90,7 +90,7 @@ describe("distill-eval (memory) — end-to-end with injected deps", () => {
   it("samples stratified, prompts the injected model, writes approved:false candidates", async () => {
     const pool = mockPool(SAMPLE);
     const complete = vi.fn(
-      async (system: string, user: string) =>
+      async (_system: string, _user: string) =>
         `[{"query":"which embedding model did we pick","suggestedGold":["${SAMPLE[0].id}"],"archetype":"decision-recall"},
           {"query":"how do I redeploy the stack","suggestedGold":["${SAMPLE[1].id}"],"archetype":"conceptual-where-how"}]`,
     );
