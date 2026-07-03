@@ -13,6 +13,7 @@
 // per-path uuid[] accumulator: a hop into a symbol already on the current path is rejected,
 // so the A↔B fixture cycle terminates instead of looping forever.
 
+import type pg from "pg";
 import { pool } from "../db/pool.js";
 
 export type Direction = "callees" | "callers" | "both";
@@ -30,6 +31,20 @@ export interface GraphRow {
 export const DEFAULT_DEPTH = 4;
 export const MAX_DEPTH = 10;
 export const DEFAULT_LIMIT = 50;
+
+// ── Traversal engine routing (Wave 3 graph hardening, AC-401) ────────────────
+// Depth ≤ 4 keeps the recursive CTE (with `SET LOCAL work_mem` on a dedicated
+// client — the path-array walk is memory-hungry on dense graphs). Depth ≥ 5
+// switches to app-side iterative BFS: one frontier query per level, a JS visited
+// set, and a per-level cap, so a deep expand can't blow up the CTE working set.
+export const BFS_DEPTH_THRESHOLD = 5;
+export const BFS_LEVEL_CAP = 5000;
+export const CTE_WORK_MEM = "256MB";
+
+/** Router decision (exported for tests): depth ≥ threshold → app-side BFS. */
+export function usesBfs(depth: number | undefined): boolean {
+  return clampDepth(depth) >= BFS_DEPTH_THRESHOLD;
+}
 
 /** Clamp a client-supplied depth into [1, MAX_DEPTH]; default when unset/NaN. */
 export function clampDepth(depth: number | undefined): number {
@@ -191,70 +206,24 @@ interface TraverseRow {
   ambiguous: boolean;
 }
 
-/**
- * Expand the graph from a set of seed symbol ids along call edges. `direction` controls
- * which way call edges are followed; `both` returns the union of callers + callees over
- * the seeds (the def rows are supplied by the caller via resolveSeed and prepended).
- *
- * The recursive CTE carries a uuid[] path for the cycle guard and a depth counter. We use
- * UNION ALL + the path-array guard (not UNION) so each acyclic path keeps its own depth.
- */
-export async function expand(
-  seedIds: string[],
-  direction: Direction,
-  depth: number,
-  limit: number,
-): Promise<GraphRow[]> {
-  if (seedIds.length === 0) return [];
-  const maxDepth = clampDepth(depth);
-  const lim = clampLimit(limit);
-
-  // Build the recursive walk for one direction. `call` edges only — import edges over-connect
-  // (every symbol in an importing file links to the imported one) and would swamp a call trace.
-  // callees: follow from_symbol -> to_symbol. callers: follow to_symbol -> from_symbol.
-  const buildWalk = (dir: "callees" | "callers"): string => {
-    const join =
-      dir === "callees" ? "e.from_symbol = w.id" : "e.to_symbol = w.id";
-    const nextId = dir === "callees" ? "e.to_symbol" : "e.from_symbol";
-    const label = dir === "callees" ? "call→" : "call←";
-    return `
-      SELECT ${nextId} AS id, w.depth + 1 AS depth, w.path || ${nextId} AS path,
-             '${label}'::text AS edge_type
-      FROM walk w
-      JOIN codebase.symbol_edges e ON ${join}
-      WHERE e.kind = 'call'
-        AND w.depth < ${maxDepth}
-        AND NOT (${nextId} = ANY(w.path))`;
+function toGraphRow(r: TraverseRow): GraphRow {
+  return {
+    id: r.id,
+    name: r.name,
+    file: r.file_path,
+    line: r.start_line,
+    depth: r.depth,
+    edge_type: r.edge_type,
+    ambiguous: r.ambiguous,
   };
+}
 
-  const recursiveTerms: string[] = [];
-  if (direction === "callees" || direction === "both") {
-    recursiveTerms.push(buildWalk("callees"));
-  }
-  if (direction === "callers" || direction === "both") {
-    recursiveTerms.push(buildWalk("callers"));
-  }
-
-  const sql = `
-    WITH RECURSIVE seeds(id) AS (
-      SELECT unnest($1::uuid[])
-    ),
-    walk(id, depth, path, edge_type) AS (
-      SELECT s.id, 0, ARRAY[s.id], 'def'::text FROM seeds s
-      UNION ALL
-      ${recursiveTerms.join("\n      UNION ALL\n")}
-    ),
-    -- shallowest reach per symbol (a symbol reachable by several paths shows its min depth).
-    reached AS (
-      SELECT id, min(depth) AS depth,
-             (array_agg(edge_type ORDER BY depth))[1] AS edge_type
-      FROM walk
-      GROUP BY id
-    ),
-    -- ambiguity (AC-010): a call hop whose target NAME matched >1 distinct symbol from the
-    -- same caller. First find the ambiguous (from_symbol, target name) groups, then project
-    -- each member to_symbol id — those targets were name-matched and must be labeled.
-    amb_groups AS (
+// Ambiguity detection (AC-010), shared VERBATIM by the CTE and BFS engines so the
+// `ambiguous` flag can never diverge between them: a call hop whose target NAME matched
+// >1 distinct symbol from the same caller. First find the ambiguous (from_symbol, target
+// name) groups, then project each member to_symbol id — those targets were name-matched
+// and must be labeled. Embed as trailing CTE clauses (expects a preceding `WITH ... ,`).
+const AMBIGUITY_CTES = `amb_groups AS (
       SELECT e.from_symbol, st.name AS to_name
       FROM codebase.symbol_edges e
       JOIN codebase.symbols st ON st.id = e.to_symbol
@@ -269,7 +238,132 @@ export async function expand(
       JOIN amb_groups g
         ON g.from_symbol = e.from_symbol AND g.to_name = st.name
       WHERE e.kind = 'call'
-    )
+    )`;
+
+/**
+ * Run one query on a dedicated pooled client inside a BEGIN/COMMIT with
+ * `SET LOCAL work_mem` (AC-401): the recursive path-array CTEs are the only
+ * memory-hungry queries in this service, so they get a per-transaction bump
+ * instead of a global one. SET LOCAL requires an explicit transaction.
+ */
+async function queryWithWorkMem<T extends pg.QueryResultRow>(
+  sql: string,
+  params: unknown[],
+): Promise<T[]> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`SET LOCAL work_mem = '${CTE_WORK_MEM}'`);
+    const { rows } = await client.query<T>(sql, params);
+    await client.query("COMMIT");
+    return rows;
+  } catch (e) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      /* the throw below is the real signal */
+    }
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Expand the graph from a set of seed symbol ids along call edges. `direction` controls
+ * which way call edges are followed; `both` returns the union of callers + callees over
+ * the seeds (the def rows are supplied by the caller via resolveSeed and prepended).
+ *
+ * Router (AC-401): depth ≤ 4 → recursive CTE (`expandCte`); depth ≥ 5 → app-side
+ * iterative BFS (`expandBfs`). Both engines return the identical GraphRow contract
+ * (min-depth per symbol, first-reach edge label, shared ambiguity definition) — the
+ * traverse-bfs parity test pins BFS ≡ CTE at overlapping depths.
+ */
+export async function expand(
+  seedIds: string[],
+  direction: Direction,
+  depth: number,
+  limit: number,
+): Promise<GraphRow[]> {
+  if (seedIds.length === 0) return [];
+  return usesBfs(depth)
+    ? expandBfs(seedIds, direction, depth, limit)
+    : expandCte(seedIds, direction, depth, limit);
+}
+
+/**
+ * CTE engine (depth ≤ 4 path). Each direction is its OWN recursive CTE carrying a uuid[]
+ * path for the cycle guard and a depth counter (UNION ALL + the path-array guard, not
+ * UNION, so each acyclic path keeps its own depth); `both` unions the two walks and
+ * min-depth-aggregates. One recursive CTE per direction is load-bearing: a single
+ * `seed UNION ALL callees-term UNION ALL callers-term` CTE is invalid SQL — Postgres
+ * parses it as `(seed UNION ALL callees) UNION ALL callers`, putting a recursive
+ * reference inside the non-recursive term ("recursive reference to query \"walk\" must
+ * not appear within its non-recursive term").
+ */
+export async function expandCte(
+  seedIds: string[],
+  direction: Direction,
+  depth: number,
+  limit: number,
+): Promise<GraphRow[]> {
+  if (seedIds.length === 0) return [];
+  const maxDepth = clampDepth(depth);
+  const lim = clampLimit(limit);
+
+  // Build the recursive walk CTE for one direction. `call` edges only — import edges
+  // over-connect (every symbol in an importing file links to the imported one) and would
+  // swamp a call trace (AC-402).
+  // callees: follow from_symbol -> to_symbol. callers: follow to_symbol -> from_symbol.
+  const buildWalk = (dir: "callees" | "callers"): string => {
+    const cte = dir === "callees" ? "walk_callees" : "walk_callers";
+    const join =
+      dir === "callees" ? "e.from_symbol = w.id" : "e.to_symbol = w.id";
+    const nextId = dir === "callees" ? "e.to_symbol" : "e.from_symbol";
+    const label = dir === "callees" ? "call→" : "call←";
+    return `${cte}(id, depth, path, edge_type) AS (
+      SELECT s.id, 0, ARRAY[s.id], 'def'::text FROM seeds s
+      UNION ALL
+      SELECT ${nextId} AS id, w.depth + 1 AS depth, w.path || ${nextId} AS path,
+             '${label}'::text AS edge_type
+      FROM ${cte} w
+      JOIN codebase.symbol_edges e ON ${join}
+      WHERE e.kind = 'call'
+        AND w.depth < ${maxDepth}
+        AND NOT (${nextId} = ANY(w.path))
+    )`;
+  };
+
+  const walkCtes: string[] = [];
+  const walkSelects: string[] = [];
+  if (direction === "callees" || direction === "both") {
+    walkCtes.push(buildWalk("callees"));
+    walkSelects.push("SELECT id, depth, edge_type FROM walk_callees");
+  }
+  if (direction === "callers" || direction === "both") {
+    walkCtes.push(buildWalk("callers"));
+    walkSelects.push("SELECT id, depth, edge_type FROM walk_callers");
+  }
+
+  const sql = `
+    WITH RECURSIVE seeds(id) AS (
+      SELECT unnest($1::uuid[])
+    ),
+    ${walkCtes.join(",\n    ")},
+    walk(id, depth, edge_type) AS (
+      ${walkSelects.join("\n      UNION ALL\n      ")}
+    ),
+    -- shallowest reach per symbol (a symbol reachable by several paths shows its min depth).
+    -- The label tie-break at equal depth (edge_type = 'call←' sorts callees-first) makes
+    -- a both-direction tie deterministic AND mirrors BFS, which expands callees before
+    -- callers per level — without it the [1] pick at equal depth is unspecified.
+    reached AS (
+      SELECT id, min(depth) AS depth,
+             (array_agg(edge_type ORDER BY depth, edge_type = 'call←'))[1] AS edge_type
+      FROM walk
+      GROUP BY id
+    ),
+    ${AMBIGUITY_CTES}
     SELECT s.id, s.name, s.file_path, s.start_line, r.depth, r.edge_type,
            EXISTS (SELECT 1 FROM amb WHERE amb.to_id = s.id AND r.depth > 0) AS ambiguous
     FROM reached r
@@ -277,16 +371,111 @@ export async function expand(
     ORDER BY r.depth, s.file_path, s.start_line
     LIMIT ${lim}`;
 
-  const { rows } = await pool.query<TraverseRow>(sql, [seedIds]);
-  return rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    file: r.file_path,
-    line: r.start_line,
-    depth: r.depth,
-    edge_type: r.edge_type,
-    ambiguous: r.ambiguous,
-  }));
+  const rows = await queryWithWorkMem<TraverseRow>(sql, [seedIds]);
+  return rows.map(toGraphRow);
+}
+
+/**
+ * One directional BFS walk: frontier query per level (`= ANY($ids)`, `kind = 'call'` is
+ * the load-bearing filter — import edges are excluded from call expansion in BOTH
+ * engines, AC-402), JS visited map recording FIRST reach — which IS the CTE walk's
+ * `min(depth)`, since BFS discovers min depths level by level. `levelCap` truncates each
+ * frontier query so one hyper-connected level can't materialize an unbounded id set.
+ * Returns id → min depth (seeds at 0).
+ */
+async function bfsWalk(
+  seedIds: string[],
+  dir: "callees" | "callers",
+  maxDepth: number,
+  levelCap: number,
+): Promise<Map<string, number>> {
+  const sql =
+    dir === "callees"
+      ? `SELECT DISTINCT to_symbol AS next FROM codebase.symbol_edges
+         WHERE kind = 'call' AND from_symbol = ANY($1::uuid[])
+         LIMIT ${levelCap}`
+      : `SELECT DISTINCT from_symbol AS next FROM codebase.symbol_edges
+         WHERE kind = 'call' AND to_symbol = ANY($1::uuid[])
+         LIMIT ${levelCap}`;
+  const depthOf = new Map<string, number>();
+  for (const id of seedIds) depthOf.set(id, 0);
+  let frontier = [...depthOf.keys()];
+  for (let d = 1; d <= maxDepth && frontier.length > 0; d++) {
+    const { rows } = await pool.query<{ next: string }>(sql, [frontier]);
+    const next: string[] = [];
+    for (const r of rows) {
+      if (depthOf.has(r.next)) continue; // visited: first reach keeps the min depth
+      depthOf.set(r.next, d);
+      next.push(r.next);
+    }
+    frontier = next;
+  }
+  return depthOf;
+}
+
+/**
+ * BFS engine (depth ≥ 5 path, AC-401): iterative frontier expansion in JS instead of a
+ * deep recursive CTE. Mirrors `expandCte` exactly: one independent walk per direction,
+ * `both` = the union of the two walks merged on min depth. A node on both walks at EQUAL
+ * depth keeps the callees label — the same tie-break the CTE's
+ * `(array_agg(edge_type ORDER BY depth, edge_type = 'call←'))[1]` applies.
+ *
+ * `levelCap` (test-injectable; defaults to BFS_LEVEL_CAP) bounds each frontier query.
+ */
+export async function expandBfs(
+  seedIds: string[],
+  direction: Direction,
+  depth: number,
+  limit: number,
+  levelCap: number = BFS_LEVEL_CAP,
+): Promise<GraphRow[]> {
+  if (seedIds.length === 0) return [];
+  const maxDepth = clampDepth(depth);
+  const lim = clampLimit(limit);
+
+  const dirs: Array<"callees" | "callers"> = [];
+  if (direction === "callees" || direction === "both") dirs.push("callees");
+  if (direction === "callers" || direction === "both") dirs.push("callers");
+
+  // Seeds are depth-0 defs, exactly like the CTE's seed rows. Walks are merged
+  // callees-first, and only a STRICTLY shallower reach overwrites — so an equal-depth
+  // tie keeps the callees label, matching the CTE tie-break.
+  const reached = new Map<string, { depth: number; edgeType: string }>();
+  for (const id of seedIds) reached.set(id, { depth: 0, edgeType: "def" });
+  for (const dir of dirs) {
+    const label = dir === "callees" ? "call→" : "call←";
+    const walk = await bfsWalk(seedIds, dir, maxDepth, levelCap);
+    for (const [id, d] of walk) {
+      if (d === 0) continue; // seed rows already recorded as defs
+      const prev = reached.get(id);
+      if (!prev || d < prev.depth)
+        reached.set(id, { depth: d, edgeType: label });
+    }
+  }
+
+  // Final materialization: one query joining symbols on the reached id set, with the
+  // SAME ambiguity definition and ordering as the CTE engine.
+  const ids = [...reached.keys()];
+  const depths: number[] = [];
+  const labels: string[] = [];
+  for (const id of ids) {
+    const r = reached.get(id)!;
+    depths.push(r.depth);
+    labels.push(r.edgeType);
+  }
+  const sql = `
+    WITH ids(id, depth, edge_type) AS (
+      SELECT * FROM unnest($1::uuid[], $2::int[], $3::text[])
+    ),
+    ${AMBIGUITY_CTES}
+    SELECT s.id, s.name, s.file_path, s.start_line, i.depth, i.edge_type,
+           EXISTS (SELECT 1 FROM amb WHERE amb.to_id = s.id AND i.depth > 0) AS ambiguous
+    FROM ids i
+    JOIN codebase.symbols s ON s.id = i.id
+    ORDER BY i.depth, s.file_path, s.start_line
+    LIMIT ${lim}`;
+  const { rows } = await pool.query<TraverseRow>(sql, [ids, depths, labels]);
+  return rows.map(toGraphRow);
 }
 
 /**
@@ -367,7 +556,12 @@ export async function tracePath(input: {
     ORDER BY len ASC, full_path ASC
     LIMIT 1`;
 
-  const { rows: pathRows } = await pool.query<{ full_path: string[] }>(sql, [
+  // This targeted CTE stays a CTE at every depth (it needs the concrete uuid[] path for
+  // chain reconstruction — BFS-with-parent-pointers is out of scope), so it gets the same
+  // dedicated-client + SET LOCAL work_mem treatment as the ≤4-hop expand path (AC-401).
+  // The no-target and unreachable branches call expand() and inherit BFS routing at
+  // depth ≥ 5 automatically.
+  const pathRows = await queryWithWorkMem<{ full_path: string[] }>(sql, [
     seedIds,
     input.toName,
   ]);

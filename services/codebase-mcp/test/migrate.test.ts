@@ -36,7 +36,21 @@ describe.skipIf(skip)("codebase-mcp migrate runner", () => {
     });
     expect(out).toContain("001_codebase.sql");
     expect(out).toContain("002_index_jobs.sql");
+    expect(out).toContain("006_edge_covering_indexes.sql");
     expect(out).toContain("migrations complete");
+  });
+
+  it("006 replaces the single-column symbol_edges indexes with covering ones", async () => {
+    const { rows } = await pool.query<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes
+       WHERE schemaname = 'codebase' AND tablename = 'symbol_edges'`,
+    );
+    const names = new Set(rows.map((r) => r.indexname));
+    expect(names.has("symedge_from_kind")).toBe(true);
+    expect(names.has("symedge_to_kind")).toBe(true);
+    // The 001 single-column indexes are strict prefixes of the covering ones — dropped.
+    expect(names.has("symedge_from")).toBe(false);
+    expect(names.has("symedge_to")).toBe(false);
   });
 
   it("is idempotent (re-running is a no-op)", () => {
