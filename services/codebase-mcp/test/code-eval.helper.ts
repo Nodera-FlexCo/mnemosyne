@@ -10,14 +10,19 @@
 // chunk of the right file.
 
 import {
+  filterRowsBySplit,
   firstRelevantRank,
   meanRecallAtK,
   meanReciprocalRank,
+  mrr,
+  ndcgAtK,
   recallAtK,
   type CodeEvalFile,
   type CodeRecallEvalResult,
   type RankedPaths,
   type RelevantPaths,
+  type RunArtifact,
+  type RunPerQuery,
 } from "../src/recall-math.js";
 
 // Re-export the pure math + types + loader so test imports (and the bakeoff harness docs)
@@ -34,11 +39,16 @@ export {
   normalizePath,
   firstRelevantRank,
   loadCodeEval,
+  filterRowsBySplit,
+  writeRunArtifact,
+  perQueryDeltas,
   type RankedPaths,
   type RelevantPaths,
   type CodeEvalRow,
   type CodeEvalFile,
   type CodeRecallEvalResult,
+  type RunArtifact,
+  type RunPerQuery,
 } from "../src/recall-math.js";
 
 /**
@@ -86,5 +96,81 @@ export async function runCodeRecallEval(
       rank: firstRelevantRank(q.hits, q.relevant),
       recall: recallAtK(q.hits, q.relevant, k),
     })),
+  };
+}
+
+// ── Two-layer eval runner (wave-2, AC-104) ───────────────────────────────────────────
+
+/** Pool-layer Recall@k cutoff (matches `config.candidatePool`'s documented ceiling). */
+export const POOL_RECALL_K = 25;
+/** Final-layer nDCG/MRR cutoff. */
+export const FINAL_NDCG_K = 10;
+
+/**
+ * v2 two-layer runner, path-keyed (a path IS the stable code gold id — no supersession
+ * resolution, paths do not supersede):
+ *
+ *  - POOL layer — `fuseCodeCandidates` directly; Recall@25 over candidate `file_path`s
+ *    (the reranker cannot fix recall, so this floor is scored where recall happens).
+ *  - FINAL layer — the full `searchCode` pipeline; nDCG@10 + MRR over hit paths.
+ *
+ * Returns the complete artifact payload (retrievalConfig() snapshot included) ready for
+ * `writeRunArtifact`. Requires DATABASE_URL + a (real or mocked) Voyage; `search.js` is
+ * imported lazily so pure tests never pull the pg pool / Voyage client.
+ */
+export async function runCodeEval(
+  evalFile: CodeEvalFile,
+  opts: { projectId: string; repo?: string; split?: "dev" | "test" },
+): Promise<RunArtifact> {
+  const { fuseCodeCandidates, searchCode, retrievalConfig } =
+    await import("../src/search.js");
+  const rows = opts.split
+    ? filterRowsBySplit(evalFile, opts.split)
+    : evalFile.rows;
+
+  const perQuery: RunPerQuery[] = [];
+  for (const row of rows) {
+    // Layer 1: candidate pool only.
+    const pool = await fuseCodeCandidates({
+      projectId: opts.projectId,
+      query: row.query,
+      repo: opts.repo,
+    });
+    const poolPaths = pool.map((c) => c.file_path);
+    const poolRecall = recallAtK(poolPaths, row.relevantPaths, POOL_RECALL_K);
+
+    // Layer 2: the full live pipeline.
+    const hits = await searchCode({
+      projectId: opts.projectId,
+      query: row.query,
+      repo: opts.repo,
+      k: FINAL_NDCG_K,
+    });
+    const finalPaths = hits.map((h) => h.filePath);
+
+    perQuery.push({
+      id: row.id ?? row.query,
+      query: row.query,
+      poolRecall,
+      ndcg: ndcgAtK(finalPaths, row.relevantPaths, FINAL_NDCG_K),
+      mrr: mrr(finalPaths, row.relevantPaths),
+      rank: firstRelevantRank(finalPaths, row.relevantPaths),
+    });
+  }
+
+  const n = perQuery.length;
+  const mean = (f: (q: RunPerQuery) => number) =>
+    n === 0 ? 0 : perQuery.reduce((a, q) => a + f(q), 0) / n;
+  return {
+    retrievalConfig: retrievalConfig(),
+    evalVersion: evalFile.version ?? 1,
+    split: opts.split ?? "all",
+    rows: n,
+    perQuery,
+    aggregates: {
+      recallAt25: mean((q) => q.poolRecall),
+      ndcgAt10: mean((q) => q.ndcg),
+      mrr10: mean((q) => q.mrr),
+    },
   };
 }

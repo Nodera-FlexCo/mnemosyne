@@ -3,8 +3,12 @@
 // wrong embedder with a green-looking number, so the math is tested directly — no DB,
 // no Voyage. Also guards the seed eval fixture's shape (≥50 rows, seed flag).
 
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import {
+  filterRowsBySplit,
   firstRelevantRank,
   loadCodeEval,
   meanRecallAtK,
@@ -240,7 +244,7 @@ describe("regressionExcluded (gate semantics)", () => {
   });
 });
 
-describe("seed code-eval fixture (AC-030)", () => {
+describe("seed code-eval fixture (AC-030, v2)", () => {
   it("loads and is shaped { k, rows } with ≥50 rows", () => {
     const ev = loadCodeEval();
     expect(typeof ev.k).toBe("number");
@@ -254,6 +258,27 @@ describe("seed code-eval fixture (AC-030)", () => {
       expect(row.relevantPaths.length).toBeGreaterThan(0);
       for (const p of row.relevantPaths) expect(typeof p).toBe("string");
     }
+  });
+
+  it("is v2: version header + changelog, unique c-NNN ids, split + provenance on every row", () => {
+    const ev = loadCodeEval();
+    expect(ev.version).toBe(2);
+    expect(Array.isArray(ev.changelog)).toBe(true);
+    expect(ev.changelog!.length).toBeGreaterThan(0);
+    const ids = new Set<string>();
+    for (const row of ev.rows) {
+      expect(row.id).toMatch(/^c-\d{3}$/);
+      ids.add(row.id!);
+      expect(["dev", "test"]).toContain(row.split);
+      expect(row.provenance).toBe("seed-v1");
+    }
+    expect(ids.size).toBe(ev.rows.length); // ids are unique (they key the gate join)
+  });
+
+  it("all seed rows start in the dev split (operator promotes ~1/3 to test at G0)", () => {
+    const ev = loadCodeEval();
+    expect(filterRowsBySplit(ev, "dev").length).toBe(ev.rows.length);
+    expect(filterRowsBySplit(ev, "test").length).toBe(0);
   });
 
   it("is flagged as a seed (operator must expand + freeze before the AC-030 decision)", () => {
@@ -273,5 +298,45 @@ describe("seed code-eval fixture (AC-030)", () => {
     ]) {
       expect(archetypes.has(a)).toBe(true);
     }
+  });
+});
+
+describe("loadCodeEval version tolerance", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "code-eval-load-"));
+  afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+
+  it("tolerates a bare v1 file (bakeoff back-compat) — rows default to the dev split", () => {
+    const p = join(tmp, "v1.json");
+    writeFileSync(
+      p,
+      JSON.stringify({
+        k: 10,
+        rows: [{ query: "q", relevantPaths: ["a.ts"] }],
+      }),
+    );
+    const ev = loadCodeEval(p);
+    expect(ev.version).toBeUndefined();
+    expect(ev.rows).toHaveLength(1);
+    expect(filterRowsBySplit(ev, "dev")).toHaveLength(1);
+    expect(filterRowsBySplit(ev, "test")).toHaveLength(0);
+  });
+
+  it("rejects v2 rows missing id or split", () => {
+    const p = join(tmp, "bad-v2.json");
+    writeFileSync(
+      p,
+      JSON.stringify({
+        version: 2,
+        k: 10,
+        rows: [{ query: "q", relevantPaths: ["a.ts"] }],
+      }),
+    );
+    expect(() => loadCodeEval(p)).toThrow(/v2 rows need an id/);
+  });
+
+  it("rejects unknown versions", () => {
+    const p = join(tmp, "v3.json");
+    writeFileSync(p, JSON.stringify({ version: 3, k: 10, rows: [] }));
+    expect(() => loadCodeEval(p)).toThrow(/not supported/);
   });
 });

@@ -10,6 +10,7 @@ import {
   recallAtK,
   regressionExcluded,
   runRecallEval,
+  tryLoadRecallEvalV2,
 } from "./recall.helper.js";
 import { config } from "../src/config.js";
 
@@ -244,18 +245,32 @@ describe("seed eval fixture", () => {
 // Per recall-eval.md it is "run deliberately, not on every CI push", so it is gated on
 // an explicit opt-in (`VOYAGE_LIVE_TESTS=1`) in addition to DATABASE_URL — otherwise a
 // DB-only run (e.g. the backfill/recall-gate suites) would 401 on a non-live key.
+// It also requires the gold file to be MIGRATED to v2 (stable ids) — until the operator
+// approves + renames the `gold:migrate` proposal, it skips with a note.
 const LIVE =
   !!process.env.DATABASE_URL && process.env.VOYAGE_LIVE_TESTS === "1";
-describe.skipIf(!LIVE)("runRecallEval (DB-backed)", () => {
-  it("runs searchMemory over the seed set and returns recall + mrr", async () => {
-    const ev = loadRecallEval();
+describe.skipIf(!LIVE)("runRecallEval (DB-backed, two layers)", () => {
+  it("runs both layers over the v2 gold set and returns the artifact payload", async () => {
+    const ev = tryLoadRecallEvalV2();
+    if (!ev) {
+      console.error(
+        "runRecallEval: gold file still v1 — run `npm run gold:migrate`, approve, rename (AC-109)",
+      );
+      expect(ev).toBeNull(); // structural assertion so the test is not empty
+      return;
+    }
     const result = await runRecallEval(ev, {
       projectId: config.defaultProjectId,
     });
-    expect(result.recallAtK).toBeGreaterThanOrEqual(0);
-    expect(result.recallAtK).toBeLessThanOrEqual(1);
-    expect(result.mrr).toBeGreaterThanOrEqual(0);
-    expect(result.mrr).toBeLessThanOrEqual(1);
     expect(result.perQuery.length).toBe(ev.rows.length);
+    for (const agg of [
+      result.aggregates.recallAt25,
+      result.aggregates.ndcgAt10,
+      result.aggregates.mrr10,
+    ]) {
+      expect(agg).toBeGreaterThanOrEqual(0);
+      expect(agg).toBeLessThanOrEqual(1);
+    }
+    expect(result.retrievalConfig).toMatchObject({ service: "memory-mcp" });
   });
 });

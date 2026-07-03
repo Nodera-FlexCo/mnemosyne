@@ -14,6 +14,7 @@
     "index:v2": "tsx src/db/create-v2-index.ts",
     "index:decision": "tsx src/db/create-decision-index.ts",
     "backfill:context": "tsx src/db/backfill-context.ts",
+    "gold:migrate": "tsx src/db/migrate-gold.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

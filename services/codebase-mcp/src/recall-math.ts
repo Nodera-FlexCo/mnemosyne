@@ -7,7 +7,7 @@
 // file PATH here, on memory TITLE there). A bug here silently picks the wrong embedder,
 // so it is unit-tested directly against hand-computed values (test/code-eval.helper.test.ts).
 
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -190,12 +190,37 @@ export interface CodeEvalRow {
   relevantPaths: RelevantPaths;
   /** Optional human-readable label / archetype for the query (ignored by the loader). */
   archetype?: string;
+  // ── v2 fields (wave-2). For code the STABLE ID is the file path (chunk ids churn on
+  // every reindex) — so v2 keeps `relevantPaths` and only adds bookkeeping. All three
+  // are optional so the loader tolerates v1 files (bakeoff back-compat).
+  /** Stable row id ("c-001"…) — the join key for baseline↔fresh gate comparisons. */
+  id?: string;
+  /** Gold split: "dev" (CI gate recomputes it) or "test" (spent only by flip gates). */
+  split?: "dev" | "test";
+  /** How the row entered gold: seed-v1 | distilled | log-harvest. */
+  provenance?: string;
+  /** Who human-approved the row (AC-109); absent on unapproved seeds. */
+  approvedBy?: string;
 }
 
 export interface CodeEvalFile {
+  /** 2 for split/provenance-aware files; absent on v1 (tolerated for back-compat). */
+  version?: number;
+  changelog?: string[];
   _seed?: boolean;
   k: number;
   rows: CodeEvalRow[];
+}
+
+/**
+ * Rows of one split. v1 rows carry no `split`, so they default to "dev" — the CI gate
+ * only ever recomputes dev, and a v1 file predates the frozen test split anyway.
+ */
+export function filterRowsBySplit(
+  file: CodeEvalFile,
+  split: "dev" | "test",
+): CodeEvalRow[] {
+  return file.rows.filter((r) => (r.split ?? "dev") === split);
 }
 
 export interface CodeRecallEvalResult {
@@ -205,9 +230,11 @@ export interface CodeRecallEvalResult {
 }
 
 /**
- * Load + shape the bake-off eval fixture. The fixture lives in test/fixtures/code-eval.json;
- * `test/` is a sibling of both `src/` (under tsx) and `dist/` (compiled), so the default
- * "../test/fixtures/..." resolves in both. Callers may pass an explicit path.
+ * Load + shape the eval fixture (v2 with `version`/`split`/`provenance`/row ids, or a
+ * bare v1 file — tolerated for bakeoff back-compat). The fixture lives in
+ * test/fixtures/code-eval.json; `test/` is a sibling of both `src/` (under tsx) and
+ * `dist/` (compiled), so the default "../test/fixtures/..." resolves in both. Callers
+ * may pass an explicit path.
  */
 export function loadCodeEval(
   path = join(
@@ -222,5 +249,88 @@ export function loadCodeEval(
   if (!Array.isArray(raw.rows) || typeof raw.k !== "number") {
     throw new Error("code-eval.json must have { k: number, rows: [...] }");
   }
+  if (raw.version !== undefined && raw.version !== 2) {
+    throw new Error(`code-eval.json version ${raw.version} is not supported`);
+  }
+  if (raw.version === 2) {
+    for (const r of raw.rows) {
+      if (!r.id || (r.split !== "dev" && r.split !== "test")) {
+        throw new Error(
+          `code-eval.json v2 rows need an id and a dev|test split (bad row: ${JSON.stringify(r.query)})`,
+        );
+      }
+    }
+  }
   return raw;
+}
+
+// ── Eval-run artifacts + gate join (wave-2, AC-104/AC-105) ───────────────────────────
+
+/** One query's scores across BOTH layers of an eval run. */
+export interface RunPerQuery {
+  /** Gold row id (v2) — the baseline↔fresh join key. */
+  id: string;
+  query: string;
+  /** Recall@25 at the candidate-pool layer (fuse only — did recall surface gold?). */
+  poolRecall: number;
+  /** nDCG@10 at the final layer (full pipeline — did rerank order gold well?). */
+  ndcg: number;
+  /** Reciprocal rank of the first relevant final hit (0 when absent). */
+  mrr: number;
+  /** 1-based rank of the first relevant final hit, or null. */
+  rank: number | null;
+}
+
+/**
+ * The committed run-artifact payload (AC-104): the FULL retrievalConfig() snapshot plus
+ * per-query scores for both layers. `test/runs/baseline-dev.json` is a committed copy of
+ * one of these, chosen by the operator at a flip gate.
+ */
+export interface RunArtifact {
+  retrievalConfig: Record<string, unknown>;
+  evalVersion: number;
+  split: string;
+  rows: number;
+  perQuery: RunPerQuery[];
+  aggregates: { recallAt25: number; ndcgAt10: number; mrr10: number };
+}
+
+/**
+ * Write an eval-run artifact as `<dir>/<ISO-date>-<label>.json` and return the path.
+ * Artifacts under `test/runs/` are COMMITTED — they are the baselines the CI gate joins
+ * against; tests write to a tmp dir instead so `git status` stays clean.
+ */
+export function writeRunArtifact(
+  dir: string,
+  label: string,
+  payload: RunArtifact,
+): string {
+  mkdirSync(dir, { recursive: true });
+  const date = new Date().toISOString().slice(0, 10);
+  const path = join(dir, `${date}-${label}.json`);
+  writeFileSync(path, JSON.stringify(payload, null, 2) + "\n");
+  return path;
+}
+
+/**
+ * Join a baseline artifact against a fresh run BY ROW ID and return per-query nDCG@10
+ * deltas (fresh − baseline, id-sorted). Fails LOUDLY when the id sets differ — a changed
+ * dev split invalidates the baseline (the operator re-records it at a flip gate).
+ */
+export function perQueryDeltas(
+  baseline: RunArtifact,
+  fresh: RunArtifact,
+): number[] {
+  const b = new Map(baseline.perQuery.map((q) => [q.id, q]));
+  const f = new Map(fresh.perQuery.map((q) => [q.id, q]));
+  const missing = [...b.keys()].filter((id) => !f.has(id));
+  const extra = [...f.keys()].filter((id) => !b.has(id));
+  if (missing.length > 0 || extra.length > 0) {
+    throw new Error(
+      `eval-split drift: baseline and fresh run disagree on row ids ` +
+        `(missing from fresh: [${missing.join(", ")}]; not in baseline: [${extra.join(", ")}]). ` +
+        `A changed dev split invalidates the baseline — re-record it at a flip gate.`,
+    );
+  }
+  return [...b.keys()].sort().map((id) => f.get(id)!.ndcg - b.get(id)!.ndcg);
 }
