@@ -4,7 +4,11 @@ import {
   meanRecallAtK,
   meanReciprocalRank,
   mrr,
+  mulberry32,
+  ndcgAtK,
+  pairedBootstrapCI,
   recallAtK,
+  regressionExcluded,
   runRecallEval,
 } from "./recall.helper.js";
 import { config } from "../src/config.js";
@@ -89,6 +93,130 @@ describe("corpus-level aggregates", () => {
   it("empty query set -> 0 for both", () => {
     expect(meanRecallAtK([], 10)).toBe(0);
     expect(meanReciprocalRank([])).toBe(0);
+  });
+});
+
+// ── Wave-1 eval math (AC-103): every expected value is hand-computed in a comment. ──
+
+describe("ndcgAtK (gate math)", () => {
+  const hits = ["alpha", "beta", "gamma", "delta", "epsilon"];
+
+  it("single relevant at rank 1 -> 1.0", () => {
+    // DCG = 1/log2(2) = 1; IDCG (1 item) = 1 → 1.0
+    expect(ndcgAtK(hits, ["alpha"], 10)).toBe(1);
+  });
+
+  it("single relevant at rank 3, k=10 -> 1/log2(4) = 0.5", () => {
+    // DCG = 1/log2(3+1) = 0.5; IDCG (1 item) = 1 → 0.5
+    expect(ndcgAtK(hits, ["gamma"], 10)).toBeCloseTo(0.5, 10);
+  });
+
+  it("two relevant at ranks 2+4, k=10, |relevant|=2", () => {
+    // DCG  = 1/log2(3) + 1/log2(5)
+    // IDCG = 1/log2(2) + 1/log2(3) = 1 + 1/log2(3)
+    const dcg = 1 / Math.log2(3) + 1 / Math.log2(5);
+    const idcg = 1 + 1 / Math.log2(3);
+    expect(ndcgAtK(hits, ["beta", "delta"], 10)).toBeCloseTo(dcg / idcg, 10);
+  });
+
+  it("relevant absent from hits -> 0", () => {
+    expect(ndcgAtK(hits, ["zeta"], 10)).toBe(0);
+  });
+
+  it("k = 0 -> 0", () => {
+    expect(ndcgAtK(hits, ["alpha"], 0)).toBe(0);
+  });
+
+  it("empty relevant set -> 0", () => {
+    expect(ndcgAtK(hits, [], 10)).toBe(0);
+  });
+
+  it("k < |relevant| truncates the IDCG (3 relevant, k=2, hits at ranks 1+2 -> 1.0)", () => {
+    // DCG  = 1/log2(2) + 1/log2(3)
+    // IDCG = ideal for min(3, 2) = 2 items = the same sum → 1.0
+    expect(ndcgAtK(hits, ["alpha", "beta", "zeta"], 2)).toBeCloseTo(1, 10);
+  });
+
+  it("relevant outside top-k does not count (relevant at rank 3, k=2 -> 0)", () => {
+    expect(ndcgAtK(hits, ["gamma"], 2)).toBe(0);
+  });
+
+  it("matches case-insensitively with surrounding whitespace (normalize)", () => {
+    expect(ndcgAtK(["  Alpha  "], ["alpha"], 1)).toBe(1);
+  });
+});
+
+describe("mulberry32 (deterministic PRNG)", () => {
+  it("same seed -> same first 5 values", () => {
+    const a = mulberry32(1234);
+    const b = mulberry32(1234);
+    const seqA = [a(), a(), a(), a(), a()];
+    const seqB = [b(), b(), b(), b(), b()];
+    expect(seqA).toEqual(seqB);
+  });
+
+  it("values lie in [0, 1)", () => {
+    const r = mulberry32(7);
+    for (let i = 0; i < 100; i++) {
+      const v = r();
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThan(1);
+    }
+  });
+});
+
+describe("pairedBootstrapCI (gate math)", () => {
+  it("constant deltas [0.1 x20] -> mean 0.1, ciLow = ciHigh = 0.1", () => {
+    // Every resample mean of a constant array is that constant.
+    const ci = pairedBootstrapCI(Array(20).fill(0.1), { iterations: 500 });
+    expect(ci.mean).toBeCloseTo(0.1, 10);
+    expect(ci.ciLow).toBeCloseTo(0.1, 10);
+    expect(ci.ciHigh).toBeCloseTo(0.1, 10);
+  });
+
+  it("all-negative deltas -> CI below zero -> regressionExcluded true", () => {
+    const ci = pairedBootstrapCI(Array(20).fill(-0.05), { iterations: 500 });
+    expect(ci.ciHigh).toBeLessThan(0);
+    expect(regressionExcluded(ci)).toBe(true);
+  });
+
+  it("mixed +/- deltas straddling zero -> regressionExcluded false", () => {
+    // Symmetric ±0.1: resample means straddle 0, so the 95% CI contains it.
+    const deltas = [0.1, -0.1, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1];
+    const ci = pairedBootstrapCI(deltas, { iterations: 2000, seed: 7 });
+    expect(ci.ciLow).toBeLessThan(0);
+    expect(ci.ciHigh).toBeGreaterThan(0);
+    expect(regressionExcluded(ci)).toBe(false);
+  });
+
+  it("is deterministic: same seed twice -> identical output", () => {
+    const deltas = [0.02, -0.01, 0.05, 0.0, -0.03, 0.04, 0.01];
+    const a = pairedBootstrapCI(deltas, { iterations: 1000, seed: 99 });
+    const b = pairedBootstrapCI(deltas, { iterations: 1000, seed: 99 });
+    expect(a).toEqual(b);
+  });
+
+  it("empty input -> zeros", () => {
+    expect(pairedBootstrapCI([])).toEqual({ mean: 0, ciLow: 0, ciHigh: 0 });
+  });
+
+  it("CI brackets the observed mean", () => {
+    const deltas = [0.1, 0.2, 0.15, 0.05, 0.3, 0.25, 0.12, 0.18];
+    const ci = pairedBootstrapCI(deltas, { iterations: 2000, seed: 3 });
+    expect(ci.ciLow).toBeLessThanOrEqual(ci.mean);
+    expect(ci.ciHigh).toBeGreaterThanOrEqual(ci.mean);
+  });
+});
+
+describe("regressionExcluded (gate semantics)", () => {
+  it("whole CI below zero -> true (delta = candidate - baseline)", () => {
+    expect(regressionExcluded({ ciLow: -0.2, ciHigh: -0.01 })).toBe(true);
+  });
+  it("CI containing zero -> false", () => {
+    expect(regressionExcluded({ ciLow: -0.05, ciHigh: 0.05 })).toBe(false);
+  });
+  it("whole CI above zero (a win) -> false", () => {
+    expect(regressionExcluded({ ciLow: 0.01, ciHigh: 0.2 })).toBe(false);
   });
 });
 

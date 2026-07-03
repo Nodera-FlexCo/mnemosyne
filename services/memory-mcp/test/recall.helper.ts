@@ -1,9 +1,10 @@
 // Recall harness for the memory-mcp embedder-flip gate (AC-023/AC-024).
 //
 // Two layers:
-//  1. PURE math — `recallAtK` and `mrr`. These ARE the flip gate's math; a bug here
-//     silently passes a bad embedder flip, so they are unit-tested directly against
-//     hand-computed values in `recall.helper.test.ts`.
+//  1. PURE math — `recallAtK`, `mrr`, and the Wave-1 eval additions `ndcgAtK` +
+//     `pairedBootstrapCI` (+ `mulberry32`, `regressionExcluded`). These ARE the
+//     flip/regression gates' math; a bug here silently passes a bad flip, so they are
+//     unit-tested directly against hand-computed values in `recall.helper.test.ts`.
 //  2. A thin DB-backed runner — `runRecallEval` — that calls the real `searchMemory`
 //     for each seed query and scores the ranked titles. It needs loopback Postgres
 //     and a Voyage key (it embeds the query), so callers guard it with
@@ -79,6 +80,102 @@ export function meanReciprocalRank(
   if (perQuery.length === 0) return 0;
   const sum = perQuery.reduce((acc, q) => acc + mrr(q.hits, q.relevant), 0);
   return sum / perQuery.length;
+}
+
+/**
+ * nDCG@k for a single query with BINARY gains (a hit is relevant or it is not — binary
+ * suffices for this program's gold sets). DCG = Σ 1/log2(i+1) over relevant hits in the
+ * top-k (1-based rank i); IDCG = the ideal DCG for min(|relevant|, k) items; nDCG =
+ * DCG/IDCG ∈ [0,1]. Key-agnostic: compares normalized strings, so it works on titles
+ * today and stable ids after the wave-2 key switch. This IS the regression-gate metric;
+ * a bug here silently passes a bad flip. Edge cases mirror `recallAtK`: empty
+ * `relevant` -> 0, k <= 0 -> 0.
+ */
+export function ndcgAtK(
+  hits: RankedTitles,
+  relevant: RelevantTitles,
+  k: number,
+): number {
+  if (k <= 0 || relevant.length === 0) return 0;
+  const rel = relevantSet(relevant);
+  let dcg = 0;
+  const topK = hits.slice(0, k);
+  for (let i = 0; i < topK.length; i++) {
+    // 1-based rank = i+1 → gain discount 1/log2(rank+1) = 1/log2(i+2)
+    if (rel.has(normalize(topK[i]))) dcg += 1 / Math.log2(i + 2);
+  }
+  let idcg = 0;
+  const idealCount = Math.min(rel.size, k);
+  for (let i = 0; i < idealCount; i++) idcg += 1 / Math.log2(i + 2);
+  return idcg === 0 ? 0 : dcg / idcg;
+}
+
+/**
+ * Tiny seeded PRNG (mulberry32) so the bootstrap below is DETERMINISTIC under a fixed
+ * seed (AC-103) — a gate that flickers across runs is not a gate.
+ */
+export function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Linear-interpolation percentile of a SORTED ascending array (numpy type-7). */
+function percentileSorted(sorted: number[], q: number): number {
+  const pos = q * (sorted.length - 1);
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
+/**
+ * Percentile paired bootstrap over PER-QUERY metric deltas. Sign convention:
+ * delta = candidate − baseline (positive = candidate wins). Resamples
+ * `deltas.length` values with replacement `iterations` times using the seeded PRNG,
+ * records each resample mean, and returns the observed mean plus the percentile CI
+ * (default 95% → 2.5th/97.5th). Deterministic for a fixed seed. Empty input → zeros.
+ */
+export function pairedBootstrapCI(
+  deltas: number[],
+  opts: { iterations?: number; seed?: number; level?: number } = {},
+): { mean: number; ciLow: number; ciHigh: number } {
+  if (deltas.length === 0) return { mean: 0, ciLow: 0, ciHigh: 0 };
+  const iterations = opts.iterations ?? 10_000;
+  const level = opts.level ?? 0.95;
+  const rnd = mulberry32(opts.seed ?? 42);
+  const n = deltas.length;
+  const mean = deltas.reduce((a, b) => a + b, 0) / n;
+  const means = new Array<number>(iterations);
+  for (let it = 0; it < iterations; it++) {
+    let sum = 0;
+    for (let j = 0; j < n; j++) sum += deltas[Math.floor(rnd() * n)];
+    means[it] = sum / n;
+  }
+  means.sort((a, b) => a - b);
+  const alpha = (1 - level) / 2;
+  return {
+    mean,
+    ciLow: percentileSorted(means, alpha),
+    ciHigh: percentileSorted(means, 1 - alpha),
+  };
+}
+
+/**
+ * Gate semantics (AC-105): the regression side is excluded-zero when the WHOLE CI sits
+ * below zero — i.e. the candidate is statistically-significantly worse. With
+ * delta = candidate − baseline, that is `ciHigh < 0`.
+ */
+export function regressionExcluded(ci: {
+  ciLow: number;
+  ciHigh: number;
+}): boolean {
+  return ci.ciHigh < 0;
 }
 
 export interface RecallEvalRow {
