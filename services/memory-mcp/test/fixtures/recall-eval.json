@@ -7,7 +7,8 @@
     "2026-07-03: m-017 (migration numbering collision) \u2014 kept the seed query but grounded gold in the Nodex migration-collision procedural cluster (6 near-duplicate memories that each state the renumbering rule), which answers the query text directly; the Mnemosyne-specific numbering reconcile is a single W7 line inside 8f1b9368 and was judged secondary.",
     "2026-07-03: distilled expansion m-026..m-050 (provenance \"distilled\") \u2014 25 new rows sampled broadly across the Nodex product corpus: branching/release model, deployments (Dokploy, Coolify->Dokploy, migrate-on-deploy, PGSSLMODE), RLS/auth claims, e-Factura/UBL/ANAF, Romanian VAT rates, Stripe billing + dogfood loop, R2 Object Lock, OCR pipeline, copilot model selection, admin impersonation, queue/PDF recovery, dev-infra gotchas (worktrees, gitleaks, NestJS DI), and the remote MCP connector. Every gold id verified to exist and be ACTIVE via memory_get. Decision-memory gold: m-027/m-031/m-035/m-041/m-042/m-043/m-047. Procedural/how-to gold: m-026/m-028/m-034/m-038/m-045.",
     "2026-07-03: split assignment \u2014 17/50 rows assigned to \"test\" (9 seed-v1: m-002/005/007/010/013/016/019/022/024 + 8 distilled: m-026/029/031/033/036/039/044/047), the remaining 33 to \"dev\". Stratified by hand across provenance, archetype (exact-fact / decision-recall / procedural / conceptual-where-how), topic (Mnemosyne engine vs Nodex product/domain), and query length (short keyword m-010/m-016/m-044 vs natural language). Deterministic manual pick, not random. approvedBy intentionally unset \u2014 the orchestrator sets it at final approval.",
-    "2026-07-03: APPROVED under operator blanket G0 sign-off. All 25 seed queries resolved by MEANING against the live corpus (v1 titles matched nothing verbatim); 25 distilled rows added by in-session curation (distill-eval unavailable: no ANTHROPIC_API_KEY on the box). All 52 gold ids verified present+active in live DB. Splits: 17 test / 33 dev, stratified. TEST SPLIT IS NOW FROZEN \u2014 modified only by flip gates (AC-109)."
+    "2026-07-03: APPROVED under operator blanket G0 sign-off. All 25 seed queries resolved by MEANING against the live corpus (v1 titles matched nothing verbatim); 25 distilled rows added by in-session curation (distill-eval unavailable: no ANTHROPIC_API_KEY on the box). All 52 gold ids verified present+active in live DB. Splits: 17 test / 33 dev, stratified. TEST SPLIT IS NOW FROZEN \u2014 modified only by flip gates (AC-109).",
+    "2026-07-03: temporal expansion (amended G0 step 4) APPROVED and merged in the same G0 pass: m-051..m-058, facet:\"temporal\", 8 archetype-spread rows drafted by the scoring-amendments session from live-corpus ids (all 13 gold ids re-verified present+active). Split policy per candidate self-review: rot-prone current-status rows in dev (5), time-stable historical rows in test (3). Archetype 7 (superseded-with-successor) skipped \u2014 corpus has zero superseded_by rows yet. Test split now 20 rows, dev 38; the test split remains FROZEN."
   ],
   "rows": [
     {
@@ -607,6 +608,108 @@
       "archetype": "exact-fact",
       "split": "dev",
       "provenance": "distilled",
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "m-051",
+      "query": "what is the latest decision on the mnemosyne memory retrieval scoring approach",
+      "relevantIds": [
+        "4928be84-9878-4b76-9128-a894e559559b"
+      ],
+      "archetype": "temporal-latest-decision",
+      "facet": "temporal",
+      "split": "dev",
+      "provenance": "temporal-expansion-2026-07-03; gold = the 2026-07-03 follow-on ADR ONLY \u2014 the older program ADR 8a1bbc67 is deliberately NOT gold (latest-wins discrimination). CAVEAT: both ADRs are same-day, so decay arms cannot separate them \u2014 this row measures semantic latest-wins only, not recency scoring; do not over-read it in the wave-7 temporal slice",
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "m-052",
+      "query": "current status of the mnemosyne retrieval improvement program",
+      "relevantIds": [
+        "4260fcfc-e17f-42df-b049-381e48ec470a",
+        "e94dac70-0668-4669-bf96-c8409a4b5f95"
+      ],
+      "archetype": "temporal-current-status",
+      "facet": "temporal",
+      "split": "dev",
+      "provenance": "temporal-expansion-2026-07-03; waves 1-3 landed + Phase A doc amendments are the current-state rows. DEV on purpose: 'current status' ground truth rots as the program advances \u2014 keep amendable, never freeze",
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "m-053",
+      "query": "what is the current state of the NOD-597 GL close-wide atomicity work",
+      "relevantIds": [
+        "1b66f100-5551-4cdf-9597-6e964f580635",
+        "2e511efd-2dfc-4f57-80ba-0d570fdb4584"
+      ],
+      "archetype": "temporal-current-status",
+      "facet": "temporal",
+      "split": "dev",
+      "provenance": "temporal-expansion-2026-07-03; W2 design + PR #837 merge are current; older PR #832 rows deliberately not gold",
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "m-054",
+      "query": "which NOD-597 GL fix PRs landed after 2026-06-27",
+      "relevantIds": [
+        "f41f8e9c-3181-4a0b-90b1-26fa0a803da9",
+        "ea1baab8-cc83-4d9b-a30e-10acda53e381",
+        "2e511efd-2dfc-4f57-80ba-0d570fdb4584"
+      ],
+      "archetype": "temporal-changed-after",
+      "facet": "temporal",
+      "split": "test",
+      "provenance": "temporal-expansion-2026-07-03; PR #832 (06-28) + PR #837 (07-03) rows. Query says 'fix PRs' deliberately \u2014 the W2 DESIGN row (1b66f100) landed after 06-27 but is not a fix PR, so it is cleanly out of gold scope. TEST on purpose: historical fact, ground truth never changes",
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "m-055",
+      "query": "which CD platform ran nodex prod before the Dokploy migration in June 2026",
+      "relevantIds": [
+        "fdd04912-3c04-48eb-8704-ac6136da240c",
+        "addb2c76-c90c-4fe7-9892-55c0ba78d943",
+        "9c32a346-beff-4fc3-aa80-c38958908bc4"
+      ],
+      "archetype": "temporal-true-before",
+      "facet": "temporal",
+      "split": "test",
+      "provenance": "temporal-expansion-2026-07-03; Coolify->Dokploy decision/research/implementation rows",
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "m-056",
+      "query": "most recent fix for spurious drizzle db:generate snapshot drift",
+      "relevantIds": [
+        "6d8b0e74-7c7e-47b5-a545-0f71ceaa4fee"
+      ],
+      "archetype": "temporal-recent-fix",
+      "facet": "temporal",
+      "split": "dev",
+      "provenance": "temporal-expansion-2026-07-03; 2026-07-03 meta-only re-baseline fix",
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "m-057",
+      "query": "is the register PDF generating-forever polling tech-debt still open",
+      "relevantIds": [
+        "27d324cd-f861-49c0-abe0-06017c9be3af"
+      ],
+      "archetype": "temporal-active-among-resolved",
+      "facet": "temporal",
+      "split": "test",
+      "provenance": "temporal-expansion-2026-07-03; only candidate gold with non-NULL event_date (date-source diversity)",
+      "approvedBy": "andrei.buliga/G0-2026-07-03"
+    },
+    {
+      "id": "m-058",
+      "query": "what is the current harness role split between codex and the claude models",
+      "relevantIds": [
+        "ac305712-4698-4d51-aa62-4ab27f32d8e1"
+      ],
+      "archetype": "temporal-null-event-date-fallback",
+      "facet": "temporal",
+      "split": "dev",
+      "provenance": "temporal-expansion-2026-07-03; gold row has NULL event_date - explicitly proves the created_at fallback (archetype 8)",
       "approvedBy": "andrei.buliga/G0-2026-07-03"
     }
   ]

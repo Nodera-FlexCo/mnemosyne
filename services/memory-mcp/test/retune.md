@@ -79,8 +79,12 @@ These are the steps I (the operator) run; they are NOT run by the implementer/CI
 
 Corpus: 2124 active memories, project `nodex`, fully backfilled with
 **voyage-context-4** (AC-021 probe = 0), `mem_hnsw_v2` REINDEXed + VACUUMed.
-Gold: frozen v2 `recall-eval.json` (50 rows, 33 dev / 17 test). Artifact:
-`test/runs/baseline-dev.json` (= the committed `2026-07-03-dev.json` run).
+Gold: frozen v2 `recall-eval.json` (58 rows, 38 dev / 20 test, incl. the amended-G0
+temporal expansion m-051..m-058). Artifact: `test/runs/baseline-dev.json`
+(= the committed `2026-07-03-dev.json` run over the 38-row dev split):
+**pool Recall@25 0.9474 · nDCG@10 0.7404 · MRR@10 0.7673** — these are THE gate
+reference numbers. The table below is the earlier 33-row pre-temporal split, kept
+because it is the only matched context-3-vs-context-4 comparison on record.
 
 **BEFORE (v1, `embedding`) was never measured**: the scalar `V1_RECALL_AT_10_BASELINE`
 mechanism was retired before any v1 number was recorded, and the branch code cannot
@@ -89,12 +93,12 @@ rests on (a) healthy absolute v2 numbers below, (b) the research-grounded expect
 for contextual embeddings, and (c) the intact rollback path (legacy `embedding` column
 + `mem_hnsw` stay until burn-in; `004` stays HOLD).
 
-| Metric (artifact aggregates) | context-3 v2 (accidental arm, see note) | **context-4 v2 (baseline)** |
-| ---------------------------- | --------------------------------------- | --------------------------- |
-| pool Recall@25               | 0.9394                                   | **0.9394**                  |
-| nDCG@10                      | 0.6917                                   | **0.7035**                  |
-| MRR@10                       | 0.7121                                   | **0.7321**                  |
-| dev-split size               | 33                                       | 33 (same set)               |
+| Metric (33-row pre-temporal dev split) | context-3 v2 (accidental arm, see note) | context-4 v2 |
+| -------------------------------------- | --------------------------------------- | ------------ |
+| pool Recall@25                          | 0.9394                                   | 0.9394       |
+| nDCG@10                                 | 0.6917                                   | 0.7035       |
+| MRR@10                                  | 0.7121                                   | 0.7321       |
+| dev-split size                          | 33                                       | 33 (same set) |
 
 > **Accidental context-3 vs context-4 comparison:** a compose env-default drift
 > (fixed the same day — the model is now hard-pinned in `compose.yaml`) first ran the

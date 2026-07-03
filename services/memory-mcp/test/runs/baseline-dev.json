@@ -18,7 +18,7 @@
   },
   "evalVersion": 2,
   "split": "dev",
-  "rows": 33,
+  "rows": 38,
   "perQuery": [
     {
       "id": "m-001",
@@ -283,11 +283,51 @@
       "ndcg": 1,
       "mrr": 1,
       "rank": 1
+    },
+    {
+      "id": "m-051",
+      "query": "what is the latest decision on the mnemosyne memory retrieval scoring approach",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-052",
+      "query": "current status of the mnemosyne retrieval improvement program",
+      "poolRecall": 1,
+      "ndcg": 0.9197207891481876,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-053",
+      "query": "what is the current state of the NOD-597 GL close-wide atomicity work",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-056",
+      "query": "most recent fix for spurious drizzle db:generate snapshot drift",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-058",
+      "query": "what is the current harness role split between codex and the claude models",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
     }
   ],
   "aggregates": {
-    "recallAt25": 0.9393939393939394,
-    "ndcgAt10": 0.7034607682684726,
-    "mrr10": 0.732070707070707
+    "recallAt25": 0.9473684210526315,
+    "ndcgAt10": 0.7403664774212575,
+    "mrr10": 0.7673245614035087
   }
 }

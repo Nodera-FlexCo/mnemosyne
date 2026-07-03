@@ -142,6 +142,10 @@ services:
       # the context-4 code swap). Changing this pin REQUIRES a full column re-embed
       # (backfill:context) + REINDEX (docs/Runbooks-CodeGraph-ContextEmbeddings.md).
       VOYAGE_CONTEXT_MODEL: voyage-context-4
+      # Operator-script inputs only (distill-eval / consolidate, wave 5) — optional,
+      # NOT part of assertServerConfig; the server never reads them.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CONSOLIDATE_MODEL: ${CONSOLIDATE_MODEL:-}
       MNEMO_TOKEN: ${MNEMO_TOKEN:-}
       DEFAULT_PROJECT_ID: ${DEFAULT_PROJECT_ID:-nodex}
       PORT: "8080"
