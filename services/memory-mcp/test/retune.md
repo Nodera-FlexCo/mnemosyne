@@ -1,6 +1,6 @@
 # Wave P retune procedure — the embedder-flip gate decision record (AC-024)
 
-After the contextual re-embed (`embedding_v2` via voyage-context-3) and **before** the
+After the contextual re-embed (`embedding_v2` via voyage-context-4) and **before** the
 query flip goes live, the RRF/blend/rerank constants MUST be re-tuned on a held-out eval
 set. Re-embed couples to fusion/rerank: flipping the embedding column without re-tuning
 silently regresses recall (the locked caveat, memory `0350c509`). This file is the
@@ -47,9 +47,11 @@ These are the steps I (the operator) run; they are NOT run by the implementer/CI
    ```
    (Skip the REINDEX only when `index:v2` just created `mem_hnsw_v2` from scratch on an
    already-backfilled column — a fresh build has no dead tuples; still VACUUM.)
-4. **Freeze a held-out eval set.** Expand `fixtures/recall-eval.json` from the seed rows
-   to ≥30–50 `query → relevantTitles` rows drawn from the LIVE corpus, using verbatim
-   memory titles. Mark each row `"heldOut": true`; keep the originals `"seed": true`.
+4. **Freeze the eval set (wave-2 v2 gold).** Migrate the title-keyed seeds to stable-id
+   v2 gold (`npm run gold:migrate` proposes `recall-eval.v2.json`; a human approves every
+   id), expand to ≥30–50 rows from the LIVE corpus (distill/harvest proposals, human
+   approval), and freeze the **test** split — flip decisions are scored on it, never on
+   the freely-recomputed dev split (AC-109). Shape + policy: `test/eval.md`.
 5. **Baseline + candidate runs through the wave-2 eval spine** (replaces the retired
    scalar-baseline mechanism — see the note below). Record a run artifact and freeze it
    as the committed baseline, then the gate does the statistics:
@@ -65,18 +67,24 @@ These are the steps I (the operator) run; they are NOT run by the implementer/CI
 6. **Retune constants** on the SAME held-out set (sweep `RRF_K` ∈ {30,40,60,80}, the
    blend weights, confirm rerank-2.5-lite still helps), then set the finalized values in
    `src/memory.ts` and record them below.
-7. **Flip gate (AC-023):** flip to v2 ONLY if v2 recall@10 ≥ v1 recall@10 (no regression;
-   a lift is preferred). If it regresses, do NOT flip — investigate retune/embedder.
+7. **Flip gate (AC-023):** flip to v2 ONLY if the v2 run shows no regression vs the v1
+   baseline on the gate metrics (paired-bootstrap CI on per-query nDCG@10 + the pool
+   Recall@25 floor; a lift is preferred). If it regresses, do NOT flip — investigate
+   retune/embedder. (The original scalar "v2 recall@10 ≥ v1 recall@10" phrasing is
+   retired — see the wave-2 note below.)
 8. After a burn-in window, apply `sql/004_drop_legacy_embedding.sql` (lift the HOLD) and
    remove the legacy `embed()` write from `memory.ts`.
 
 ## Recorded numbers
 
-| Metric              | BEFORE (v1, `embedding`) | AFTER (v2, `embedding_v2`) |
-| ------------------- | ------------------------ | -------------------------- |
-| recall@10           | TBD — filled by operator after the live backfill run | TBD |
-| MRR@10              | TBD                      | TBD                        |
-| held-out set size   | TBD                      | (same set)                 |
+Filled from the two run artifacts' `aggregates` (step 5):
+
+| Metric (artifact aggregates) | BEFORE (v1, `embedding`) | AFTER (v2, `embedding_v2`) |
+| ---------------------------- | ------------------------ | -------------------------- |
+| pool Recall@25               | TBD — filled by operator after the live backfill run | TBD |
+| nDCG@10                      | TBD                      | TBD                        |
+| MRR@10                       | TBD                      | TBD                        |
+| dev-split size               | TBD                      | (same set)                 |
 
 ## Finalized tuned constants (set in `src/memory.ts`)
 

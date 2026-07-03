@@ -23,6 +23,14 @@ are resolved through their `superseded_by` FORWARD chains before scoring (AC-106
 consolidation marking a gold memory superseded can never orphan the gold row: a hit on
 any successor counts.
 
+nDCG is scored **one-credit**: each gold key gains at its FIRST occurrence in the top-k
+only (crediting duplicates lets DCG exceed the IDCG anchor — nDCG > 1 — silently biasing
+the gate), matching the first-occurrence semantics of recall/MRR. The code runner
+additionally dedupes chunk-keyed hit paths to their first occurrence before scoring (one
+file's chunks can fill several top-10 slots; a duplicate is not a second relevant
+document). Numbers recorded before the one-credit fix are NOT comparable to post-fix
+numbers — re-record the baseline rather than joining across the change.
+
 ## Gold sets: v2 shape, dev/test split policy (AC-109)
 
 `test/fixtures/recall-eval.json` (memory) and `test/fixtures/code-eval.json` (code).
@@ -103,7 +111,7 @@ none in CI:
 
 | Script | Service | Cost | Consent |
 | --- | --- | --- | --- |
-| `npm run distill-eval -- --yes` | both | Anthropic quota (Haiku-class; `ANTHROPIC_API_KEY`, `DISTILL_MODEL`) | refuses without `--yes` |
+| `npm run distill-eval -- --yes` | both | Anthropic quota (Haiku-class; `ANTHROPIC_API_KEY`, `DISTILL_MODEL` with `CONSOLIDATE_MODEL` fallback) | refuses without `--yes` |
 | `npm run backfill:context` | memory | Voyage quota ($0.12/M) | deliberate operator step |
 | `npm run bakeoff` | codebase | Voyage quota | deliberate operator step |
 | `npm run gold:migrate` | memory | free (SQL only) | — |

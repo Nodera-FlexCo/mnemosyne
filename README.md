@@ -44,7 +44,7 @@ gated drops — see the runbook).
 # memory-mcp — applies 001..003 + 005..006; SKIPS 004 (HOLD legacy-embedding drop)
 DATABASE_URL=<loopback> npm --prefix services/memory-mcp run migrate
 
-# codebase-mcp — applies 001..004; SKIPS 005 (HOLD bake-off-scratch drop)
+# codebase-mcp — applies 001..004 + 006; SKIPS 005 (HOLD bake-off-scratch drop)
 DATABASE_URL=<loopback> npm --prefix services/codebase-mcp run migrate
 ```
 
@@ -55,7 +55,9 @@ against a pristine disposable DB, run `npm run migrate` (both services) against 
 ### Deliberate, paid ops actions (operator-run, NOT auto-on-deploy)
 
 These spend Voyage API quota and are gated, one-time, per-rollout steps. They are
-**never** invoked by a container start hook. Full step-by-step in
+**never** invoked by a container start hook. (`distill-eval` in the eval-harness section
+below is PAID too — Anthropic quota rather than Voyage — under the same operator-gated,
+never-on-deploy posture.) Full step-by-step in
 [`docs/Runbooks-CodeGraph-ContextEmbeddings.md`](docs/Runbooks-CodeGraph-ContextEmbeddings.md).
 
 ```bash
@@ -78,13 +80,16 @@ a human approves every gold id/path before it enters an eval split. Handbook:
 # FREE — convert title-keyed seed gold to stable-id v2 (writes recall-eval.v2.json for review)
 DATABASE_URL=<loopback> npm --prefix services/memory-mcp run gold:migrate
 
-# PAID (Anthropic quota, Haiku-class; needs ANTHROPIC_API_KEY, optional DISTILL_MODEL) —
-# LLM-distill eval-query candidates from the corpus; refuses without --yes
+# PAID (Anthropic quota, Haiku-class; needs ANTHROPIC_API_KEY, optional DISTILL_MODEL
+# with CONSOLIDATE_MODEL as fallback) — LLM-distill eval-query candidates from the
+# corpus into test/fixtures/eval-candidates-<date>.json; refuses without --yes
 DATABASE_URL=<loopback> npm --prefix services/memory-mcp   run distill-eval -- --yes
 DATABASE_URL=<loopback> npm --prefix services/codebase-mcp run distill-eval -- --yes
 
 # FREE — monthly gold rotation from real memory.search_log usage (frequent/zero-hit/
-# low-overlap queries not already in gold); flags: --days 30 --min-count 2 --limit 40
+# low-overlap queries not already in gold); flags: --days 30 --min-count 2 --limit 40.
+# Pair it with the log's retention cleanup (append-only, grows unbounded otherwise):
+#   DELETE FROM memory.search_log WHERE created_at < now() - interval '90 days';
 DATABASE_URL=<loopback> npm --prefix services/memory-mcp run harvest-eval
 
 # PAID (Voyage quota — embeds every dev query) — the flip-gate run: record a run
@@ -137,7 +142,7 @@ DATABASE_URL=<live> VOYAGE_API_KEY=<live> EVAL_RECORD=1 \
 
 ## Code graph + contextual embeddings
 
-Two capabilities landed on the Stage 1/2 engines:
+Capabilities landed on the Stage 1/2 engines:
 
 **Deterministic AST code graph (codebase-mcp).** Indexing now extracts symbols and call /
 import edges with tree-sitter (TypeScript) into `codebase.symbols` + `codebase.symbol_edges`
@@ -168,6 +173,21 @@ only after burn-in (`004_drop_legacy_embedding.sql`, HOLD). A code-embedder **ba
 rows, NOT an LLM-extracted temporal KG. Supersession walks `supersedes_id` (backward) via a
 recursive CTE; the live `entities`/`entity_edges` graph is never mutated by a decision write.
 
+**Retrieval eval harness (both services — retrieval-improvement waves 1–3).** Search is
+split into two exported phases (`fuseCandidates`/`rerankAndBlend` in memory;
+`fuseCodeCandidates`/`rerankCodeHits` in codebase) so evals score the exact live code at
+two layers: pool Recall@25 at the fuse phase, nDCG@10 + MRR at the full pipeline. Gold
+sets are stable-id v2 with **dev/test splits** (the test split is spent only by flip
+gates); the CI regression gate recomputes the dev split and joins per-query nDCG@10
+against the committed `test/runs/baseline-dev.json`, failing on a paired-bootstrap 95%
+CI that excludes zero on the regression side. Run artifacts (with a verbatim
+`retrievalConfig()` snapshot) are written only under `EVAL_RECORD=1`. Every live
+`memory_search` is logged fire-and-forget to `memory.search_log` (006) for the monthly
+gold harvest. Supporting perf work: covering edge indexes (codebase 006) + app-side BFS
+for graph depth ≥ 5 (the recursive CTE, with `SET LOCAL work_mem`, serves depth ≤ 4),
+staged edge resolution, and a chunk-level embed cache keyed on `content_sha256`.
+Handbook: [`services/memory-mcp/test/eval.md`](services/memory-mcp/test/eval.md).
+
 ### Decision records (per-wave, fill from the live run)
 
 - Code bake-off procedure + recorded result → [`services/codebase-mcp/test/bakeoff.md`](services/codebase-mcp/test/bakeoff.md)
@@ -183,6 +203,7 @@ recursive CTE; the live `entities`/`entity_edges` graph is never mutated by a de
 | codebase-mcp | `003_graph_constraints.sql` | 2 | yes |
 | codebase-mcp | `004_bakeoff_scratch.sql` | 5 | yes |
 | codebase-mcp | `005_drop_bakeoff_scratch.sql` | 5 | **HOLD** — skipped (apply post-decision) |
+| codebase-mcp | `006_edge_covering_indexes.sql` | retrieval wave 3 | yes |
 | memory-mcp | `001_memory.sql` | base | yes |
 | memory-mcp | `002_migration.sql` | base | yes |
 | memory-mcp | `003_context_embeddings.sql` | P | yes |
@@ -192,7 +213,9 @@ recursive CTE; the live `entities`/`entity_edges` graph is never mutated by a de
 
 The two `CREATE INDEX CONCURRENTLY` indexes (`mem_hnsw_v2`, the decision partial HNSW)
 cannot run inside the batch runner's transaction, so they are built by standalone op
-scripts: `npm run index:v2` and `npm run index:decision`.
+scripts: `npm run index:v2` and `npm run index:decision`. Codebase `006` builds its
+covering edge indexes plain (not CONCURRENTLY — deliberate, the table is small) and
+drops the old single-column `symedge_from`/`symedge_to`, which `001` no longer creates.
 
 ## Stages
 
@@ -202,5 +225,9 @@ scripts: `npm run index:v2` and `npm run index:decision`.
       contextual embeddings (voyage-context-4, blue/green) + structured decision log
 - [x] Stage 2: codebase engine — semantic + lexical code search + deterministic AST code
       graph (symbols + call/import edges) with the three graph tools + observable indexing
-- [ ] Stage 3: optimization — eval harness (Langfuse + Promptfoo); the code-embedder
-      bake-off (voyage-code-3 vs voyage-context-3) is the advanced, paid measurement step
+- [ ] Stage 3: optimization — **partially delivered**: the retrieval eval harness landed
+      in waves 1–3 (two-layer runners, statistical CI regression gate, committed run
+      artifacts — homegrown vitest, not the originally-sketched Langfuse + Promptfoo; see
+      `services/memory-mcp/test/eval.md`). Still open: Langfuse tracing and the
+      code-embedder bake-off (voyage-code-3 vs voyage-context-3) — the advanced, paid
+      measurement step

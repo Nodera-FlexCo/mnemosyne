@@ -64,17 +64,22 @@ constants) — it goes live at the **gated redeploy**, not before.
    (A `index:v2` build fresh from scratch has no dead tuples — skip the REINDEX then,
    but still VACUUM.)
 
-4. **Freeze a held-out eval set.** Expand `fixtures/recall-eval.json` from the seed rows to
-   ≥30–50 `query → relevantTitles` rows drawn from the LIVE corpus (verbatim titles), each
-   marked `"heldOut": true`.
+4. **Freeze the eval set (wave-2 v2 gold).** Migrate the title-keyed seeds to stable-id
+   v2 (`npm run gold:migrate` proposes `recall-eval.v2.json`; a human approves every id),
+   expand to ≥30–50 rows from the LIVE corpus (distill/harvest proposals, human approval),
+   and freeze the **test** split — spent only by flip gates (AC-109).
 
-5. **Measure recall — v1 baseline + v2 candidate** (the live gate), from the service dir:
+5. **Measure — record a baseline artifact, then gate** (the live flip-gate run; it embeds
+   every dev query, so it spends Voyage quota), from the service dir:
    ```bash
    cd services/memory-mcp
-   DATABASE_URL=<live> VOYAGE_API_KEY=<live> VOYAGE_LIVE_TESTS=1 npx vitest run recall-gate
+   DATABASE_URL=<live> VOYAGE_API_KEY=<live> EVAL_RECORD=1 npx vitest run recall-gate
+   cp test/runs/<date>-dev.json test/runs/baseline-dev.json   # commit it
+   DATABASE_URL=<live> VOYAGE_API_KEY=<live> npx vitest run recall-gate
    ```
-   Record v1 (incumbent `embedding`) and v2 (`embedding_v2`) recall@10 / MRR@10 in
-   `retune.md`.
+   The gate joins per-query nDCG@10 against `baseline-dev.json` (paired-bootstrap 95% CI)
+   plus a pool Recall@25 floor. Record the BEFORE/AFTER aggregates in `retune.md`; full
+   semantics in `services/memory-mcp/test/eval.md`.
 
 6. **Re-tune the fusion constants** on the SAME held-out set BEFORE the flip (re-embed
    couples to fusion/rerank — AC-024): sweep `RRF_K` ∈ {30,40,60,80}, re-check the
@@ -82,9 +87,10 @@ constants) — it goes live at the **gated redeploy**, not before.
    rerank-2.5-lite still helps. Set the finalized values in `src/memory.ts`, record in
    `retune.md`.
 
-7. **Flip gate (AC-023).** Redeploy to flip the query path to `embedding_v2` ONLY if
-   v2 recall@10 ≥ v1 recall@10 (no regression; a lift is preferred). If it regresses, do
-   NOT flip — revisit the retune or the embedder, then re-measure.
+7. **Flip gate (AC-023).** Redeploy to flip the query path to `embedding_v2` ONLY if the
+   gate shows no regression vs the v1 baseline (paired-bootstrap CI on per-query nDCG@10
+   plus the pool Recall@25 floor; a lift is preferred). If it regresses, do NOT flip —
+   revisit the retune or the embedder, then re-measure.
 
 8. **Burn-in, then drop the legacy column.** After `searchMemory` has served from
    `embedding_v2` with no regression and store/update have been writing both columns,
@@ -141,8 +147,9 @@ live `code_search` keeps serving from `embedding` the whole time.
 6. **If voyage-context-3 wins (swap):** re-tune RRF + rerank BEFORE flipping (AC-031 — same
    coupling tax as Runbook A). Sweep the RRF constant (`60` in `search.ts` + the bake-off
    `searchArm`), re-score the candidate with `scoreArm`, gate the flip on
-   tuned-candidate Recall@10 ≥ incumbent baseline. Then flip: re-embed the live `embedding`
-   with the winner via a forced full reindex (`code_reindex force:true`), switch
+   tuned-candidate Recall@10 ≥ incumbent baseline. Then flip: truncate the stored vectors
+   (NULL out `code_chunks.embedding`), re-embed the live `embedding` with the winner via a
+   forced full reindex (`code_reindex force:true`), switch
    `indexer.ts`'s `embedCode` → `embedCodeContextual`, embed the QUERY with the winning
    embedder, set `VOYAGE_CODE_MODEL` in `config.ts` + `compose.yaml` + `.env.example`, and
    apply the retuned RRF constant.
