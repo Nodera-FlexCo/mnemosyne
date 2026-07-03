@@ -177,3 +177,22 @@ named `RRF_K` in `src/search.ts` now — retunes land there and the snapshot fol
 chunks / ≤120k tokens / ≤32k tokens per doc) via `FILES_PER_REQUEST` + `MAX_CHUNKS_PER_REQUEST`,
 and relies on the indexer's `MAX_FILE_BYTES` (400k) guard to bound a single file's chunk
 count. A file whose chunks exceed 32k tokens/doc must be split across requests.
+
+## G0 baseline record — 2026-07-03 (operator)
+
+Frozen gold: `code-eval.json` v2, 67 rows (45 dev / 22 test), two-repo corpus
+(`nodex` 7,441 files post worktree-prune + `mnemosyne-impl` 141 files). Incumbent
+pipeline (voyage-code-3 + RRF k=60 + rerank-2.5-lite), dev split, committed as
+`test/runs/baseline-dev.json`:
+
+| Metric        | value  |
+| ------------- | ------ |
+| pool Recall@25 | 0.9556 |
+| nDCG@10       | 0.7558 |
+| MRR@10        | 0.7415 |
+
+Zero-nDCG rows: c-019, c-020, c-043, c-055 (known-hard; do not "fix" the gold to
+flatter the number). Recorded AFTER the one-time `.claude/worktrees/**` index prune
+(17,249 duplicate rows deleted; walker now excludes them) — earlier numbers against
+the polluted corpus would not be comparable. This baseline is the reference for the
+wave-4 token-shaping gate and the wave-6 rerank bakeoff.
