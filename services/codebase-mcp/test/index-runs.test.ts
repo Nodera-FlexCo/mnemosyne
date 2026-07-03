@@ -105,13 +105,30 @@ describe.skipIf(skip)("indexer index_runs lifecycle", () => {
   });
 
   it("records an 'error' run with the message when indexing throws (AC-002)", async () => {
+    // Unique-content fixture: the chunk-level embed cache (Wave 3, AC-404) reuses stored
+    // vectors by content_sha256 ACROSS repos, so indexing sample-repo again (its chunks
+    // already embedded under 'lifecycle-happy') would never call the embedder and the
+    // rejection below would go unconsumed. Unseen content guarantees a cache miss.
+    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const errRepoDir = mkdtempSync(join(tmpdir(), "lifecycle-error-repo-"));
+    writeFileSync(
+      join(errRepoDir, "unique.ts"),
+      "// lifecycle-error unique content\nexport const lifecycleErrorProbe = 1;\n",
+      "utf8",
+    );
+
     vi.mocked(voyage.embedCode).mockRejectedValueOnce(
       new Error("boom: voyage unavailable"),
     );
 
-    await expect(
-      indexRepo(sampleRepoDir, "lifecycle-error", "test-proj"),
-    ).rejects.toThrow("boom: voyage unavailable");
+    try {
+      await expect(
+        indexRepo(errRepoDir, "lifecycle-error", "test-proj"),
+      ).rejects.toThrow("boom: voyage unavailable");
+    } finally {
+      rmSync(errRepoDir, { recursive: true, force: true });
+    }
 
     const run = await latestRun("lifecycle-error");
     expect(run?.phase).toBe("error");

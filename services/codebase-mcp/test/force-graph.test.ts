@@ -115,8 +115,11 @@ describe.skipIf(skip)("forced graph backfill (AC-007)", () => {
     // The non-forced backfill path skips embed on every unchanged file.
     expect(embedCode).not.toHaveBeenCalled();
 
-    // 4. A FORCED reindex bypasses the sha-skip entirely — it re-embeds/re-chunks the
-    //    unchanged corpus (full rebuild) and keeps the graph populated.
+    // 4. A FORCED reindex bypasses the sha-skip entirely — it re-chunks the unchanged
+    //    corpus (full rebuild) and keeps the graph populated. Since Wave 3's chunk-level
+    //    embed cache (AC-404), re-entering the embed path no longer means re-SPENDING:
+    //    every chunk's content_sha256 already has a stored vector, so the forced run
+    //    rewrites the chunks with ZERO Voyage calls.
     embedCode.mockClear();
     await indexRepo(sampleRepoDir, REPO, "test-proj", true);
     expect(
@@ -131,7 +134,15 @@ describe.skipIf(skip)("forced graph backfill (AC-007)", () => {
         [REPO],
       ),
     ).toBeGreaterThan(0);
-    // force re-embeds the unchanged corpus (the distinguishing semantic vs non-forced).
-    expect(embedCode).toHaveBeenCalled();
+    // The forced full rebuild still rewrote every chunk (embeddings all present)...
+    expect(
+      await count(
+        `SELECT count(*) AS n FROM codebase.code_chunks
+         WHERE repository_id=$1 AND embedding IS NOT NULL`,
+        [REPO],
+      ),
+    ).toBeGreaterThan(0);
+    // ...but the chunk-level cache satisfied all of them (AC-404): zero Voyage calls.
+    expect(embedCode).not.toHaveBeenCalled();
   });
 });

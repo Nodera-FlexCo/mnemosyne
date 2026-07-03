@@ -246,15 +246,57 @@ export async function indexRepo(
       }
 
       await updateRun(runId, { phase: "embedding", current_file: rel });
-      const vectors: number[][] = [];
-      for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
-        vectors.push(
-          ...(await embedCode(
-            chunks.slice(i, i + EMBED_BATCH).map((c) => c.content),
-            "document",
-          )),
+      // ── Chunk-level embed cache (AC-404): before calling Voyage, reuse any stored
+      //    vector whose content_sha256 matches — only cache MISSES are embedded. The
+      //    file-level sha-skip above stays the outer gate; this covers moved/renamed
+      //    files and `force` runs. Reuse crosses files/repos on purpose: the embed model
+      //    is deterministic per content, and all rows share ONE model today — a model
+      //    flip (bakeoff winner) requires a forced full re-embed, which repopulates.
+      //    The stored halfvec is carried as its ::text literal (already `[...]`-shaped)
+      //    straight back into the $::halfvec insert — never through toVectorLiteral
+      //    again, so there is no float round-trip. ───────────────────────────────────
+      const vecBySha = new Map<string, string>(); // content_sha256 → halfvec literal
+      const shas = [...new Set(chunks.map((c) => c.contentSha256))];
+      const { rows: cachedVecs } = await pool.query<{
+        content_sha256: string;
+        embedding: string;
+      }>(
+        `SELECT DISTINCT ON (content_sha256) content_sha256, embedding::text AS embedding
+         FROM codebase.code_chunks
+         WHERE content_sha256 = ANY($1) AND embedding IS NOT NULL
+         ORDER BY content_sha256`,
+        [shas],
+      );
+      for (const r of cachedVecs) vecBySha.set(r.content_sha256, r.embedding);
+      const missShas: string[] = [];
+      const missContents: string[] = [];
+      const missSeen = new Set<string>();
+      for (const c of chunks) {
+        if (vecBySha.has(c.contentSha256) || missSeen.has(c.contentSha256))
+          continue;
+        missSeen.add(c.contentSha256);
+        missShas.push(c.contentSha256);
+        missContents.push(c.content);
+      }
+      for (let i = 0; i < missShas.length; i += EMBED_BATCH) {
+        const fresh = await embedCode(
+          missContents.slice(i, i + EMBED_BATCH),
+          "document",
+        );
+        fresh.forEach((v, j) =>
+          vecBySha.set(missShas[i + j], toVectorLiteral(v)),
         );
       }
+      // Fail loudly if the embedder returned fewer vectors than inputs (the pre-cache
+      // code crashed on undefined here too — a silent NULL embedding is worse).
+      if (missShas.some((s) => !vecBySha.has(s))) {
+        throw new Error(
+          `embedCode returned fewer vectors than inputs for ${rel}`,
+        );
+      }
+      console.error(
+        `  ${rel}: embedded ${missShas.length}, cache-hit ${shas.length - missShas.length}`,
+      );
 
       const importsJson = JSON.stringify(graph.imports);
       const client = await pool.connect();
@@ -292,7 +334,7 @@ export async function indexRepo(
               c.content,
               c.contentSha256,
               importsJson,
-              toVectorLiteral(vectors[i]),
+              vecBySha.get(c.contentSha256),
             ],
           );
           chunksTotal++;
@@ -429,98 +471,127 @@ async function writeSymbols(
  *    staying symbol→symbol (the FK shape). The import LOCAL binding is also surfaced in
  *    code_chunks.imports; symbol_edges carries the resolved dependency edge.
  */
-async function resolveEdges(
+/**
+ * Lock-window note (Wave 3 graph hardening, AC-403): the heavy name-resolution JOINs are
+ * staged into session TEMP tables BEFORE any transaction opens; the transaction (= the
+ * window in which readers of symbol_edges see the repo's graph mid-swap) contains ONLY
+ * `DELETE + INSERT ... FROM resolved_edges`. Staging reads `codebase.symbols` with no
+ * transaction open — safe because the per-repo advisory lock (taken by indexRepo BEFORE
+ * any staging, held for the whole run) serializes index runs, so symbols cannot mutate
+ * under the staging reads. Exported (with an injectable client) so the staging/txn
+ * statement ORDER is structurally testable.
+ */
+export async function resolveEdges(
   repositoryId: string,
   edges: ByNameEdge[],
+  injectedClient?: pg.PoolClient,
 ): Promise<number> {
-  const client = await pool.connect();
+  const client = injectedClient ?? (await pool.connect());
   try {
-    await client.query("BEGIN");
-    // Full repo-level edge rebuild — names resolve only once every file's symbols exist.
-    await client.query(
-      "DELETE FROM codebase.symbol_edges WHERE repository_id=$1",
-      [repositoryId],
-    );
-
     const callEdges = edges.filter(
       (e): e is ByNameEdge & { fromName: string } =>
         e.kind === "call" && e.fromName !== null,
     );
     const importEdges = edges.filter((e) => e.kind === "import");
-    if (callEdges.length === 0 && importEdges.length === 0) {
-      await client.query("COMMIT");
-      return 0;
-    }
-
-    await client.query(
-      `CREATE TEMP TABLE staged_edges
-         (from_name text, from_file text, to_name text, kind text)
-       ON COMMIT DROP`,
-    );
     const staged = [...callEdges, ...importEdges];
-    const BATCH = 500;
-    for (let i = 0; i < staged.length; i += BATCH) {
-      const slice = staged.slice(i, i + BATCH);
-      const values: string[] = [];
-      const params: unknown[] = [];
-      slice.forEach((e, j) => {
-        const base = j * 4;
-        values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4})`);
-        params.push(e.fromName, e.fromFile, e.toName, e.kind);
-      });
-      await client.query(
-        `INSERT INTO staged_edges (from_name, from_file, to_name, kind)
-         VALUES ${values.join(",")}`,
-        params,
-      );
-    }
 
-    // call edges: from_name → symbol, to_name → symbol (both in-repo). The FROM side is
-    // anchored by BOTH name AND file_path (from_file is staged at insert time) so a call
-    // inside `foo` links only from the `foo` that actually contains it — not from every
-    // same-named `foo` across the repo. The TO side stays by-name (the intentional,
-    // labeled ambiguity: a name matching >1 target fans out and Wave 4 flags it AC-010).
-    const callRes = await client.query<{ n: string }>(
-      `WITH inserted AS (
-         INSERT INTO codebase.symbol_edges (repository_id, from_symbol, to_symbol, kind)
-         SELECT DISTINCT $1, sf.id, st.id, 'call'
+    // ── Phase 1: stage + resolve, NO transaction, no lock on symbol_edges. ──────
+    // TEMP tables are session-scoped and pooled sessions are reused, so drop any
+    // leftovers first (ON COMMIT DROP is useless here — outside an explicit txn it
+    // would drop the table at the end of the CREATE statement itself).
+    await client.query("DROP TABLE IF EXISTS staged_edges");
+    await client.query("DROP TABLE IF EXISTS resolved_edges");
+    if (staged.length > 0) {
+      await client.query(
+        `CREATE TEMP TABLE staged_edges
+           (from_name text, from_file text, to_name text, kind text)`,
+      );
+      const BATCH = 500;
+      for (let i = 0; i < staged.length; i += BATCH) {
+        const slice = staged.slice(i, i + BATCH);
+        const values: string[] = [];
+        const params: unknown[] = [];
+        slice.forEach((e, j) => {
+          const base = j * 4;
+          values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4})`);
+          params.push(e.fromName, e.fromFile, e.toName, e.kind);
+        });
+        await client.query(
+          `INSERT INTO staged_edges (from_name, from_file, to_name, kind)
+           VALUES ${values.join(",")}`,
+          params,
+        );
+      }
+
+      await client.query(
+        `CREATE TEMP TABLE resolved_edges
+           (from_symbol uuid, to_symbol uuid, kind text)`,
+      );
+      // call edges: from_name → symbol, to_name → symbol (both in-repo). The FROM side is
+      // anchored by BOTH name AND file_path (from_file is staged at insert time) so a call
+      // inside `foo` links only from the `foo` that actually contains it — not from every
+      // same-named `foo` across the repo. The TO side stays by-name (the intentional,
+      // labeled ambiguity: a name matching >1 target fans out and Wave 4 flags it AC-010).
+      // DISTINCT lives here (outside the txn) so the txn's INSERT is a plain copy.
+      await client.query(
+        `INSERT INTO resolved_edges (from_symbol, to_symbol, kind)
+         SELECT DISTINCT sf.id, st.id, 'call'
          FROM staged_edges se
          JOIN codebase.symbols sf
            ON sf.repository_id = $1 AND sf.name = se.from_name
               AND sf.file_path = se.from_file
          JOIN codebase.symbols st
            ON st.repository_id = $1 AND st.name = se.to_name
-         WHERE se.kind = 'call'
-         RETURNING 1
-       )
-       SELECT count(*) AS n FROM inserted`,
-      [repositoryId],
-    );
-
-    // import edges: anchor from every symbol in the importing file → imported symbol.
-    const importRes = await client.query<{ n: string }>(
-      `WITH inserted AS (
-         INSERT INTO codebase.symbol_edges (repository_id, from_symbol, to_symbol, kind)
-         SELECT DISTINCT $1, sf.id, st.id, 'import'
+         WHERE se.kind = 'call'`,
+        [repositoryId],
+      );
+      // import edges: anchor from every symbol in the importing file → imported symbol.
+      await client.query(
+        `INSERT INTO resolved_edges (from_symbol, to_symbol, kind)
+         SELECT DISTINCT sf.id, st.id, 'import'
          FROM staged_edges se
          JOIN codebase.symbols sf
            ON sf.repository_id = $1 AND sf.file_path = se.from_file
          JOIN codebase.symbols st
            ON st.repository_id = $1 AND st.name = se.to_name AND st.file_path <> se.from_file
-         WHERE se.kind = 'import'
-         RETURNING 1
-       )
-       SELECT count(*) AS n FROM inserted`,
-      [repositoryId],
-    );
+         WHERE se.kind = 'import'`,
+        [repositoryId],
+      );
+    }
 
-    await client.query("COMMIT");
-    return Number(callRes.rows[0].n) + Number(importRes.rows[0].n);
-  } catch (e) {
-    await client.query("ROLLBACK");
-    throw e;
+    // ── Phase 2: the ONLY transaction — DELETE + INSERT-from-staged (AC-403). ───
+    // Full repo-level edge rebuild; an empty stage still wipes the repo's edges
+    // (a repo whose files lost all their edges must converge to zero rows).
+    let inserted = 0;
+    await client.query("BEGIN");
+    try {
+      await client.query(
+        "DELETE FROM codebase.symbol_edges WHERE repository_id=$1",
+        [repositoryId],
+      );
+      if (staged.length > 0) {
+        const res = await client.query(
+          `INSERT INTO codebase.symbol_edges (repository_id, from_symbol, to_symbol, kind)
+           SELECT $1, from_symbol, to_symbol, kind FROM resolved_edges`,
+          [repositoryId],
+        );
+        inserted = res.rowCount ?? 0;
+      }
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    }
+    return inserted;
   } finally {
-    client.release();
+    // Session-scoped TEMP tables must not leak into the next pooled checkout.
+    try {
+      await client.query("DROP TABLE IF EXISTS staged_edges");
+      await client.query("DROP TABLE IF EXISTS resolved_edges");
+    } catch {
+      /* best-effort cleanup; the session may already be dead */
+    }
+    if (!injectedClient) client.release();
   }
 }
 
