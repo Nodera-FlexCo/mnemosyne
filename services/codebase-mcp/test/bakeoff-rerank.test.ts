@@ -24,6 +24,7 @@ import {
   type QueryEmbedder,
   type RerankFn,
 } from "../src/db/bakeoff-rerank.js";
+import type { QueryResult } from "pg";
 import {
   ndcgAtK,
   pairedBootstrapCI,
@@ -87,6 +88,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe.skipIf(!HAS_DB)(
@@ -241,5 +243,91 @@ describe("bakeoff-rerank pure guards (no DB, no network)", () => {
     ).rejects.toThrow("at least 15 test rows");
     expect(query).not.toHaveBeenCalled();
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("mirrors runCodeEval's post-cut dedupe: a duplicate path burns its rank slot but cannot double-credit", async () => {
+    // Pool has TWO chunks for a.ts (occupying the top two rank slots) then one for
+    // b.ts, the only relevant path. Rerank returns the identity order (no reordering),
+    // so the raw top-10 cut is [a.ts, a.ts, b.ts]. Hand-computed: dedupe-then-score
+    // promotes b.ts to position 1 (0-based) -> nDCG@10 = 1/log2(3) / (1/log2(2)).
+    const rows = [
+      { file_path: "a.ts", content: "A", rrf: 0.9 },
+      { file_path: "a.ts", content: "A2", rrf: 0.8 },
+      { file_path: "b.ts", content: "B", rrf: 0.7 },
+    ];
+    const query = vi.fn(
+      async () => ({ rows }) as unknown as QueryResult<any>,
+    );
+    const identityRerank: RerankFn = async (_query, docs, topK) =>
+      docs
+        .map((_, index) => ({ index, score: 1 - index / 100 }))
+        .slice(0, topK);
+
+    const dupEvalFile: CodeEvalFile = {
+      ...evalFile("test"),
+      rows: evalFile("test").rows.map((r) => ({ ...r, relevantPaths: ["b.ts"] })),
+    };
+    const result = await scoreRerankArm({
+      pool: { query } as unknown as pg.Pool,
+      evalFile: dupEvalFile,
+      model: LITE_RERANK_MODEL,
+      rerankFn: identityRerank,
+      embedQuery: async () => [0],
+      projectId: "unused",
+    });
+
+    const expectedNdcg = 1 / Math.log2(3) / (1 / Math.log2(2));
+    for (const q of result.perQuery) {
+      expect(q.hits).toEqual(["a.ts", "b.ts"]);
+      expect(q.rank).toBe(2);
+      expect(q.ndcgAt10).toBeCloseTo(expectedNdcg, 10);
+    }
+    // Without the post-cut dedupe, b.ts would stay at its raw index 2 -> nDCG 0.5.
+    expect(result.perQuery[0].ndcgAt10).not.toBeCloseTo(0.5, 10);
+  });
+
+  it("throws loudly when the rerank result carries an out-of-range index", async () => {
+    const rows = [{ file_path: "a.ts", content: "A", rrf: 0.9 }];
+    const query = vi.fn(
+      async () => ({ rows }) as unknown as QueryResult<any>,
+    );
+    const outOfRangeRerank: RerankFn = async () => [
+      { index: 7, score: 1 },
+    ];
+
+    await expect(
+      scoreRerankArm({
+        pool: { query } as unknown as pg.Pool,
+        evalFile: evalFile("test"),
+        model: LITE_RERANK_MODEL,
+        rerankFn: outOfRangeRerank,
+        embedQuery: async () => [0],
+        projectId: "unused",
+      }),
+    ).rejects.toThrow("out-of-range index");
+  });
+
+  it("throws before any pool/embed call when CANDIDATE_POOL mismatches the fixed pool metric", async () => {
+    vi.resetModules();
+    vi.stubEnv("CANDIDATE_POOL", "50");
+    try {
+      const { runRerankBakeoff } = await import("../src/db/bakeoff-rerank.js");
+      const query = vi.fn();
+      const embedQuery = vi.fn();
+      await expect(
+        runRerankBakeoff({
+          pool: { query } as unknown as pg.Pool,
+          evalFile: evalFile("test"),
+          rerankFn: vi.fn(),
+          embedQuery,
+          projectId: "unused",
+        }),
+      ).rejects.toThrow("pool-recall cutoff mismatch");
+      expect(query).not.toHaveBeenCalled();
+      expect(embedQuery).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
   });
 });

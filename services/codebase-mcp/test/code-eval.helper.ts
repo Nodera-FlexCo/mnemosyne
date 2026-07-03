@@ -17,6 +17,7 @@ import {
   mrr,
   ndcgAtK,
   normalizePath,
+  POOL_RECALL_K,
   recallAtK,
   type CodeEvalFile,
   type CodeRecallEvalResult,
@@ -38,6 +39,7 @@ export {
   pairedBootstrapCI,
   regressionExcluded,
   normalizePath,
+  POOL_RECALL_K,
   firstRelevantRank,
   loadCodeEval,
   filterRowsBySplit,
@@ -102,8 +104,6 @@ export async function runCodeRecallEval(
 
 // ── Two-layer eval runner (wave-2, AC-104) ───────────────────────────────────────────
 
-/** Pool-layer Recall@k cutoff (matches `config.candidatePool`'s documented ceiling). */
-export const POOL_RECALL_K = 25;
 /** Final-layer nDCG/MRR cutoff. */
 export const FINAL_NDCG_K = 10;
 

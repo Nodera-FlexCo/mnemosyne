@@ -11,6 +11,9 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
+/** Pool-layer Recall@k cutoff (matches `config.candidatePool`'s documented ceiling); shared by the eval runner (test/code-eval.helper.ts) and the rerank bakeoff (src/db/bakeoff-rerank.ts). */
+export const POOL_RECALL_K = 25;
+
 /** A ranked list of candidate file paths (best-first) returned for one query. */
 export type RankedPaths = string[];
 

@@ -13,7 +13,9 @@ import { pool as defaultPool } from "./pool.js";
 import { config } from "../config.js";
 import { embedCode, rerank, toVectorLiteral } from "../voyage.js";
 import {
+  RECALL_LIMIT,
   RERANK_DOC_TRUNCATION,
+  RRF_K,
   retrievalConfig,
 } from "../search.js";
 import {
@@ -21,7 +23,9 @@ import {
   firstRelevantRank,
   loadCodeEval,
   ndcgAtK,
+  normalizePath,
   pairedBootstrapCI,
+  POOL_RECALL_K,
   recallAtK,
   type CodeEvalFile,
   type CodeEvalRow,
@@ -32,8 +36,6 @@ import {
 export const LITE_RERANK_MODEL = "rerank-2.5-lite";
 export const FULL_RERANK_MODEL = "rerank-2.5";
 export const MIN_TEST_ROWS = 15;
-const RECALL_LIMIT = 50;
-const RRF_K = 60;
 
 export type RerankFn = (
   query: string,
@@ -93,7 +95,7 @@ export interface RerankBakeoffResult {
   full: RerankArmScore;
   deltas: number[];
   ci: { mean: number; ciLow: number; ciHigh: number };
-  verdict: "SWAP" | "KEEP LITE" | "NO SIGNIFICANT DIFFERENCE -- operator's call, cost immaterial";
+  verdict: "SWAP" | "KEEP LITE" | "NO SIGNIFICANT DIFFERENCE — operator's call, cost immaterial";
 }
 
 export interface RunRerankBakeoffDeps
@@ -210,7 +212,28 @@ function rankPaths(
     const order = ranked.length
       ? ranked
       : docs.map((_, index) => ({ index, score: 0 }));
-    return order.map(({ index }) => poolPaths[index]).filter(Boolean);
+    return order.map(({ index }) => {
+      const path = poolPaths[index];
+      if (path === undefined) {
+        throw new Error(
+          `rerank bakeoff: rerank returned out-of-range index ${index} for a pool of ${poolPaths.length} paths`,
+        );
+      }
+      return path;
+    });
+  });
+}
+
+/** First-occurrence dedupe by normalized path — mirrors runCodeEval's post-cut dedupe
+ * (test/code-eval.helper.ts): a duplicate still burns the rank slot it occupied but
+ * cannot double-credit or push a later distinct path out of the cut. */
+function dedupeFirstOccurrence(paths: RankedPaths): RankedPaths {
+  const seen = new Set<string>();
+  return paths.filter((p) => {
+    const key = normalizePath(p);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
 }
 
@@ -224,21 +247,24 @@ export async function scoreRerankArm(
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const candidates = await candidatesForRow(row, i, deps);
-    const hits = await rankPaths(
+    const ranked = await rankPaths(
       row.query,
       candidates.docs,
       candidates.poolPaths,
       deps.model,
       deps.rerankFn,
     );
+    // Mirror runCodeEval EXACTLY: cut to the top-10 BEFORE dedupe, so a duplicate path
+    // still burns a rank slot, then dedupe first-occurrence so it can't double-credit.
+    const hits = dedupeFirstOccurrence(ranked.slice(0, 10));
     perQuery.push({
       id: rowKey(row, i),
       query: row.query,
       relevantPaths: row.relevantPaths,
-      poolRecallAt25: recallAtK(candidates.poolPaths, row.relevantPaths, 25),
+      poolRecallAt25: recallAtK(candidates.poolPaths, row.relevantPaths, POOL_RECALL_K),
       ndcgAt10: ndcgAtK(hits, row.relevantPaths, 10),
       rank: firstRelevantRank(hits, row.relevantPaths),
-      hits: hits.slice(0, 10),
+      hits,
     });
   }
 
@@ -259,6 +285,15 @@ export async function scoreRerankArm(
 export async function runRerankBakeoff(
   deps: RunRerankBakeoffDeps,
 ): Promise<RerankBakeoffResult> {
+  // The pool metric is fixed at Recall@25 (see runCodeEval, test/code-eval.helper.ts) —
+  // refuse to score a mislabeled number if CANDIDATE_POOL drifts from that.
+  if (config.candidatePool !== POOL_RECALL_K) {
+    throw new Error(
+      `pool-recall cutoff mismatch: config.candidatePool = ${config.candidatePool} ` +
+        `but the pool metric is fixed at Recall@${POOL_RECALL_K} — unset CANDIDATE_POOL ` +
+        `(or restore ${POOL_RECALL_K}) before running the bakeoff.`,
+    );
+  }
   const queryVectors = new Map<string, number[]>();
   const candidates = new Map<string, CandidateSet>();
   const liteModel = deps.liteModel ?? LITE_RERANK_MODEL;
@@ -289,7 +324,7 @@ export async function runRerankBakeoff(
       ? "SWAP"
       : ci.mean < 0 && ci.ciHigh < 0
         ? "KEEP LITE"
-        : "NO SIGNIFICANT DIFFERENCE -- operator's call, cost immaterial";
+        : "NO SIGNIFICANT DIFFERENCE — operator's call, cost immaterial";
   return { lite, full, deltas, ci, verdict };
 }
 
