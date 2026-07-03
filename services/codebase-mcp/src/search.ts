@@ -25,6 +25,34 @@ interface Row {
 }
 
 const RECALL_LIMIT = 50;
+const RRF_K = 60;
+
+// Named (and exported) so retrievalConfig() serializes the SAME values the code runs
+// with — the snapshot can never drift from the pipeline (AC-104 groundwork).
+export const RERANK_DOC_TRUNCATION = 1500; // chars of path+content handed to the reranker
+export const SNIPPET_LINES = 4; // lines kept in a CodeHit snippet
+export const SNIPPET_CHARS = 240; // char cap applied after the line cut
+
+/**
+ * The FULL retrieval configuration, serialized into every eval-run artifact (AC-104)
+ * so any recorded number is reproducible. JSON-safe by construction (plain literals —
+ * no functions, no Dates); wave-2's artifact writer and wave-6's bakeoff serialize it
+ * verbatim.
+ */
+export function retrievalConfig() {
+  return {
+    service: "codebase-mcp",
+    rrfK: RRF_K,
+    candidatePool: config.candidatePool,
+    recallLimit: RECALL_LIMIT,
+    codeEmbedModel: config.codeEmbedModel,
+    codeContextModel: config.codeContextModel,
+    rerankModel: config.rerankModel,
+    rerankDocTruncation: RERANK_DOC_TRUNCATION,
+    snippetLines: SNIPPET_LINES,
+    snippetChars: SNIPPET_CHARS,
+  };
+}
 
 // ── Two-phase search core (Wave 1) ───────────────────────────────────────────────────
 // searchCode = fuseCodeCandidates (ONE RRF SQL path → candidate pool) → rerankCodeHits
@@ -85,7 +113,7 @@ export async function fuseCodeCandidates(input: {
     )
     SELECT c.id, c.file_path, c.start_line, c.end_line, c.symbol_name, c.language, c.content,
            bm25.rank::int AS bm25_rank, vec.rank::int AS vec_rank,
-           COALESCE(1.0/(60+bm25.rank),0) + COALESCE(1.0/(60+vec.rank),0) AS rrf
+           COALESCE(1.0/(${RRF_K}+bm25.rank),0) + COALESCE(1.0/(${RRF_K}+vec.rank),0) AS rrf
     FROM codebase.code_chunks c
     LEFT JOIN bm25 ON bm25.id = c.id
     LEFT JOIN vec  ON vec.id  = c.id
@@ -106,7 +134,9 @@ export async function rerankCodeHits(
   rows: FusedCodeCandidate[],
   k: number,
 ): Promise<CodeHit[]> {
-  const docs = rows.map((r) => `${r.file_path}\n${r.content}`.slice(0, 1500));
+  const docs = rows.map((r) =>
+    `${r.file_path}\n${r.content}`.slice(0, RERANK_DOC_TRUNCATION),
+  );
   const ranked = await rerank(query, docs, rows.length);
   const order = ranked.length
     ? ranked
@@ -121,7 +151,11 @@ export async function rerankCodeHits(
       endLine: r.end_line,
       symbolName: r.symbol_name,
       language: r.language,
-      snippet: r.content.split("\n").slice(0, 4).join("\n").slice(0, 240),
+      snippet: r.content
+        .split("\n")
+        .slice(0, SNIPPET_LINES)
+        .join("\n")
+        .slice(0, SNIPPET_CHARS),
       score: Number(score.toFixed(4)),
     };
   });

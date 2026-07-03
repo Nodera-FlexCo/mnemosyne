@@ -77,3 +77,23 @@ These are the steps I (the operator) run; they are NOT run by the implementer/CI
 is encoded as `recall-gate.test.ts` (skips until `embedding_v2` is populated). The gate is
 "v2 recall@10 ≥ v1 baseline" — a green eyeball on a few queries can hide a corpus-wide
 regression, so the decision is the recorded number, not a spot-check.
+
+## Two-phase search core (Wave 1, retrieval-improvement program)
+
+`searchMemory` is now composition over two exported phases in `src/memory.ts`:
+
+- **`fuseCandidates()`** — the ONE hybrid-recall + RRF SQL path, returning the
+  `config.candidatePool` (25) candidate pool with per-arm `bm25_rank`/`vec_rank`.
+- **`rerankAndBlend()`** — rerank → 0.7·rel + 0.2·recency + 0.1·importance blend →
+  top-limit shaping.
+
+The eval harness scores **Recall@25 at `fuseCandidates`** (did the pool surface the gold
+row at all?) and **nDCG@10 at the full pipeline** (did rerank+blend order it well?), both
+through the exact code the live handler runs — never a duplicated SQL path (AC-102). A
+golden-output pin (`test/search-golden.test.ts`, recorded pre-split) guards the split
+itself (AC-101).
+
+All retrieval constants now snapshot via the exported **`retrievalConfig()`**; every eval
+run serializes it into its artifact (AC-104), so any recorded number in this file is
+reproducible against the exact configuration that produced it. Retuned constants land in
+`src/memory.ts` as before — the snapshot follows automatically (single source).

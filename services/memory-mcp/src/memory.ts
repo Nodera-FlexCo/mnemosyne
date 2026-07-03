@@ -44,6 +44,37 @@ interface CandidateRow {
 
 const RECALL_LIMIT = 50; // per-arm (BM25 / vector) recall before fusion
 
+// Named (and exported) so retrievalConfig() serializes the SAME values the code runs
+// with — the snapshot can never drift from the pipeline (AC-104 groundwork).
+export const RERANK_DOC_TRUNCATION = 1200; // chars of title+content handed to the reranker
+export const SNIPPET_CHARS = 180; // whitespace-collapsed snippet length in Hit
+
+/**
+ * The FULL retrieval configuration, serialized into every eval-run artifact (AC-104)
+ * so any recorded number is reproducible. JSON-safe by construction (plain literals —
+ * no functions, no Dates); wave-2's artifact writer and wave-6's bakeoff serialize it
+ * verbatim.
+ */
+export function retrievalConfig() {
+  return {
+    service: "memory-mcp",
+    rrfK: RRF_K,
+    blend: {
+      relevance: BLEND_RELEVANCE,
+      recency: BLEND_RECENCY,
+      importance: BLEND_IMPORTANCE,
+    },
+    recencyHalfLifeDays: RECENCY_HALFLIFE_DAYS,
+    candidatePool: config.candidatePool,
+    recallLimit: RECALL_LIMIT,
+    embedModel: config.embedModel,
+    contextModel: config.contextModel,
+    rerankModel: config.rerankModel,
+    rerankDocTruncation: RERANK_DOC_TRUNCATION,
+    snippetChars: SNIPPET_CHARS,
+  };
+}
+
 // ── Decision-log typed shape (Wave 6, AC-040) ────────────────────────────────────────
 // A sparse typed shape carried on memory.memories for source_kind='decision' rows. These
 // fields are NULL on every other row. See sql/005_decision_log.sql for the axis split
@@ -373,7 +404,9 @@ export async function rerankAndBlend(
   limit: number,
 ): Promise<Hit[]> {
   // Rerank candidate pool, then blend relevance with recency + importance.
-  const docs = rows.map((r) => `${r.title}\n${r.content}`.slice(0, 1200));
+  const docs = rows.map((r) =>
+    `${r.title}\n${r.content}`.slice(0, RERANK_DOC_TRUNCATION),
+  );
   const ranked = await rerank(query, docs, rows.length);
   const relById = new Map<string, number>();
   for (const r of ranked) relById.set(rows[r.index].id, r.score);
@@ -396,7 +429,7 @@ export async function rerankAndBlend(
     id: r.id,
     title: r.title,
     type: r.type,
-    snippet: r.content.replace(/\s+/g, " ").slice(0, 180),
+    snippet: r.content.replace(/\s+/g, " ").slice(0, SNIPPET_CHARS),
     importance: r.importance,
     score: Number(final.toFixed(4)),
   }));
@@ -450,7 +483,7 @@ export async function getRecent(input: {
     id: r.id,
     title: r.title,
     type: r.type,
-    snippet: r.content.replace(/\s+/g, " ").slice(0, 180),
+    snippet: r.content.replace(/\s+/g, " ").slice(0, SNIPPET_CHARS),
     importance: r.importance,
     score: 0,
   }));

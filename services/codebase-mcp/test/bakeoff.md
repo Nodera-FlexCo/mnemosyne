@@ -122,6 +122,30 @@ file-grouped contextual arm has to beat a strong incumbent. **Do not force a swa
    regression floors: set `CODE_RECALL_FLOOR` / `CODE_MRR_FLOOR` in CI to the recorded
    chosen-arm numbers so `code-recall.test.ts` catches a future regression.
 
+## Two-phase search core (Wave 1, retrieval-improvement program)
+
+`searchCode` is now composition over two exported phases in `src/search.ts`:
+
+- **`fuseCodeCandidates()`** — the ONE hybrid-recall + RRF SQL path, returning the
+  `config.candidatePool` (25) candidate pool with per-arm `bm25_rank`/`vec_rank`.
+- **`rerankCodeHits()`** — rerank (with the RRF-order fallback when the reranker returns
+  nothing) → top-k shaping.
+
+The eval harness scores **Recall@25 at `fuseCodeCandidates`** (did the pool surface the
+gold file at all?) and **nDCG@10 at the full pipeline** (did rerank order it well?), both
+through the exact code the live handler runs — never a duplicated SQL path (AC-102). A
+golden-output pin (`test/code-search-golden.test.ts`, recorded pre-split) guards the
+split itself (AC-101).
+
+`searchArm` in `src/db/bakeoff-embed.ts` **remains the bakeoff-only column-parametrized
+clone** — it exists precisely to point the same pipeline at the scratch column, so do NOT
+unify it with `fuseCodeCandidates` (which is pinned to the live `embedding`).
+
+All retrieval constants now snapshot via the exported **`retrievalConfig()`**; every eval
+run serializes it into its artifact (AC-104), so any number recorded in this file is
+reproducible against the exact configuration that produced it. (The RRF constant is the
+named `RRF_K` in `src/search.ts` now — retunes land there and the snapshot follows.)
+
 ## Per-request caps (the contextual endpoint)
 
 `embedCodeContextual` groups a FILE's chunks as one contextual doc. The caller
