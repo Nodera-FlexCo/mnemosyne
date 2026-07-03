@@ -38,12 +38,18 @@ These are the steps I (the operator) run; they are NOT run by the implementer/CI
 4. **Freeze a held-out eval set.** Expand `fixtures/recall-eval.json` from the seed rows
    to ≥30–50 `query → relevantTitles` rows drawn from the LIVE corpus, using verbatim
    memory titles. Mark each row `"heldOut": true`; keep the originals `"seed": true`.
-5. **Baseline (v1) + candidate (v2) recall.** Run the recall harness as the live gate:
+5. **Baseline + candidate runs through the wave-2 eval spine** (replaces the retired
+   scalar-baseline mechanism — see the note below). Record a run artifact and freeze it
+   as the committed baseline, then the gate does the statistics:
    ```
-   DATABASE_URL=<live> VOYAGE_API_KEY=<live> VOYAGE_LIVE_TESTS=1 npx vitest run recall-gate
+   DATABASE_URL=<live> VOYAGE_API_KEY=<live> EVAL_RECORD=1 npx vitest run recall-gate
+   cp test/runs/<date>-dev.json test/runs/baseline-dev.json   # commit it
+   DATABASE_URL=<live> VOYAGE_API_KEY=<live> npx vitest run recall-gate
    ```
-   - Record the **v1** recall@10/MRR (incumbent `embedding`) → fill `BEFORE` below.
-   - Record the **v2** recall@10/MRR (`embedding_v2`, both sides contextual) → `AFTER`.
+   The gate joins per-query nDCG@10 against `baseline-dev.json` by row id and fails on
+   a paired-bootstrap 95% CI excluding zero on the regression side, plus a coarse
+   pool-layer Recall@25 floor (−0.05 absolute). Fill `BEFORE`/`AFTER` below from the
+   two artifacts' aggregates. Full semantics: `test/eval.md`.
 6. **Retune constants** on the SAME held-out set (sweep `RRF_K` ∈ {30,40,60,80}, the
    blend weights, confirm rerank-2.5-lite still helps), then set the finalized values in
    `src/memory.ts` and record them below.
@@ -73,10 +79,18 @@ These are the steps I (the operator) run; they are NOT run by the implementer/CI
 
 ## Why a recall gate, not eyeball
 
-`recallAtK`/`mrr` are unit-tested pure functions (`recall.helper.test.ts`); the flip gate
-is encoded as `recall-gate.test.ts` (skips until `embedding_v2` is populated). The gate is
-"v2 recall@10 ≥ v1 baseline" — a green eyeball on a few queries can hide a corpus-wide
-regression, so the decision is the recorded number, not a spot-check.
+`recallAtK`/`mrr`/`ndcgAtK`/`pairedBootstrapCI` are unit-tested pure functions
+(`recall.helper.test.ts`); the flip gate is encoded as `recall-gate.test.ts` (skips until
+`embedding_v2` is populated and a baseline artifact exists). A green eyeball on a few
+queries can hide a corpus-wide regression, so the decision is the recorded number, not a
+spot-check.
+
+> **Wave-2 note:** the original scalar mechanism (`V1_RECALL_AT_10_BASELINE`, "v2
+> recall@10 ≥ a recorded number") is **retired**. The gate now recomputes the dev split
+> and compares per-query nDCG@10 against the committed `test/runs/baseline-dev.json`
+> with a paired bootstrap (seed 42) — "no significant regression + directional win".
+> The frozen **test** split is spent only by flip gates (AC-109). Handbook:
+> `test/eval.md`.
 
 ## Two-phase search core (Wave 1, retrieval-improvement program)
 

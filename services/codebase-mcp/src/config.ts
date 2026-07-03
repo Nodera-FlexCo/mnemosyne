@@ -12,6 +12,17 @@ export const config = {
   codeContextModel: process.env.VOYAGE_CODE_CONTEXT_MODEL ?? "voyage-context-3",
   rerankModel: process.env.VOYAGE_RERANK_MODEL ?? "rerank-2.5-lite",
   candidatePool: parseInt(process.env.CANDIDATE_POOL ?? "25", 10),
+  // Anthropic key + models for the PAID operator scripts (distill-eval). Deliberately
+  // NOT in assertServerConfig — the MCP server runs without them; src/llm.ts raises a
+  // clear message when a script needs the key and it is absent (AC-108). Haiku-class
+  // default: cheap judge/distill work. (Per-service duplication is the repo convention.)
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  consolidateModel: process.env.CONSOLIDATE_MODEL ?? "claude-haiku-4-5",
+  // Eval-candidate distiller model; falls back to the consolidate model.
+  distillModel:
+    process.env.DISTILL_MODEL ??
+    process.env.CONSOLIDATE_MODEL ??
+    "claude-haiku-4-5",
   // repos are mounted read-only here (host /home/development/dev -> /repos)
   reposRoot: process.env.REPOS_ROOT ?? "/repos",
   // Origin allowlist (DNS-rebinding guard). Empty = only no-Origin (loopback) passes.

@@ -15,6 +15,8 @@
     "index:decision": "tsx src/db/create-decision-index.ts",
     "backfill:context": "tsx src/db/backfill-context.ts",
     "gold:migrate": "tsx src/db/migrate-gold.ts",
+    "distill-eval": "tsx src/db/distill-eval.ts",
+    "harvest-eval": "tsx src/db/harvest-eval.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

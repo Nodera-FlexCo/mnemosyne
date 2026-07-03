@@ -1,0 +1,122 @@
+# Retrieval eval harness handbook (wave-2, retrieval-improvement program)
+
+The single reference for how retrieval quality is measured, gated, and grown in BOTH
+services (memory-mcp here; codebase-mcp mirrors every piece — see the table at the end).
+Program plan: `.claude/plans/2026-07-03-retrieval-improvement-program/` (AC-101…AC-109).
+
+## Two layers, and why
+
+Every eval run scores the SAME live code at two points (AC-104):
+
+| Layer | Code under test | Metric | Question answered |
+| --- | --- | --- | --- |
+| POOL | `fuseCandidates()` (the one RRF SQL path) | **Recall@25** | Did hybrid recall surface the gold row into the candidate pool at all? |
+| FINAL | full `searchMemory()` (fuse → rerank → blend) | **nDCG@10** + MRR | Did rerank+blend order the gold row well? |
+
+The split matters because **the reranker cannot fix recall**: a gold row missing from
+the 25-candidate pool is unrecoverable downstream, no matter how good the reranker is.
+A drop in pool Recall@25 points at the embedder/fusion; a drop in nDCG@10 with a stable
+pool points at rerank/blend. One aggregate number cannot tell those apart.
+
+Runner: `runRecallEval()` in `test/recall.helper.ts` — id-keyed v2 gold, and gold ids
+are resolved through their `superseded_by` FORWARD chains before scoring (AC-106), so
+consolidation marking a gold memory superseded can never orphan the gold row: a hit on
+any successor counts.
+
+## Gold sets: v2 shape, dev/test split policy (AC-109)
+
+`test/fixtures/recall-eval.json` (memory) and `test/fixtures/code-eval.json` (code).
+v2 rows: `{ id, query, relevantIds|relevantPaths, archetype?, split, provenance,
+approvedBy? }` with a `{version: 2, k, changelog: []}` header. Stable row ids
+(`m-001`… / `c-001`…) are the join key for the gate.
+
+- **dev split** — recomputed freely: by the CI gate, by local tuning runs, by anyone.
+- **test split** — spent EXCLUSIVELY by flip gates (embedder flips, rerank swaps,
+  consolidation acceptance). Never used for tuning, never recomputed casually — that is
+  the p-hacking guard. Every change to the test split is recorded in the file's
+  `changelog` header.
+
+Nothing enters either split without a human approving every gold id/path and recording
+`approvedBy` (GRAFT 2). The scripts below only PROPOSE.
+
+## Run artifacts + the baseline convention (AC-104)
+
+Every run writes `test/runs/<ISO-date>-<label>.json` via `writeRunArtifact()`:
+the full `retrievalConfig()` snapshot (verbatim — so every number is reproducible
+against the exact configuration that produced it), per-query scores for both layers,
+and the aggregates. Artifacts under `test/runs/` are **committed** — they are the
+baselines.
+
+`test/runs/baseline-dev.json` is THE committed baseline the CI gate joins against: a
+copy of one artifact, chosen by the operator at a flip gate and refreshed **only** at
+flip gates. Record one with `EVAL_RECORD=1` on the gate test (below), then
+`cp test/runs/<date>-dev.json test/runs/baseline-dev.json` and commit.
+
+## The CI regression gate (AC-105)
+
+`test/recall-gate.test.ts` (memory) / `test/code-recall-gate.test.ts` (code):
+
+1. Recompute the **dev split** through the live two-layer pipeline.
+2. Join per-query nDCG@10 against `baseline-dev.json` **by row id** — id drift fails
+   loudly (a changed dev split invalidates the baseline).
+3. `deltas = fresh − baseline` → `pairedBootstrapCI(deltas, {seed: 42})` (10k
+   percentile bootstrap, deterministic). **FAIL** when the 95% CI excludes zero on the
+   regression side (`ciHigh < 0`).
+4. Coarse pool floor: **FAIL** when mean Recall@25 drops > 0.05 absolute vs baseline.
+
+Semantics: **"no significant regression + directional win"** — at N≈75 rows/service the
+bootstrap only detects nDCG deltas ≥ ~0.05; smaller movements are declared noise **by
+design**. Do not chase micro-deltas on the dev split; that is how the dev split gets
+p-hacked into meaninglessness.
+
+Graceful-skip ladder (CI always lands on a rung; the gate never false-fails): no
+`DATABASE_URL` → no `baseline-dev.json` → gold file not yet v2 → corpus not populated
+(`embedding_v2` for memory / no indexed chunks for code). The operator runs the SAME
+test against the live DB — that IS the flip-gate run (it embeds every dev query, so it
+burns Voyage quota there; CI never reaches that rung).
+
+The gate machinery itself is proven fail-able by the `*-gate-sim.test.ts`
+test-of-the-test suites (synthetic baseline 0.2 above reality → FAIL; equal → PASS).
+
+## Gold lifecycle: synthetic-now, logs-forever
+
+1. **Seed** (`provenance: "seed-v1"`) — the hand-written rows, migrated to stable ids
+   via `npm run gold:migrate` (free; proposes `recall-eval.v2.json` for review).
+2. **Distill** (`provenance: "distilled"`) — **PAID**: `npm run distill-eval -- --yes`
+   samples the corpus stratified (type/source_kind for memory; language/dir for code),
+   asks a Haiku-class model for query candidates per archetype, and writes
+   `test/fixtures/eval-candidates-<date>.json` with `approved: false` on every row.
+   Human verifies each suggested gold id/path, then merges into the eval file.
+3. **Harvest** (`provenance: "log-harvest"`) — free, monthly: `npm run harvest-eval`
+   aggregates `memory.search_log` (written fire-and-forget by every live search,
+   AC-107) and proposes frequent / zero-hit / low-overlap queries not already in gold,
+   with the most-common final ids as hints. Same approval flow. Cleanup note lives in
+   its header: `DELETE FROM memory.search_log WHERE created_at < now() - interval '90 days';`
+
+## PAID script inventory (AC-108)
+
+All main-guarded (`import.meta.url`), all `npm run`-gated, none imported by server.ts,
+none in CI:
+
+| Script | Service | Cost | Consent |
+| --- | --- | --- | --- |
+| `npm run distill-eval -- --yes` | both | Anthropic quota (Haiku-class; `ANTHROPIC_API_KEY`, `DISTILL_MODEL`) | refuses without `--yes` |
+| `npm run backfill:context` | memory | Voyage quota ($0.12/M) | deliberate operator step |
+| `npm run bakeoff` | codebase | Voyage quota | deliberate operator step |
+| `npm run gold:migrate` | memory | free (SQL only) | — |
+| `npm run harvest-eval` | memory | free (SQL only) | — |
+| gate tests on the LIVE DB | both | Voyage quota (embeds every dev query) | operator-run flip gate |
+
+Tests never call live Voyage/Anthropic — every paid dependency is injectable and mocked.
+
+## codebase-mcp mirror map
+
+| memory-mcp | codebase-mcp |
+| --- | --- |
+| `test/recall.helper.ts` (runner + math re-exports) | `test/code-eval.helper.ts` → `src/recall-math.ts` |
+| `test/recall-gate.test.ts` | `test/code-recall-gate.test.ts` |
+| `test/recall-gate-sim.test.ts` | `test/code-recall-gate-sim.test.ts` |
+| `test/fixtures/recall-eval.json` (memory ids + supersession resolution) | `test/fixtures/code-eval.json` (file paths — no supersession; paths do not supersede) |
+| `test/runs/baseline-dev.json` | same convention |
+| `src/db/distill-eval.ts` | `src/db/distill-eval.ts` |
+| `src/db/harvest-eval.ts` (search_log) | — (no code search log yet) |

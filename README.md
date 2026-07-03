@@ -41,7 +41,7 @@ loopback-only operator step run AFTER the relevant image is built. The runner
 gated drops — see the runbook).
 
 ```bash
-# memory-mcp — applies 001..003 + 005; SKIPS 004 (HOLD legacy-embedding drop)
+# memory-mcp — applies 001..003 + 005..006; SKIPS 004 (HOLD legacy-embedding drop)
 DATABASE_URL=<loopback> npm --prefix services/memory-mcp run migrate
 
 # codebase-mcp — applies 001..004; SKIPS 005 (HOLD bake-off-scratch drop)
@@ -62,6 +62,31 @@ npm --prefix services/memory-mcp run index:decision     # build the decision par
 
 # codebase-mcp — code-embedder bake-off (Wave 5: voyage-code-3 vs voyage-context-3)
 npm --prefix services/codebase-mcp run bakeoff -- <projectId> [repositoryId]
+```
+
+### Eval-harness operator scripts (retrieval-improvement program, wave 2)
+
+Gold-set growth is "synthetic-now, logs-forever": every script only PROPOSES candidates —
+a human approves every gold id/path before it enters an eval split. Handbook:
+[`services/memory-mcp/test/eval.md`](services/memory-mcp/test/eval.md).
+
+```bash
+# FREE — convert title-keyed seed gold to stable-id v2 (writes recall-eval.v2.json for review)
+DATABASE_URL=<loopback> npm --prefix services/memory-mcp run gold:migrate
+
+# PAID (Anthropic quota, Haiku-class; needs ANTHROPIC_API_KEY, optional DISTILL_MODEL) —
+# LLM-distill eval-query candidates from the corpus; refuses without --yes
+DATABASE_URL=<loopback> npm --prefix services/memory-mcp   run distill-eval -- --yes
+DATABASE_URL=<loopback> npm --prefix services/codebase-mcp run distill-eval -- --yes
+
+# FREE — monthly gold rotation from real memory.search_log usage (frequent/zero-hit/
+# low-overlap queries not already in gold); flags: --days 30 --min-count 2 --limit 40
+DATABASE_URL=<loopback> npm --prefix services/memory-mcp run harvest-eval
+
+# PAID (Voyage quota — embeds every dev query) — the flip-gate run: record a run
+# artifact, freeze it as the committed baseline, then the CI gate does the statistics
+DATABASE_URL=<live> VOYAGE_API_KEY=<live> EVAL_RECORD=1 \
+  npm --prefix services/memory-mcp run test -- recall-gate
 ```
 
 ## MCP tools
@@ -159,6 +184,7 @@ recursive CTE; the live `entities`/`entity_edges` graph is never mutated by a de
 | memory-mcp | `003_context_embeddings.sql` | P | yes |
 | memory-mcp | `004_drop_legacy_embedding.sql` | P | **HOLD** — skipped (apply post burn-in) |
 | memory-mcp | `005_decision_log.sql` | 6 | yes |
+| memory-mcp | `006_search_log.sql` | retrieval wave 2 | yes |
 
 The two `CREATE INDEX CONCURRENTLY` indexes (`mem_hnsw_v2`, the decision partial HNSW)
 cannot run inside the batch runner's transaction, so they are built by standalone op

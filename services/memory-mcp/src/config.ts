@@ -16,6 +16,17 @@ export const config = {
   rerankModel: process.env.VOYAGE_RERANK_MODEL ?? "rerank-2.5-lite",
   // recall pool size handed to the reranker (doc: keep 20–25)
   candidatePool: parseInt(process.env.CANDIDATE_POOL ?? "25", 10),
+  // Anthropic key + models for the PAID operator scripts (distill-eval now; consolidate
+  // in wave-5). Deliberately NOT in assertServerConfig — the MCP server runs without
+  // them; src/llm.ts raises a clear message when a script needs the key and it is
+  // absent (AC-108). Haiku-class default: cheap judge/distill work.
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  consolidateModel: process.env.CONSOLIDATE_MODEL ?? "claude-haiku-4-5",
+  // Eval-candidate distiller model; falls back to the consolidate model.
+  distillModel:
+    process.env.DISTILL_MODEL ??
+    process.env.CONSOLIDATE_MODEL ??
+    "claude-haiku-4-5",
   // Origin allowlist (DNS-rebinding guard). Empty = only no-Origin (loopback) passes.
   allowedOrigins: (process.env.ALLOWED_ORIGINS ?? "")
     .split(",")

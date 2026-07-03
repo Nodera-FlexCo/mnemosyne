@@ -30,6 +30,16 @@ after the decision, via the **held** migration `sql/005_drop_bakeoff_scratch.sql
 | Regression guard | `test/code-recall.test.ts` (AC-030) |
 | Run script | `npm run bakeoff` |
 
+## Wave-2 note — future bake-offs score on the frozen TEST split
+
+Any bake-off run AFTER the wave-2 eval spine lands (including the wave-6 rerank swap)
+MUST score on the frozen **test** split of `test/fixtures/code-eval.json` (v2,
+`split: "test"`), not the dev split — the dev split is recomputed freely by the CI gate
+and local tuning, so scoring a flip decision on it invites p-hacking (AC-109). The test
+split is spent only by flip gates, and its every change is recorded in the eval file's
+changelog header. Metrics, artifact format (`test/runs/`, `retrievalConfig()` snapshot),
+and gate semantics: [`../../memory-mcp/test/eval.md`](../../memory-mcp/test/eval.md).
+
 ## Operator runbook (the paid measurement)
 
 Prerequisites: Waves 1–4 merged, the codebase corpus indexed (`embedding` populated),
