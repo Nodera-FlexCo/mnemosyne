@@ -435,15 +435,70 @@ export async function rerankAndBlend(
   }));
 }
 
+// ── search_log (Wave 2, AC-107) ──────────────────────────────────────────────────────
+
+/** One live search's log entry. Wave-4 extends `filters` (tags/after) — add fields
+ *  there, not new columns. */
+export interface SearchLogEntry {
+  projectId: string;
+  query: string;
+  filters: Record<string, unknown>;
+  poolIds: string[];
+  finalIds: string[];
+  poolMs: number;
+  totalMs: number;
+}
+
+/**
+ * FIRE-AND-FORGET write to memory.search_log (the harvest-eval raw material). Never
+ * awaited, error swallowed (AC-107): a failed insert — or a missing table on a
+ * pre-006 DB — must not affect search results or add latency. The promise is created
+ * before `searchMemory` returns but deliberately not attached to the result.
+ */
+export function logSearch(entry: SearchLogEntry): void {
+  void pool
+    .query(
+      `INSERT INTO memory.search_log
+         (project_id, query, filters, pool_ids, final_ids, pool_ms, total_ms)
+       VALUES ($1, $2, $3, $4::uuid[], $5::uuid[], $6, $7)`,
+      [
+        entry.projectId,
+        entry.query,
+        JSON.stringify(entry.filters),
+        entry.poolIds,
+        entry.finalIds,
+        entry.poolMs,
+        entry.totalMs,
+      ],
+    )
+    .catch(() => {
+      /* AC-107: logging must never surface into the search path */
+    });
+}
+
 export async function searchMemory(input: {
   projectId: string;
   query: string;
   type?: MemoryType;
   limit: number;
 }): Promise<Hit[]> {
+  const t0 = Date.now();
   const rows = await fuseCandidates(input);
-  if (rows.length === 0) return [];
-  return rerankAndBlend(input.query, rows, input.limit);
+  const poolMs = Date.now() - t0;
+  const hits =
+    rows.length === 0
+      ? []
+      : await rerankAndBlend(input.query, rows, input.limit);
+  logSearch({
+    projectId: input.projectId,
+    query: input.query,
+    filters: input.type ? { type: input.type } : {},
+    poolIds: rows.map((r) => r.id),
+    finalIds: hits.map((h) => h.id),
+    poolMs,
+    totalMs: Date.now() - t0,
+  });
+  return hits;
 }
 
 export async function getMemory(
