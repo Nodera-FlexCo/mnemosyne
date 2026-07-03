@@ -84,7 +84,9 @@ import {
   searchMemory,
   type MemoryType,
 } from "../src/memory.js";
-import { TOOL_DESCRIPTIONS } from "../src/server.js";
+import { TOOL_DESCRIPTIONS, buildServer } from "../src/server.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -200,6 +202,33 @@ const FIXTURES: Fixture[] = [
 const byId = new Map(FIXTURES.map((f) => [f.id, f]));
 const iso = (s: string): string => new Date(s).toISOString();
 
+async function connectClient() {
+  const server = buildServer(PROJ);
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "test", version: "1.0.0" });
+  await Promise.all([
+    client.connect(clientTransport),
+    server.connect(serverTransport),
+  ]);
+  return client;
+}
+
+async function callTool(
+  client: Awaited<ReturnType<typeof connectClient>>,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<{ text: string; isError: boolean }> {
+  const res = (await client.callTool({ name, arguments: args })) as {
+    isError?: boolean;
+    content: { type: string; text: string }[];
+  };
+  return {
+    text: res.content.map((c) => c.text).join("\n"),
+    isError: res.isError === true,
+  };
+}
+
 /** Poll until fn returns non-null (fire-and-forget log landing). */
 async function until<T>(
   fn: () => Promise<T | null>,
@@ -241,6 +270,7 @@ describe("memory tool descriptions (AC-205)", () => {
 
 describe.skipIf(skip)("memory token shaping (AC-201/202/203/204/207)", () => {
   let pool: pg.Pool;
+  let client: Awaited<ReturnType<typeof connectClient>>;
 
   beforeAll(async () => {
     pool = new pg.Pool({ connectionString: DATABASE_URL, max: 4 });
@@ -275,9 +305,11 @@ describe.skipIf(skip)("memory token shaping (AC-201/202/203/204/207)", () => {
         ],
       );
     }
+    client = await connectClient();
   });
 
   afterAll(async () => {
+    await client?.close();
     await pool.query(`DELETE FROM memory.memories WHERE project_id = $1`, [
       PROJ,
     ]);
@@ -530,5 +562,51 @@ describe.skipIf(skip)("memory token shaping (AC-201/202/203/204/207)", () => {
     });
     expect(row2).not.toBeNull();
     expect(row2!.filters).toEqual({ tags: ["no-such-tag"], retried: true });
+  });
+
+  // ── AC-208: memory_get status/date/supersession banner ────────────────────
+
+  it("AC-208: active memory_get returns JSON fields with no banner", async () => {
+    const got = await callTool(client, "memory_get", { id: id(1) });
+    expect(got.isError).toBe(false);
+    expect(got.text).not.toMatch(/^status=|^superseded/);
+    const row = JSON.parse(got.text) as Record<string, unknown>;
+    expect(row.status).toBe("active");
+    expect(row.event_date).toBeNull();
+    expect(row.superseded_by).toBeNull();
+  });
+
+  it("AC-208: superseded memory_get prepends successor banner and includes fields", async () => {
+    await pool.query(
+      `UPDATE memory.memories
+         SET status = 'superseded', superseded_by = $2
+       WHERE id = $1`,
+      [id(4), id(7)],
+    );
+    const got = await callTool(client, "memory_get", { id: id(4) });
+    expect(got.isError).toBe(false);
+    expect(got.text.split("\n")[0]).toBe(`superseded — see ${id(7)}`);
+    const row = JSON.parse(got.text.split("\n").slice(1).join("\n")) as Record<
+      string,
+      unknown
+    >;
+    expect(row.status).toBe("superseded");
+    expect(row.event_date).toBe(iso("2026-03-10T00:00:00Z"));
+    expect(row.superseded_by).toBe(id(7));
+  });
+
+  it("AC-208: archived memory_get prepends status banner, never excludes", async () => {
+    await pool.query(`UPDATE memory.memories SET status = 'archived' WHERE id = $1`, [
+      id(8),
+    ]);
+    const got = await callTool(client, "memory_get", { id: id(8) });
+    expect(got.isError).toBe(false);
+    expect(got.text.split("\n")[0]).toBe("status=archived");
+    const row = JSON.parse(got.text.split("\n").slice(1).join("\n")) as Record<
+      string,
+      unknown
+    >;
+    expect(row.status).toBe("archived");
+    expect(row.id).toBe(id(8));
   });
 });

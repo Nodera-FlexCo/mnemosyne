@@ -1,6 +1,7 @@
 import { pool } from "./db/pool.js";
 import { embedCode, rerank, toVectorLiteral } from "./voyage.js";
 import { config } from "./config.js";
+import { mergeAdjacentHits } from "./merge-hits.js";
 
 export interface CodeHit {
   chunkId: string;
@@ -10,6 +11,7 @@ export interface CodeHit {
   symbolName: string | null;
   language: string | null;
   snippet: string;
+  mergedCount?: number;
 }
 
 export interface ScoredCodeHit extends CodeHit {
@@ -51,6 +53,7 @@ export function retrievalConfig() {
     codeEmbedModel: config.codeEmbedModel,
     codeContextModel: config.codeContextModel,
     rerankModel: config.rerankModel,
+    maxMergedLines: config.maxMergedLines,
     rerankDocTruncation: RERANK_DOC_TRUNCATION,
     snippetLines: SNIPPET_LINES,
     snippetChars: SNIPPET_CHARS,
@@ -227,7 +230,7 @@ export async function searchCode(input: {
   }
   const scored =
     rows.length === 0 ? [] : await rerankCodeHits(input.query, rows, input.k);
-  const hits = toPublicCodeHits(scored);
+  const hits = mergeAdjacentHits(toPublicCodeHits(scored), config.maxMergedLines);
   return {
     hits,
     poolSize: rows.length,
@@ -252,8 +255,13 @@ export function formatHits(
   lines.push(
     hits
       .map(
-        (h, i) =>
-          `${i + 1}. ${h.filePath}:${h.startLine}-${h.endLine}${h.symbolName ? ` (${h.symbolName})` : ""}  [${h.chunkId}]\n   ${h.snippet.replace(/\n/g, " ⏎ ")}`,
+        (h, i) => {
+          const mergedNote =
+            h.mergedCount && h.mergedCount > 1
+              ? ` (spans ${h.mergedCount} chunks)`
+              : "";
+          return `${i + 1}. ${h.filePath}:${h.startLine}-${h.endLine}${h.symbolName ? ` (${h.symbolName})` : ""}${mergedNote}  [${h.chunkId}]\n   ${h.snippet.replace(/\n/g, " ⏎ ")}`;
+        },
       )
       .join("\n"),
   );

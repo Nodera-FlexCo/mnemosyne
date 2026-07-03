@@ -222,8 +222,18 @@ export function buildServer(projectId: string): McpServer {
           isError: true,
           content: [{ type: "text", text: `no memory ${id}` }],
         };
+      const status = row.status;
+      const supersededBy = row.superseded_by;
+      let banner = "";
+      if (status === "superseded" && supersededBy) {
+        banner = `superseded — see ${supersededBy}\n`;
+      } else if (status && status !== "active") {
+        banner = `status=${status}\n`;
+      }
       return {
-        content: [{ type: "text", text: JSON.stringify(row, null, 2) }],
+        content: [
+          { type: "text", text: `${banner}${JSON.stringify(row, null, 2)}` },
+        ],
       };
     },
   );

@@ -605,7 +605,8 @@ export async function getMemory(
        SET access_count = access_count + 1, last_accessed_at = now()
      WHERE id = $1
      RETURNING id, project_id, type, title, content, importance, access_count,
-               metadata, source_session_id, pinned, created_at, last_accessed_at`,
+               metadata, source_session_id, pinned, created_at, last_accessed_at,
+               status, event_date, superseded_by`,
     [id],
   );
   return rows[0] ?? null;
