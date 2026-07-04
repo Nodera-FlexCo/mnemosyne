@@ -91,6 +91,15 @@ DATABASE_URL=<loopback> npm --prefix services/memory-mcp run gold:migrate
 DATABASE_URL=<loopback> npm --prefix services/memory-mcp   run distill-eval -- --yes
 DATABASE_URL=<loopback> npm --prefix services/codebase-mcp run distill-eval -- --yes
 
+# PAID (Anthropic quota, Haiku-class; needs ANTHROPIC_API_KEY, optional
+# CONSOLIDATE_MODEL) — resumable backfill of memory.memories.summary for existing
+# rows; refuses without --yes. FLIP GATE: rerank docs change for summarized rows —
+# follow services/memory-mcp/test/retune.md's wave-2 runbook (live gate re-record).
+# Write-time summaries stay off unless SUMMARIZE_ON_STORE=1 is ALSO set in .env
+# (double gate: key AND flag — the key alone never spends on memory_store).
+DATABASE_URL=<live> ANTHROPIC_API_KEY=<key> \
+  npm --prefix services/memory-mcp run backfill:summaries -- --yes
+
 # FREE — monthly gold rotation from real memory.search_log usage (frequent/zero-hit/
 # low-overlap queries not already in gold); flags: --days 30 --min-count 2 --limit 40.
 # Pair it with the log's retention cleanup (append-only, grows unbounded otherwise):
@@ -140,14 +149,24 @@ npm --prefix services/memory-mcp run eval:compare -- test/runs/<A>.json test/run
 
 - **`memory_search`** returns rank-only compact hits with
   `createdAt`, `eventDate`, `effectiveDate` (`eventDate ?? createdAt`), and `status`.
-  Optional refinements: `type`, `tags` (ANY-of metadata tags), and `after` (ISO timestamp
-  compared to `COALESCE(event_date, created_at)`). If `tags`/`after` match no candidates,
-  the tool retries once without those optional filters and prepends the retry notice.
+  Each hit's `snippet` is query-aware: a `ts_headline` fragment when the hit matched
+  lexically (detected via private-use sentinel selectors, never naive `**` scanning —
+  literal `**` in stored markdown must not false-positive), else the deterministic
+  180-char prefix. `summary` is an optional 1–3 sentence dense summary (NULL until
+  populated by the opt-in write-time summarizer or the `backfill:summaries` operator
+  script) — see [`services/memory-mcp/test/eval.md`](services/memory-mcp/test/eval.md)
+  for the full contract. Optional refinements: `type`, `tags` (ANY-of metadata tags), and
+  `after` (ISO timestamp compared to `COALESCE(event_date, created_at)`). If `tags`/`after`
+  match no candidates, the tool retries once without those optional filters and prepends
+  the retry notice.
 - **`memory_get_recent`** returns the same public hit fields as `memory_search` and keeps
   newest-created ordering (`created_at DESC`).
 - **`memory_get`** includes `status`, `event_date`, and `superseded_by` in its JSON. It
   prepends `superseded — see <successor id>` for superseded rows with a successor, or
-  `status=<status>` for other non-active rows; the row is still returned.
+  `status=<status>` for other non-active rows; the row is still returned. Content is
+  budgeted by `maxChars` (default 6000 chars ≈ 1500 tokens; max 200000): oversized
+  content is cut with explicit `truncated: true`, `totalChars`, and a re-fetch note.
+  Pass `full=true` (or `maxChars=0`) for the complete body; `metadata` is never budgeted.
 - **`memory_store`** now accepts a typed **decision-log** shape (only meaningful when
   `sourceKind='decision'`): `decisionProject`, `decisionStatus`
   (`active`|`superseded`|`deferred`), `decidedAt`, `supersedesId` (the prior decision

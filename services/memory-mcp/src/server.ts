@@ -16,7 +16,7 @@ export const TOOL_DESCRIPTIONS = {
   memory_store:
     "Persist a distilled durable memory, not a raw transcript. Use when: the user explicitly asks to remember something; a durable decision, fact, or reusable procedure was established; storing sourceKind/tags will help later enumeration. Do NOT use when: fetching existing memory (memory_get), searching prior memory (memory_search), or recording temporary working notes. Example: store a semantic decision with sourceKind='decision' and tags=['retrieval'].",
   memory_get:
-    "Fetch the full JSON body for one known memory id. Use when: memory_search, memory_get_recent, memory_list, or a prior response returned the exact id; auditing status, metadata, event_date, or supersession fields; reading complete content beyond a snippet. Do NOT use when: discovering memories by topic (memory_search) or enumerating sets by metadata (memory_list). Example: id='00000000-0000-4000-8000-000000000001'.",
+    "Fetch the JSON body for one known memory id, budgeted to maxChars of content (default 6000 chars, ~1500 tokens); oversized content is cut with explicit truncated/totalChars markers and a re-fetch note. Use when: memory_search, memory_get_recent, memory_list, or a prior response returned the exact id; auditing status, metadata, event_date, or supersession fields; reading content beyond a snippet — pass full=true (or maxChars=0) for the complete body. Do NOT use when: discovering memories by topic (memory_search) or enumerating sets by metadata (memory_list). Example: id='00000000-0000-4000-8000-000000000001', full=true.",
   memory_get_recent:
     "Return recently created active memories for this project. Use when: checking what was stored most recently; browsing a short recent timeline; optionally narrowing by memory type. Do NOT use when: searching by meaning or topic (memory_search) or counting/listing by sourceKind/status/tag (memory_list). Example: limit=10, type='semantic'.",
   memory_update:
@@ -216,16 +216,32 @@ export function buildServer(projectId: string): McpServer {
       description: TOOL_DESCRIPTIONS.memory_get,
       inputSchema: {
         id: z.string().describe("Memory id from a search result"),
+        maxChars: z
+          .number()
+          .int()
+          .min(0)
+          .max(200000)
+          .default(mem.MEMORY_GET_DEFAULT_MAX_CHARS)
+          .describe(
+            "Response budget in characters (~4 chars/token). 0 = no limit.",
+          ),
+        full: z
+          .boolean()
+          .default(false)
+          .describe("Return the complete content regardless of maxChars"),
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ id }) => {
+    async ({ id, maxChars, full }) => {
       const row = await mem.getMemory(id);
       if (!row)
         return {
           isError: true,
           content: [{ type: "text", text: `no memory ${id}` }],
         };
+      // AC-805/806: budget the content field (never the serialized JSON) unless the
+      // caller lifts the cap with full=true or maxChars=0.
+      const shaped = mem.budgetMemoryBody(row, full ? 0 : maxChars);
       const status = row.status;
       const supersededBy = row.superseded_by;
       let banner = "";
@@ -236,7 +252,7 @@ export function buildServer(projectId: string): McpServer {
       }
       return {
         content: [
-          { type: "text", text: `${banner}${JSON.stringify(row, null, 2)}` },
+          { type: "text", text: `${banner}${JSON.stringify(shaped, null, 2)}` },
         ],
       };
     },

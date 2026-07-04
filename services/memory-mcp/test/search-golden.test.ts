@@ -201,9 +201,19 @@ function iso(s: string): string {
   return new Date(s).toISOString();
 }
 
-/** The exact snippet shape searchMemory produces (180 chars, whitespace-collapsed). */
+/** The deterministic FALLBACK snippet (180 chars, whitespace-collapsed prefix) —
+ *  what a hit gets when the query does not lexically match its content (AC-802). */
 function expectedSnippet(fixtureId: string): string {
   return byId.get(fixtureId)!.content.replace(/\s+/g, " ").slice(0, 180);
+}
+
+/** Pinned snippet for a hit of a pinned query: the recorded ts_headline when the
+ *  query matches lexically, the 180-char prefix otherwise. */
+function expectedQuerySnippet(
+  queryLabel: QueryLabel,
+  fixtureId: string,
+): string {
+  return GOLDEN_SNIPPETS[queryLabel][fixtureId] ?? expectedSnippet(fixtureId);
 }
 
 describe.skipIf(skip)("searchMemory golden pins (AC-101)", () => {
@@ -257,11 +267,16 @@ describe.skipIf(skip)("searchMemory golden pins (AC-101)", () => {
   function assertShape(
     hits: Awaited<ReturnType<typeof searchMemory>>["hits"],
     limit: number,
+    queryLabel: QueryLabel,
   ): void {
     expect(hits.length).toBeLessThanOrEqual(limit);
     for (const h of hits) {
-      expect(h.snippet).toBe(expectedSnippet(h.id));
-      expect(h.snippet.length).toBeLessThanOrEqual(180);
+      expect(h.snippet).toBe(expectedQuerySnippet(queryLabel, h.id));
+      // Headline snippets are word-bounded (MaxWords), not char-bounded — the
+      // 180-char cap applies only to the prefix-fallback form.
+      if (!(h.id in GOLDEN_SNIPPETS[queryLabel])) {
+        expect(h.snippet.length).toBeLessThanOrEqual(180);
+      }
       expect(h.title).toBe(byId.get(h.id)!.title);
       expect(h.type).toBe(byId.get(h.id)!.type);
       expect(h.importance).toBeCloseTo(byId.get(h.id)!.importance, 6);
@@ -271,6 +286,8 @@ describe.skipIf(skip)("searchMemory golden pins (AC-101)", () => {
       expect(h.eventDate).toBe(expectedEvent ? iso(expectedEvent) : null);
       expect(h.effectiveDate).toBe(h.eventDate ?? h.createdAt);
       expect(h.status).toBe("active");
+      // Wave-2: fixtures are never summarized — pins the NULL pass-through.
+      expect(h.summary).toBeNull();
     }
   }
 
@@ -281,7 +298,7 @@ describe.skipIf(skip)("searchMemory golden pins (AC-101)", () => {
       limit: 5,
     });
     const { hits } = result;
-    assertShape(hits, 5);
+    assertShape(hits, 5, "q1");
     expect(hits.map((h) => h.id)).toEqual(GOLDEN_Q1);
   });
 
@@ -292,7 +309,7 @@ describe.skipIf(skip)("searchMemory golden pins (AC-101)", () => {
       limit: 5,
     });
     const { hits } = result;
-    assertShape(hits, 5);
+    assertShape(hits, 5, "q2");
     expect(hits.map((h) => h.id)).toEqual(GOLDEN_Q2);
   });
 
@@ -304,7 +321,7 @@ describe.skipIf(skip)("searchMemory golden pins (AC-101)", () => {
       limit: 5,
     });
     const { hits } = result;
-    assertShape(hits, 5);
+    assertShape(hits, 5, "q3");
     for (const h of hits) expect(h.type).toBe("semantic");
     expect(hits.map((h) => h.id)).toEqual(GOLDEN_Q3);
   });
@@ -327,3 +344,25 @@ const GOLDEN_Q1: string[] = [id(5), id(6), id(7), id(1), id(2)];
 const GOLDEN_Q2: string[] = [id(2), id(7), id(5), id(4), id(1)];
 // Only 4 of the 8 fixtures are type=semantic, so the filtered pin has 4 hits.
 const GOLDEN_Q3: string[] = [id(4), id(5), id(8), id(1)];
+
+// ── Golden query-aware snippets (recorded 2026-07-04 on pgvector/pgvector:pg17 —
+// the SAME Postgres major the live stack runs, so ts_headline output is identical).
+// Only hits whose content lexically matches the query get a `**`-marked ts_headline
+// fragment (AC-801); every other hit keeps the deterministic 180-char prefix and is
+// deliberately ABSENT from this map (AC-802 — expectedQuerySnippet falls back).
+// ts_headline is deterministic given (config, text, query, options), so these are
+// stable pins, re-recordable only on a Postgres major bump.
+type QueryLabel = "q1" | "q2" | "q3";
+const GOLDEN_SNIPPETS: Record<QueryLabel, Record<string, string>> = {
+  q1: {
+    [id(1)]:
+      "**postgres** **connection** **pool** sizing guidance: keep max at 10 per service, watch for **pool** exhaustion under load and tune idle",
+  },
+  q2: {
+    [id(2)]:
+      "**rollback** **procedure** for a bad **deployment**: redeploy the previous image tag, verify health checks, then announce in the channel",
+  },
+  q3: {
+    [id(8)]: "hnsw **index** **tuning**: ef_search trades recall for",
+  },
+};

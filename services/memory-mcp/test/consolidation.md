@@ -49,6 +49,27 @@ never edited or deleted; pinned rows never lose; decision rows never enter; judg
 failures fail OPEN to UNJUDGED (-1: zero changes, re-judged next run); the eval
 runner resolves `superseded_by` forward chains (AC-106), so gold is never orphaned.
 
+## Wave-3 addendum (retrieval-token-efficiency plan) — summary-aware deltas + calibration
+
+- **Judge input prefers the stored summary.** The judge prompt presents
+  `summary ?? content` per side (`buildJudgeUser`): the wave-2 dense summary when the
+  backfill has reached the row, the raw content prefix otherwise. Cheaper per pair and
+  not tail-truncated like a long content prefix — but summaries strip detail, so during
+  the step-2 dry-run review pay EXTRA attention to verdict-1 `reason` fields on
+  summarized pairs: an added-detail restatement judged EQUIVALENT off two summaries is
+  the failure mode to catch before `--apply`.
+- **The exact-dup short-circuit also skips the summarizer.** `storeMemory` hashes and
+  checks `content_sha256` BEFORE the embed+summarize `Promise.all`, so a duplicate store
+  spends zero embed AND zero summarize quota (proven in `test/store-dedup.test.ts`).
+- **Threshold calibration instrument (BEFORE the first `--apply`).** The weekly FREE
+  digest cron (nodex repo, `.claude/scripts/cron/mnemo-consolidate-digest.sh`, Job E —
+  read-only SQL, zero LLM) prints pending pair counts by cosine band
+  (0.90–0.925 / 0.925–0.95 / ≥0.95). The `DUP_COSINE_THRESHOLD = 0.90` lock predates
+  contextual embeddings, which shift the similarity distribution: if the 0.90–0.925 band
+  dwarfs ≥0.95, raise the constant in a code commit FIRST, then re-review. The digest is
+  also the standing prompt to run this runbook — it never mutates; all supersession stays
+  behind `npm run consolidate -- --yes --apply` (AC-814).
+
 ## Procedure
 
 ### 0. Pre-flight (one-time, BEFORE recording the pre-consolidation baseline)
@@ -109,6 +130,9 @@ Review `test/runs/consolidate-<date>.json` pair by pair: verdict-1 pairs are the
 would-supersede set. Check the `reason` fields; anything that reads like a
 restatement-with-added-detail being merged is a judge false-positive — STOP and
 tighten before applying. UNJUDGED (-1) pairs are fine (they re-enter next run).
+Cross-check the latest weekly digest band counts (wave-3 addendum above) before the
+FIRST apply — a bottom-heavy band distribution means the 0.90 threshold needs a raise
+before any supersession happens.
 
 ### 3. Apply (FREE — applies the reviewed report, never re-judges)
 
