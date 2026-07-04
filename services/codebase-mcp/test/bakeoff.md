@@ -52,22 +52,26 @@ DATABASE_URL=<live> VOYAGE_API_KEY=<live> \
 
 | Field | BEFORE / incumbent | AFTER / candidate |
 | --- | --- | --- |
-| Date | _TBD_ | _TBD_ |
+| Date | 2026-07-04 | 2026-07-04 |
 | Models compared | `rerank-2.5-lite` | `rerank-2.5` |
-| Aggregate nDCG@10 | _TBD_ | _TBD_ |
-| Paired-bootstrap CI (full-minus-lite, seed 42) | _TBD_ | _TBD_ |
-| Verdict | _TBD_ | _TBD_ |
+| Aggregate nDCG@10 (22 frozen test rows) | 0.7475 | 0.7700 |
+| Pool Recall@25 | 0.8636 | 0.8636 (identical pool — rerank only reorders) |
+| Paired-bootstrap CI (full-minus-lite, seed 42) | — | mean +0.0226, 95% CI [−0.0566, +0.1055] |
+| Script verdict | — | NO SIGNIFICANT DIFFERENCE — operator's call |
 
-**Decision note:** _TBD_. The script verdict is `SWAP` only when full-minus-lite mean is
-positive and the paired-bootstrap CI excludes zero on the win side; `KEEP LITE` only when
-the CI excludes zero on the loss side; otherwise the operator records "no significant
-difference" and makes the cost-immaterial call.
+**Decision (operator, 2026-07-04): SWAP to `rerank-2.5`.** The AC-502 gate passes on its
+no-regression arm (full ≥ lite directionally, +0.023 mean, CI straddles zero at N=22 —
+the harness can only detect ~±0.05 here by design); cost is immaterial at this corpus
+scale; the research report expected the full model to lead on quality. Rollback is one
+env flip (repin `rerank-2.5-lite`), no code change, no re-embed. Artifact:
+`test/runs/2026-07-04-bakeoff-rerank.json`.
 
-On a `SWAP` verdict only, the operator would add
-`VOYAGE_RERANK_MODEL: ${VOYAGE_RERANK_MODEL:-rerank-2.5}` to both compose environment
-blocks: `memory-mcp` around `compose.yaml` lines 137-143 and `codebase-mcp` around lines
-166-168. This task intentionally does **not** edit `compose.yaml`; the live run and compose
-pin remain operator-only.
+Consequence honored at merge: the compose pin (`VOYAGE_RERANK_MODEL: rerank-2.5`) is
+applied to BOTH service env blocks, the rerank pin is then FROZEN for the wave-7 blend
+bakeoff (changing it mid-bakeoff makes captured arm relevances incomparable), and the
+committed `baseline-dev.json` files are re-recorded post-redeploy (a rerank swap changes
+final-layer ordering, so pre-swap baselines no longer describe the live pipeline —
+see eval.md's baseline-lifetime doctrine).
 
 ## Operator runbook (the paid measurement)
 

@@ -142,6 +142,10 @@ services:
       # the context-4 code swap). Changing this pin REQUIRES a full column re-embed
       # (backfill:context) + REINDEX (docs/Runbooks-CodeGraph-ContextEmbeddings.md).
       VOYAGE_CONTEXT_MODEL: voyage-context-4
+      # HARD-PINNED per the wave-6 bakeoff decision (test/bakeoff.md, 2026-07-04):
+      # rerank-2.5 over rerank-2.5-lite (no-regression gate, AC-502). FROZEN for the
+      # wave-7 blend bakeoff. Rollback = repin rerank-2.5-lite + re-record baselines.
+      VOYAGE_RERANK_MODEL: rerank-2.5
       # Operator-script inputs only (distill-eval / consolidate, wave 5) — optional,
       # NOT part of assertServerConfig; the server never reads them.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -175,6 +179,9 @@ services:
       VOYAGE_API_KEY: ${VOYAGE_API_KEY:?set in .env}
       VOYAGE_CODE_MODEL: ${VOYAGE_CODE_MODEL:-voyage-code-3}   # code embedder (Wave 5 bake-off flips this)
       VOYAGE_CODE_CONTEXT_MODEL: ${VOYAGE_CODE_CONTEXT_MODEL:-voyage-context-3}   # Wave 5 bake-off contextual arm (scratch only)
+      # HARD-PINNED per the wave-6 bakeoff decision (test/bakeoff.md, 2026-07-04) —
+      # see the memory-mcp block for rationale; FROZEN for wave-7.
+      VOYAGE_RERANK_MODEL: rerank-2.5
       MNEMO_TOKEN: ${MNEMO_TOKEN:-}
       DEFAULT_PROJECT_ID: ${DEFAULT_PROJECT_ID:-nodex}
       PORT: "8081"
