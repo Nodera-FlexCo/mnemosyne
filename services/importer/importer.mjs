@@ -5,6 +5,12 @@
 //
 //   DRY_RUN=true  node importer.mjs            # report only
 //   DRY_RUN=false VOYAGE_API_KEY=… DATABASE_URL=… node importer.mjs   # live ingest
+//
+// LIVE ingest requires memory-mcp BUILT FIRST (cd ../memory-mcp && npm ci && npm run
+// build): rows are written through the shared invariant path
+// ../memory-mcp/dist/db/insert-memory.js (content_sha256 + metadata.dupCandidates +
+// BOTH embedding columns — importer rows indistinguishable from storeMemory rows).
+// DRY_RUN needs no build.
 
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, basename } from 'node:path';
@@ -20,6 +26,7 @@ const DATABASE_URL = process.env.DATABASE_URL ||
     ? `postgres://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.PGHOST || '127.0.0.1'}:5432/${process.env.POSTGRES_DB}`
     : '');
 const EMBED_MODEL = process.env.VOYAGE_EMBED_MODEL || 'voyage-4-large';
+const CONTEXT_MODEL = process.env.VOYAGE_CONTEXT_MODEL || 'voyage-context-4';
 const H = homedir();
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 
@@ -189,6 +196,17 @@ if (DRY_RUN) {
 
 // ---------- live ingest ----------
 if (!VOYAGE_API_KEY) { console.error('VOYAGE_API_KEY required for live ingest'); process.exit(1); }
+// Shared invariant write path (tech-debt 4761d86c): every insert goes through
+// memory-mcp's insertMemoryRow — content_sha256, dupCandidates flagging (per row,
+// AFTER its vectors are computed), and BOTH embedding columns. Loaded lazily so
+// DRY_RUN never needs the memory-mcp build.
+let insertMemoryRow;
+try {
+  ({ insertMemoryRow } = await import('../memory-mcp/dist/db/insert-memory.js'));
+} catch (e) {
+  console.error(`cannot load ../memory-mcp/dist/db/insert-memory.js — build memory-mcp first (cd services/memory-mcp && npm ci && npm run build): ${e.message}`);
+  process.exit(1);
+}
 async function embed(text) {
   const res = await fetch('https://api.voyageai.com/v1/embeddings', {
     method: 'POST',
@@ -198,19 +216,39 @@ async function embed(text) {
   if (!res.ok) throw new Error(`voyage ${res.status}: ${await res.text()}`);
   return (await res.json()).data[0].embedding;
 }
+// Contextual embedding for embedding_v2 (the recall-bearing column: searchMemory
+// filters `embedding_v2 IS NOT NULL`, so a v2-less row is invisible until a manual
+// backfill — the AC-304 unembedded-rows hole this importer used to create).
+// One-chunk-per-doc: inputs=[[text]], dim 1024, int8 — same recipe as storeMemory.
+async function embedContextual(text) {
+  const res = await fetch('https://api.voyageai.com/v1/contextualizedembeddings', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${VOYAGE_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      inputs: [[text]],
+      model: CONTEXT_MODEL,
+      input_type: 'document',
+      output_dimension: 1024,
+      output_dtype: 'int8',
+    }),
+  });
+  if (!res.ok) throw new Error(`voyage ctx ${res.status}: ${await res.text()}`);
+  // Response: { data: [ { data: [ { embedding } ] } ] } — one doc, one chunk.
+  return (await res.json()).data[0].data[0].embedding;
+}
 let ingested = 0;
 for (const r of toIngest) {
   const body = `${r.title}\n${r.content}`.slice(0, 110000); // ~27k token cap
-  let vec;
-  try { vec = await embed(body); } catch (e) { console.error(`embed failed ${r.source_uri}: ${e.message}`); continue; }
-  await pool.query(
-    `INSERT INTO memory.memories
-       (project_id,type,title,content,importance,metadata,embedding,status,source_uri,source_kind,content_sha256,event_date)
-     VALUES ($1,$2,$3,$4,$5,$6,$7::halfvec,$8,$9,$10,$11,$12)`,
-    [PROJECT_ID, r.type, r.title, r.content, r.importance,
-     JSON.stringify({ tags: ['migrated', r.kind] }), `[${vec.join(',')}]`,
-     r.status, r.source_uri, r.kind, r.content_sha256, r.event_date],
-  );
+  let vec, vec2;
+  try { vec = await embed(body); vec2 = await embedContextual(body); }
+  catch (e) { console.error(`embed failed ${r.source_uri}: ${e.message}`); continue; }
+  // insertMemoryRow recomputes content_sha256 from the (redacted) content — the
+  // same value as r.content_sha256 above, so the pre-dedupe sets stay coherent.
+  await insertMemoryRow(pool, {
+    projectId: PROJECT_ID, type: r.type, title: r.title, content: r.content,
+    importance: r.importance, metadata: { tags: ['migrated', r.kind] },
+    sourceKind: r.kind, status: r.status, sourceUri: r.source_uri, eventDate: r.event_date,
+  }, { vec, vec2 });
   ingested++;
   if (ingested % 25 === 0) console.log(`  ingested ${ingested}/${toIngest.length}...`);
 }
