@@ -150,6 +150,11 @@ services:
       # NOT part of assertServerConfig; the server never reads them.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       CONSOLIDATE_MODEL: ${CONSOLIDATE_MODEL:-}
+      # Write-time summary gate (wave-2 token-efficiency): summaries on memory_store
+      # ONLY when this is "1" AND the key above is set — the key alone must never
+      # start spending (the backfill:summaries operator script is the intended
+      # population path). Optional, default off.
+      SUMMARIZE_ON_STORE: ${SUMMARIZE_ON_STORE:-}
       MNEMO_TOKEN: ${MNEMO_TOKEN:-}
       DEFAULT_PROJECT_ID: ${DEFAULT_PROJECT_ID:-nodex}
       PORT: "8080"

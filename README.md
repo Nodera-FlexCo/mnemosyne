@@ -91,6 +91,15 @@ DATABASE_URL=<loopback> npm --prefix services/memory-mcp run gold:migrate
 DATABASE_URL=<loopback> npm --prefix services/memory-mcp   run distill-eval -- --yes
 DATABASE_URL=<loopback> npm --prefix services/codebase-mcp run distill-eval -- --yes
 
+# PAID (Anthropic quota, Haiku-class; needs ANTHROPIC_API_KEY, optional
+# CONSOLIDATE_MODEL) — resumable backfill of memory.memories.summary for existing
+# rows; refuses without --yes. FLIP GATE: rerank docs change for summarized rows —
+# follow services/memory-mcp/test/retune.md's wave-2 runbook (live gate re-record).
+# Write-time summaries stay off unless SUMMARIZE_ON_STORE=1 is ALSO set in .env
+# (double gate: key AND flag — the key alone never spends on memory_store).
+DATABASE_URL=<live> ANTHROPIC_API_KEY=<key> \
+  npm --prefix services/memory-mcp run backfill:summaries -- --yes
+
 # FREE — monthly gold rotation from real memory.search_log usage (frequent/zero-hit/
 # low-overlap queries not already in gold); flags: --days 30 --min-count 2 --limit 40.
 # Pair it with the log's retention cleanup (append-only, grows unbounded otherwise):
