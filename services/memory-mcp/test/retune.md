@@ -240,6 +240,29 @@ runs it as a recorded gate:
    the doc builder ignores them, and display surfaces (`formatHits`, `memory_get`)
    remain useful.
 
+### Recorded numbers — summary-backfill flip gate, 2026-07-04 (operator record)
+
+- Backfill: **1,751 / 2,157** active rows summarized (Haiku via `dist/db/backfill-summaries.js
+  --yes` in-container; the npm script's `tsx` entry does not exist in the prod image).
+  The remaining **406 rows** skipped when the Anthropic account exhausted its credit
+  mid-run — resumable, re-run after top-up. Avg content 14,072 chars (8,000 sent),
+  avg summary 799 chars.
+- Gate (dev split, live corpus, rerank-2.5): **PASS with a lift** —
+  BEFORE (committed baseline, pre-summary): pool Recall@25 0.9474 / nDCG@10 0.7231 / MRR@10 0.7612;
+  AFTER (`test/runs/2026-07-04-summary-flipgate-dev.json`): pool Recall@25 0.9474 / **nDCG@10 0.7436 (+0.0205)** /
+  **MRR@10 0.7868 (+0.0256)**. Pool layer identical by construction (fuseCandidates untouched).
+- Frozen: AFTER artifact copied to `baseline-dev.json` (step 4 accepted). SUPERSEDED same-day:
+  wave-7 (#12/#14) re-recorded `baseline-dev.json` on the post-consolidation corpus
+  (0.9474 / 0.7068 / 0.7262) — that file is authoritative; this record's AFTER artifact
+  is preserved under its own filename above.
+- Remainder: when the 406 pending rows are backfilled, re-run the (Voyage-only) gate
+  against THIS baseline and refresh again only on a further accepted shift.
+- Incident: first backfill run skipped ALL rows — compose materializes
+  `${CONSOLIDATE_MODEL:-}` as an EMPTY string and `config.ts` used `??`, so the API got
+  `model: ""` (400, swallowed by the summarizer's null-on-failure contract). Worked
+  around with `CONSOLIDATE_MODEL=claude-haiku-4-5` in `/opt/mnemosyne/.env`; code fix
+  (`||` fallback) in PR #11.
+
 ## Two-phase search core (Wave 1, retrieval-improvement program)
 
 `searchMemory` is now composition over two exported phases in `src/memory.ts`:

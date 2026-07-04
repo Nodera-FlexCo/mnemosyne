@@ -1,7 +1,7 @@
 {
   "config": {
     "threshold": 0.9,
-    "model": "",
+    "model": "claude-haiku-4-5",
     "batch": 500,
     "judgeBatch": 8,
     "topS": 3,
@@ -9,7 +9,7 @@
     "complete": true,
     "apply": false,
     "projectId": "nodex",
-    "generatedAt": "2026-07-04T07:37:26.110Z"
+    "generatedAt": "2026-07-04T11:35:38.480Z"
   },
   "pairs": [
     {
@@ -17,1614 +17,1824 @@
       "b": "2bd4dd2e-bb03-4f3c-8860-3a1b29ada0f0",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "0fc3152c-de7a-469a-b2af-603a9193e27e",
       "b": "470902df-46a1-4585-a3b4-e230a95e51e6",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "5b0998f0-0ae5-4203-a849-2f2d462870a9",
       "b": "0fc3152c-de7a-469a-b2af-603a9193e27e",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert identical Phase 10 audit log scope and architecture; b is newer (created 0.657s later)"
     },
     {
       "a": "32acdbe1-3f6f-435f-934e-496be5621002",
       "b": "1239aa4c-bdf1-4419-8d3a-d143786d7e68",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "2803c9b2-bbf9-4b78-885e-0d473ea9754b",
       "b": "2e2e8735-fce9-4589-9aa2-e2afdf3b46ff",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "2803c9b2-bbf9-4b78-885e-0d473ea9754b",
       "b": "516b3a45-acd3-48af-8bed-7ced769b785f",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "2803c9b2-bbf9-4b78-885e-0d473ea9754b",
       "b": "ef1f6d5d-dba9-4cef-9ae5-bea46a48940e",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "470902df-46a1-4585-a3b4-e230a95e51e6",
       "b": "2bd4dd2e-bb03-4f3c-8860-3a1b29ada0f0",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe identical Phase 10 audit log implementation (RLS, GDPR decoupling, CLS pattern, keyset pagination); b is newer (created 0.297s later)"
     },
     {
       "a": "5b0998f0-0ae5-4203-a849-2f2d462870a9",
       "b": "2bd4dd2e-bb03-4f3c-8860-3a1b29ada0f0",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "516b3a45-acd3-48af-8bed-7ced769b785f",
       "b": "2e2e8735-fce9-4589-9aa2-e2afdf3b46ff",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "ef1f6d5d-dba9-4cef-9ae5-bea46a48940e",
       "b": "2e2e8735-fce9-4589-9aa2-e2afdf3b46ff",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "a",
+      "reason": "Both assert the same CRITICAL BullMQ handler multiplex race finding in Phase 10 Fix Wave 2; (a) contains complete executive summary and details; (b) is a constraint clarification response unrelated to the code review claim itself."
     },
     {
       "a": "34819adb-972e-411f-b633-466deff35e4c",
       "b": "4547bd0a-491d-453e-b455-76b99511c0c6",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both establish Pass 4 review scope for SHARED + INFRASTRUCTURE domains; (b) provides more specific convention details (Drizzle ORM, RLS, JWT app_role claim, ES256 JWKS verification) that enhance the core scope claim."
     },
     {
       "a": "5b0998f0-0ae5-4203-a849-2f2d462870a9",
       "b": "470902df-46a1-4585-a3b4-e230a95e51e6",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert Phase 10 audit log architecture; (b) adds operational details (CLS_AUDIT_PAYLOAD_OVERRIDE pattern, keyset pagination compound index, silent-fail try/catch, GDPR Art 17(3)(b)+(e) decoupling) that (a) does not explicitly state, making (b) richer."
     },
     {
       "a": "ef1f6d5d-dba9-4cef-9ae5-bea46a48940e",
       "b": "516b3a45-acd3-48af-8bed-7ced769b785f",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "a",
+      "reason": "Both review Phase 10 Fix Wave 2 Bundle A+B with same CRITICAL finding on BullMQ handler multiplex; (a) contains fuller executive summary and issue details; (b) omits the summary framing."
     },
     {
       "a": "8f542987-f8f6-4f16-a25f-3cbdf94bc9d2",
       "b": "5dcc047e-2745-418a-887d-ae5ad63c9d61",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both scope Codex Pass 3 DATABASE domain review; (b) adds specific operational constraints (2s timeout, null stripping, SECURITY DEFINER, EXECUTE perms) and explicit out-of-scope boundaries that (a) does not assert."
     },
     {
       "a": "63e1802e-861a-4551-a6a8-ceb02beb1147",
       "b": "a44aab35-34d9-423c-b657-3fe432001ea0",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both document Codex Pass 1 dual-engine self-review scope; (b) provides more detailed scope breakdown (63 backend files, 93 frontend, 27 database, 17 shared, ~21 infrastructure) and explicit exclusions (web-demo, lock files, build artifacts, orchestration prompts) that (a) does not specify."
     },
     {
       "a": "bcff9df9-1ad8-4af4-b423-810bc22a9d31",
       "b": "a260f0a8-aad5-4a3b-89f7-5a4cfd510e17",
       "sim": 1,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same Codex Pass 2 frontend review scope and findings. Memory b is more recent (20:49:24 vs 20:49:22) and provides a concise summary of the same conventions and scope."
     },
     {
       "a": "2449d389-470d-48d0-92d5-3f497e540910",
       "b": "1c189e44-0ff7-4a9a-9a11-1926ef89ec4b",
       "sim": 0.9993,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "3c47800b-e618-410a-bb30-270f45fd3ca6",
       "b": "0fc3152c-de7a-469a-b2af-603a9193e27e",
       "sim": 0.9992,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe Phase 10 Nodex audit log implementation with identical core components (audit_log table, RLS, AuditLogService, 19 instrumentation sites, 5-year retention). Memory b is slightly more recent (20:49:29.105 vs 20:49:28.775) and adds explicit key conventions detail."
     },
     {
       "a": "3c47800b-e618-410a-bb30-270f45fd3ca6",
-      "b": "470902df-46a1-4585-a3b4-e230a95e51e6",
+      "b": "2bd4dd2e-bb03-4f3c-8860-3a1b29ada0f0",
       "sim": 0.9992,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "5b0998f0-0ae5-4203-a849-2f2d462870a9",
       "b": "3c47800b-e618-410a-bb30-270f45fd3ca6",
       "sim": 0.9992,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "e7c04e6b-a236-4913-824e-6c6fabc2eef8",
       "b": "ea26c58f-94e0-4886-9fa5-dfe6c38a832b",
       "sim": 0.9992,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert Wave 1 Foundations establishing four dependencies with identical claims. Memory b is more recent (22:33:21 vs 22:18:38) and provides slightly more explicit detail about the schema fields (7 fields enumerated)."
+    },
+    {
+      "a": "2803c9b2-bbf9-4b78-885e-0d473ea9754b",
+      "b": "684d71a8-4021-45ae-b390-c765bf91d58c",
+      "sim": 0.9991,
+      "source": "selfJoin",
+      "verdict": 0
     },
     {
       "a": "2e2e8735-fce9-4589-9aa2-e2afdf3b46ff",
       "b": "684d71a8-4021-45ae-b390-c765bf91d58c",
       "sim": 0.9991,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "516b3a45-acd3-48af-8bed-7ced769b785f",
       "b": "684d71a8-4021-45ae-b390-c765bf91d58c",
       "sim": 0.9991,
       "source": "selfJoin",
-      "verdict": -1
-    },
-    {
-      "a": "ef1f6d5d-dba9-4cef-9ae5-bea46a48940e",
-      "b": "684d71a8-4021-45ae-b390-c765bf91d58c",
-      "sim": 0.9991,
-      "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both memories assert the same code review finding: BaseProcessor @OnWorkerEvent('failed') dual-fire race condition. Memory b is more recent (20:49:33.215Z vs 20:49:32.499Z) and contains the fuller executive summary format; keeping the newer, richer assertion."
     },
     {
       "a": "ef5355bf-0719-485e-bd3a-af9c24382ddb",
       "b": "9e9ea049-1a97-4175-b06f-53606322fe61",
       "sim": 0.999,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "eae4a00b-2fb0-4bdf-9d60-973c279247c8",
       "b": "f271807c-6486-4085-84c2-462eb00de5ec",
       "sim": 0.9988,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "cdd4872e-a1a9-4528-82f9-48b4eb0ee137",
       "b": "a5329a38-9ed0-4e9a-81f4-f581ba1840d9",
       "sim": 0.9986,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both memories assert the same NOD-275 fiscal depreciation specification with identical corrections (subgroup 2.4, 1,500 RON/month cap, four methods, banker's rounding). Memory b is more recent (22:34:40.182Z) and slightly more explicit about independence of the cap from Art 25(3)(l); keeping the newer assertion."
     },
     {
       "a": "f16dbe41-657c-4433-b019-b38aa0b26b54",
       "b": "ed79016b-8244-40ed-9377-69322e694af0",
       "sim": 0.9986,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "a7e5678f-51a9-4890-8472-1139c6c4caf3",
       "b": "4171cbe1-7471-4495-acc4-871387fd7d28",
       "sim": 0.9985,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both memories assert the same Counterparty Validation Engine 5-layer pipeline specification for V1.5 with identical corrections (ARES REST/JSON v3, postal-codes-js Apache-2.0 stale status, ANAF 1 req/s ceiling). Memory b is more recent (22:32:49.242Z); keeping the newer version."
     },
     {
       "a": "5ac12de3-c35c-48f4-930a-3c1493052046",
       "b": "84a12507-6712-4939-ac24-8566e07f65c2",
       "sim": 0.9985,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both memories assert the same Wave 2 mobile shell deliverable (NOD-141a/b, NOD-142, MobileDock component, 1 file creation, 5 modifications, ~5-6h). Memory b is more recent (22:33:17.965Z) and adds step-level detail; keeping the newer, richer assertion."
     },
     {
       "a": "5ef67a18-55e9-4c81-b1c4-baa927c7ef21",
       "b": "e7d53e62-3c5a-4c4e-9ccf-81051e65cb01",
       "sim": 0.9985,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "973b6edf-8d95-4945-9586-d825a7809bb2",
       "b": "d8d69ade-815a-4b1f-b7ad-afacf9e0003b",
       "sim": 0.9984,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same core decision (Tiptap with Models B/C/A, Supabase Realtime + Postgres, 45–60h budget, defer Yjs to V2). Pair b is newer (2026-06-15T22:32:48) and adds authoritative citation detail without contradicting a; keep the newer version."
     },
     {
       "a": "0ad28ce6-816b-45a3-8bda-1235de0554a6",
       "b": "56d4f665-c73c-49cf-8ec3-b3f691a6168b",
       "sim": 0.9983,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both conclude R2 server-side AES-256-GCM is correct, scope is 70–95h, folder-tree + RLS + OCR reuse + single-user Tiptap. Pair b adds EU-jurisdiction detail (Frankfurt) and explicitly names the three buckets already protected in production, enriching without contradicting; keep the newer (2026-06-15T22:32:52)."
     },
     {
       "a": "20996ee3-b0f7-480c-862e-95d666b0eb32",
       "b": "768ba293-9a83-4401-b2e7-d762a424c5e9",
       "sim": 0.9983,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe the same NOD-249 six-wave accountant console with firm entity, Collections portal, bulk SAGA export, white-label, and Partner Discount Slots; ~45 created/~30 modified files; Supabase 0101+/Drizzle 0097+. Pair b is slightly more detailed and newer (2026-06-15T22:36:30); keep it."
     },
     {
       "a": "1ca92e50-f32d-42ab-a348-9012b463e15a",
       "b": "13f10d00-fbc3-4d3b-b0d0-991a14cc3585",
       "sim": 0.998,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both identify the same architectural conflict (Hocuspocus in one doc vs. Yjs/Hocuspocus deferred in Sync ADR), resolve it via Supabase Realtime + Postgres comment threads, and scope V1.5 to ~55–75h excluding Yjs/Hocuspocus. Pair b is more explicit about the authoritative resolution and newer (2026-06-15T22:32:54); keep it."
     },
     {
       "a": "72a8ce11-a75d-4058-a0d3-16864f1b2acd",
       "b": "e6dd004b-62f5-40f7-9735-09e5bb322f4a",
       "sim": 0.9979,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both recommend `documents_index` projection (not merged storage), retention_class discriminator, V1.5 lexical search only (~10–16h), Postgres native (no embeddings in V1.5), and fold V2 doc-QA into Feature 10. Pair b is newer (2026-06-15T22:32:56) and slightly more precise on bucket legality asymmetry; keep it."
     },
     {
       "a": "0dddab79-289a-4746-b40c-02bc5dcf554d",
       "b": "9f4ce341-0839-41ad-ab8e-c4bf15f6ca73",
       "sim": 0.9977,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both specify NOD-242 Tiptap v3.23.4, Next.js 16 App Router + React 19, pinned dependencies, and critical SSR requirements (immediatelyRender: false, 'use client' directives, pnpm.overrides). Pair b is newer (2026-06-15T22:34:18) with explicit mention of ListKeymap and TrailingNode additions; keep it."
     },
     {
       "a": "00b58d5c-e4d7-4099-a3fd-ae2385c88d20",
       "b": "5d8fc7df-b015-4315-ba16-23e2420bc6d1",
       "sim": 0.9976,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same multi-provider stack (Mistral, Gemini, Claude Sonnet/Opus), EU-native access (Vertex AI Belgium/Netherlands), cost targets (€1.20–€2.80/customer), and self-hosting ROI (~10k customers). Pair b is newer (2026-06-15T22:32:47) and marginally more precise on pricing in EUR; keep it."
     },
     {
       "a": "00f3bc6b-ab5b-4f85-b87e-5abae661cf12",
       "b": "a3294f81-22d5-4cfe-a9ee-814e09d50fda",
       "sim": 0.9976,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both reject PDF-WYSIWYG and Syncfusion, recommend structured visual builder (~60–90h MVP), reuse RSC templates, restrict editing to safe fields (BT-22/BT-127/BT-20), and cite Compliance Warranty (BT-129/146/148/109/110/112/BG-23). Pair b is newer (2026-06-15T22:32:56) and more explicit on field safety scope; keep it."
     },
     {
       "a": "8b8ff373-e443-43a8-a6e2-f8415d88a2ea",
       "b": "ef455854-db6f-4b41-96be-31d84dae1e79",
       "sim": 0.9976,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "8b8ff373-e443-43a8-a6e2-f8415d88a2ea",
       "b": "b32382d0-c382-45a2-8518-73c4af9067a9",
       "sim": 0.9974,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "1c298b35-f884-4437-a723-104ef3ebfb07",
       "b": "d547e0e4-ad91-4f34-89cf-df60ded676ee",
       "sim": 0.9972,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same claim about Fiscal Rules Engine W4 catalog covering VAT thresholds, microenterprise regimes, and fiscal parameters. Memory b is more complete and recent (2026-06-15T22:34:36 vs 22:19:19), with clearer formatting and explicit exclusion details."
     },
     {
       "a": "8b8ff373-e443-43a8-a6e2-f8415d88a2ea",
       "b": "e84c6c37-c5de-4a55-8799-cd67e1fabf6f",
       "sim": 0.9971,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "daad4165-c6b3-44c0-9787-9e5226bd1170",
       "b": "9f2bcfad-5747-4806-ad7c-c88c95668f99",
       "sim": 0.9969,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same core claim: Nodex AI/Retrieval strategy recommends hybrid retrieval with EU data residency compliance (Bedrock/Vertex). Memory b is more recent (2026-06-15T22:32:47 vs 14:44:21) and adds the specific reference to AI-Provider-Map.md as single source of truth."
     },
     {
       "a": "9e1c748a-ea74-4d12-9a7f-160ad7e751ba",
       "b": "41643673-d2db-4b9e-87f8-e93e33a3c807",
       "sim": 0.9968,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe NOD-238 W2 implementation (realtime token endpoint + optimistic concurrency). Memory b is more recent (2026-06-15T22:34:11 vs 14:45:20) and provides concrete implementation details (Steps 1–6 completed work)."
     },
     {
       "a": "d864cf3b-29a7-4899-8555-f8e8a11bc965",
       "b": "712baef7-8751-4b92-8047-f76b42963571",
       "sim": 0.9968,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "a",
+      "reason": "Both assert the same claim about Nodex Phase 11 PWA architecture (push_subscriptions, RLS, audit actions, service worker, etc.). Memory a is more recent (2026-06-15T20:49:36 vs 20:49:35) despite similar content; treat as the cleaner, more complete version."
     },
     {
       "a": "c7ec8d34-1dda-4f3b-8327-1ba53e947997",
       "b": "8c2762de-2521-41d3-8ada-ce00ec76e8fd",
       "sim": 0.9968,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe NOD-554 MFA/TOTP implementation plan. Memory b is more recent (2026-06-15T22:38:36 vs 14:45:25) and adds historical context ('kept for historical reference', 'implemented 2026-06-13') with verified pattern details."
     },
     {
       "a": "a320e0d6-0e43-4883-8fc2-e8226e7103e7",
       "b": "712baef7-8751-4b92-8047-f76b42963571",
       "sim": 0.9967,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "ef455854-db6f-4b41-96be-31d84dae1e79",
       "b": "b32382d0-c382-45a2-8518-73c4af9067a9",
       "sim": 0.9967,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert Phase 11.5 OCR+AI plumbing with same core architecture (Mistral, entity resolution, RLS). Pass 5 (b) is the later, more refined pass; Pass 2 (a) adds incomplete details (LLMBudgetService fail-open concern, 7 HTTP endpoints, multer config) that Pass 5 omits, indicating architectural refinement. Keep the later pass as the authoritative state."
     },
     {
       "a": "e84c6c37-c5de-4a55-8799-cd67e1fabf6f",
       "b": "b32382d0-c382-45a2-8518-73c4af9067a9",
       "sim": 0.9965,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "ef455854-db6f-4b41-96be-31d84dae1e79",
       "b": "e84c6c37-c5de-4a55-8799-cd67e1fabf6f",
       "sim": 0.9965,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "0a73dca4-975b-4208-a5ba-c0aeb02c6377",
       "b": "c2a27e35-ae64-4a77-85f3-ea3ad76a64e0",
       "sim": 0.9964,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both establish the same authoritative Romanian fiscal parameters seed table as of 2026-05-19. Memory b (created later, 2026-06-15T22:32:53) is newer and represents the latest state; minor wording differences do not change the core claim about OUG 89/2025, OUG 8/2026, and OG 22/2025 corrections."
     },
     {
       "a": "a320e0d6-0e43-4883-8fc2-e8226e7103e7",
       "b": "7cd95f8e-b6e4-4739-b029-d3e5d16aa04e",
       "sim": 0.9964,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "7cd95f8e-b6e4-4739-b029-d3e5d16aa04e",
       "b": "712baef7-8751-4b92-8047-f76b42963571",
       "sim": 0.9963,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "8b8ff373-e443-43a8-a6e2-f8415d88a2ea",
       "b": "a27ffd7b-2627-4686-b317-456ee6481fa9",
       "sim": 0.9962,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "d346985a-ea01-4bb4-8ee5-e39f049c2299",
       "b": "959286b3-4249-4648-a746-96b573aef8de",
       "sim": 0.9962,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same Wave 4 bulk SAGA export claim with 2-table DB tracking, RLS, N-org fanout with 3-concurrency, and atomic listener rollup. Memory b is newer and adds implementation date (2026-06-03) and more schema detail (zipKey field)."
     },
     {
       "a": "2aa6425b-ac0e-4390-9f82-d6d0387c1739",
       "b": "1f1650a0-2259-4f7b-888a-4052f4bb3746",
       "sim": 0.9961,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "f72e5bb6-12b0-41f4-85a1-8fa23469c08f",
       "b": "712baef7-8751-4b92-8047-f76b42963571",
       "sim": 0.9961,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "794ad092-0bd0-4cb7-916d-f9556e17f248",
       "b": "d8418e92-69ac-4ed1-84da-4b1b8c43f8ce",
       "sim": 0.9961,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert Wave 5 white-label with Stripe add-on and subdomain routing. Memory b is newer (2026-06-15T22:36:32 vs 22:19:28), adds implementation date (2026-06-03), and maps to AC-12/AC-13/AC-14 requirements."
     },
     {
       "a": "a27ffd7b-2627-4686-b317-456ee6481fa9",
       "b": "b32382d0-c382-45a2-8518-73c4af9067a9",
       "sim": 0.9961,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "ef455854-db6f-4b41-96be-31d84dae1e79",
       "b": "a27ffd7b-2627-4686-b317-456ee6481fa9",
       "sim": 0.996,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "d864cf3b-29a7-4899-8555-f8e8a11bc965",
       "b": "a320e0d6-0e43-4883-8fc2-e8226e7103e7",
       "sim": 0.9958,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "7662385d-abf5-4a65-85ea-8c2df93c30e7",
       "b": "f2164fc9-7a31-4e2e-9e6e-df26d7a0feaa",
       "sim": 0.9957,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert Wave 2 firm console shell with FirmService/FirmController, per-client KPIs, and read-only deep-dive under RLS. Memory b is newer and adds implementation date (2026-06-02) plus frontend component names (firm-nav.ts, firm-allowlist.ts, FirmConsoleLink)."
     },
     {
       "a": "d864cf3b-29a7-4899-8555-f8e8a11bc965",
       "b": "7cd95f8e-b6e4-4739-b029-d3e5d16aa04e",
       "sim": 0.9956,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "f72e5bb6-12b0-41f4-85a1-8fa23469c08f",
       "b": "7cd95f8e-b6e4-4739-b029-d3e5d16aa04e",
       "sim": 0.9956,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert same Phase 11 PWA Codex conventions (RLS, JWT, BullMQ, push_subscriptions, VAPID, audit actions). Memory b (Pass 4) is newer and adds critical findings (UNIQUE constraint org_id gap, VAPID validation gate) not in a (Pass 3), making it richer."
     },
     {
       "a": "e8069342-cf23-4393-9ce5-ec984497c8dd",
       "b": "94a4c6cb-5670-4ccb-ae66-8c189f69014e",
       "sim": 0.9955,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "f72e5bb6-12b0-41f4-85a1-8fa23469c08f",
       "b": "a320e0d6-0e43-4883-8fc2-e8226e7103e7",
       "sim": 0.9954,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both document Phase 11 PWA code review for Nodex. Memory b (Pass 5, 2026-06-15T20:49:36.044Z) is newer than a (Pass 3, 2026-06-15T20:49:35.726Z) and adds operational details (endpoint DELETE IDOR, CSP specifics with dev/prod branching, Serwist compilation, component names, 410-Gone auto-deletion)."
     },
     {
       "a": "d242b561-cd3c-4b7f-b629-9a204a58a383",
       "b": "f8f37452-8d8e-403e-a384-37f5400af111",
       "sim": 0.9953,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "d14cc9d8-830a-4482-89b8-a5f52a4bc791",
       "b": "4f1ec89d-b373-436e-b0b8-68835b75fa14",
       "sim": 0.9943,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe Wave 6 Partner Discount Slots widget on /firm home with FIRM_PARTNER_SLOTS flag, greyed state, and 0 values until NOD-250 cron. Memory b (2026-06-15T22:36:32.737Z) is newer, adds implementation date (2026-06-03), specific migration name (0100_nod249_w6_partner_slots_flag.sql), and test details not asserted in a."
     },
     {
       "a": "f1341d8f-8b21-410b-92ba-9cb6184eef5e",
       "b": "54405215-c308-4658-9af8-c5cdc396977f",
       "sim": 0.9916,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert V1.5a realtime substrate via Supabase Realtime channels, Postgres triggers, RLS, conflict handling (409 If-Match), and 30-second polling fallback. Memory b (2026-06-15T22:33:51.157Z) is newer; a mentions 'field merge deferred to V1.5b' while b omits that qualifier, but both claim the same core architecture—verdict 1 keeping newer b."
     },
     {
       "a": "e95b6f83-9602-42b5-b622-8071d8a3f3ad",
       "b": "b1f5c395-7c10-4645-b6ac-218375104412",
       "sim": 0.9914,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe NOD-251 AI infrastructure: pgvector HNSW, Mistral Embed v4, Romanian FTS, Vertex AI EU, Cohere Rerank scaffold, AI cost dashboard. Memory b (2026-06-15T22:33:52.650Z) is newer and adds deferred-scope detail (per-customer embeddings, production Cohere path deferred to V2 per 2026-05-19 amendment) not explicitly in a."
     },
     {
       "a": "c15b50f1-af59-4ed1-a1da-865aaddefb58",
       "b": "c0ac6685-7271-44ee-8fcd-885dba464373",
       "sim": 0.9899,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "405459bf-c696-44ba-b167-89777a21d254",
       "b": "b1f95b55-68d8-4260-ae32-e921bd43ac0f",
       "sim": 0.9892,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "fc7a1f0d-bde2-4dd7-ab3b-f9007faaf315",
       "b": "4601ad3d-7582-41fb-a639-6886605b885b",
       "sim": 0.9888,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "64571c45-4869-4ab0-9f8b-5e1abd40faf5",
       "b": "ce8f09c1-5de4-48f1-8360-d4459fdddb73",
       "sim": 0.9881,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same V1.5b Comments+CustomRoles feature (NOD-243). Memory b is newer (22:33:51 vs 22:19:03) and provides slightly clearer architectural context (explicit mention of Supabase Realtime + last-write-wins for comments, V1.5a sequencing). Memory a is slightly less precise on the Yjs/Hocuspocus scoping."
     },
     {
       "a": "3a230786-8682-42f1-99f2-faf75f307590",
       "b": "fc7a1f0d-bde2-4dd7-ab3b-f9007faaf315",
       "sim": 0.9862,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "fc7a1f0d-bde2-4dd7-ab3b-f9007faaf315",
       "b": "d5a4ec7f-ae0d-4b22-ba2e-2ccc5679a778",
       "sim": 0.9854,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "16c7837c-277b-44f5-816c-2b1fe2279a1c",
       "b": "50389fd2-2442-40d3-990b-1f1eff0e8e7c",
       "sim": 0.9852,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "fc7a1f0d-bde2-4dd7-ab3b-f9007faaf315",
       "b": "6349bbdf-d2fc-4112-b9d5-71e0c1dafa2c",
       "sim": 0.9848,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "d5a4ec7f-ae0d-4b22-ba2e-2ccc5679a778",
       "b": "4601ad3d-7582-41fb-a639-6886605b885b",
       "sim": 0.9845,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "57f22f0b-a8a6-46ff-8f19-7323dd484ae2",
       "b": "5b7a0bf4-d653-4517-b06f-550bb0a679c6",
       "sim": 0.9839,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert Phase 8.5 instant-tier checkout completion; b is newer (2026-06-15T22:39:20) and adds key implementation details (PendingInstantCreditsScheduler, X-Instant-Claim-Token header, audit actions) that a omits."
     },
     {
       "a": "3a230786-8682-42f1-99f2-faf75f307590",
       "b": "4601ad3d-7582-41fb-a639-6886605b885b",
       "sim": 0.9836,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "6349bbdf-d2fc-4112-b9d5-71e0c1dafa2c",
       "b": "4601ad3d-7582-41fb-a639-6886605b885b",
       "sim": 0.9832,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "fcd58748-8519-43ed-967d-416ebeab96d3",
       "b": "c9def117-8fd5-481c-9f60-519247d93791",
       "sim": 0.983,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe NOD-275 depreciation calculator in fiscal engine; b is newer (2026-06-15T22:34:37) and clarifies the parallel pattern to VAT rate resolver with specific envelope shape and rule application tracking."
     },
     {
       "a": "f9c27ea8-815c-4611-ba69-976a8481005d",
       "b": "efdc9875-4bf6-4dd0-b175-7b8e6b472a5d",
       "sim": 0.9824,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert V1.5 Instant-Tier Buy CTA with Stripe checkout and three pack tiers; b is newer (2026-06-15T22:39:34) and adds NOD-87/NOD-107 task linking and clarifies ledger increment via InstantCreditsService.topUp()."
     },
     {
       "a": "6349bbdf-d2fc-4112-b9d5-71e0c1dafa2c",
       "b": "d5a4ec7f-ae0d-4b22-ba2e-2ccc5679a778",
       "sim": 0.9806,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "62f3a9be-e1ee-480d-94e2-5130d400a27b",
       "b": "dd3b6d5f-8aaf-4028-8b6e-966ac6f8585a",
       "sim": 0.9799,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "3a230786-8682-42f1-99f2-faf75f307590",
       "b": "6349bbdf-d2fc-4112-b9d5-71e0c1dafa2c",
       "sim": 0.9798,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "0bca2dee-d5a3-4c62-b91f-f3f1a26e3781",
       "b": "8e5340f7-a470-4859-8636-8e2b43bfed0e",
       "sim": 0.9778,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same core decision (do NOT port Froala, use Tiptap), but b includes the NOD-242 lock date and reference document path (.claude/research/2026-05-12-rich-text-editor-strategy-tiptap.md), making it richer."
     },
     {
       "a": "7a0c6388-6deb-439e-a2c9-e8063693f41c",
       "b": "0d9bb3e8-9c10-438a-a664-1013dde72575",
       "sim": 0.9767,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "95dccc13-cebd-4b1e-94ef-adb08176530a",
       "b": "28fec5d7-d6a4-4246-8844-a85a5b5f91ff",
       "sim": 0.9766,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "f2d4997a-743b-45be-993b-b3246b52ee8f",
       "b": "64c414f1-309c-452f-9d1d-cbcf36c333b5",
       "sim": 0.9765,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same Syncfusion Community License adoption decision and version pin; b adds richer details (employee count ≤10, .NET 8 deferred to V2 audit-pack for SAF-T/D406, CI guard script name)."
     },
     {
       "a": "92857abd-1d74-4a0c-9cca-40f1474c7e67",
       "b": "64750204-6ba5-4e59-b93d-3c06238b3bd3",
       "sim": 0.9759,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "ed66153e-9971-4ec6-b30b-daad8974dbd2",
       "b": "91743b2f-3b88-4287-9ec8-5cc5cc740d80",
       "sim": 0.974,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "671f5123-21ce-469c-99af-0cf4fb7ed298",
       "b": "7c566607-6db7-40a8-a5d9-984940884731",
       "sim": 0.9732,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "3a6504d6-bfef-4b2e-b1f9-2d8a88db0fc2",
       "b": "465c9934-3532-4473-9f7c-477ab8c84584",
       "sim": 0.9727,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same NOD-619 capital-gains acceptance criteria baseline. Memory b is more recent (created 17:22:52 vs 17:22:37) and includes all substantive claims from a (AC-001 through AC-007 covering residents, non-residents, corporate_action handling, error conditions). Keep the newer version."
     },
     {
       "a": "061b13b4-5b04-42af-a6b1-c8997147dcd2",
       "b": "564c7ab8-12c4-4e85-8b49-ebd57fd1323f",
       "sim": 0.9704,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "1f4516f4-8aea-490e-8187-a570993758eb",
       "b": "e47fa0c9-4049-4683-8fdb-c47fedcb12d4",
       "sim": 0.9677,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "93f8f7e6-c230-4541-8c92-fe19d9e9feaa",
       "b": "6ef53353-3844-4bc2-bba0-3bc9b2ad183a",
       "sim": 0.9674,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe Nodex V1 + V1.5 design spec with identical core claims (launch Sep-Oct 2026 / Mar 2027, invoicing + e-Factura, asset management, etc.). Memory b is newer (14:46:51 vs 14:45:15) and provides richer architectural detail (pnpm/Turborepo, Hetzner CCX13, specific Cloudflare R2 buckets, Tailwind v4, Resend EU). Keep b."
     },
     {
       "a": "ac205249-0d88-4334-b735-bd4c7b6109de",
       "b": "a52a5845-50b9-4750-ac8a-d296c501762e",
       "sim": 0.9673,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "478079cf-45a0-4ef1-aa39-f18fb32e1ce7",
       "b": "eb5cf66b-02de-46ce-8323-37d83bc52188",
       "sim": 0.9663,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both address the same claim: MEDIUM-I defers accountant actorType distinction to V1.5 and how it is resolved. Memory b is newer (22:39:15 vs 14:45:54), reports the fix as already completed in NOD-81 (with specific implementation details: 28 enqueue sites, actor-type.util.ts, resolveWorkerActorType function), and supersedes the deferred-work assertion in a. Keep b."
     },
     {
       "a": "82d08888-6e6b-4913-9c63-e90fe485b83a",
       "b": "12a858e8-527a-40d9-ba18-f91a14dbc956",
       "sim": 0.9662,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "6587b268-2bdb-4ba7-90f5-e72364470867",
       "b": "41ce2f71-7413-4383-a1ce-00a25d142ed2",
       "sim": 0.9656,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "29058db1-68af-4860-b373-06f7268f446b",
       "b": "d05cb47a-1f89-45a5-9cb6-a07d812f2e1a",
       "sim": 0.9652,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same claim: adding hover tooltip + copy functionality to truncated UUIDs in the audit-log table. Memory b is newer (2026-06-15T22:39:10) and documents the RESOLVED implementation (NOD-62/NOD-64) with test coverage and i18n details, while memory a proposes the fix. Keep the resolved, implemented version."
     },
     {
       "a": "63e1802e-861a-4551-a6a8-ceb02beb1147",
       "b": "34819adb-972e-411f-b633-466deff35e4c",
       "sim": 0.965,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "34819adb-972e-411f-b633-466deff35e4c",
       "b": "a44aab35-34d9-423c-b657-3fe432001ea0",
       "sim": 0.965,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "63e1802e-861a-4551-a6a8-ceb02beb1147",
       "b": "4547bd0a-491d-453e-b455-76b99511c0c6",
       "sim": 0.965,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "a44aab35-34d9-423c-b657-3fe432001ea0",
       "b": "4547bd0a-491d-453e-b455-76b99511c0c6",
       "sim": 0.965,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "bf7ad0c7-0321-405c-ab07-771f056dbd15",
       "b": "5dc955a7-6f89-49c5-85d0-61aa5c2b922a",
       "sim": 0.9647,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same claim: the `_meta.outcome` field UI surface in the audit-log table. Memory b is newer (2026-06-15T22:39:10) and documents the RESOLVED implementation (NOD-62/NOD-64) with green CheckCircle/red WarningCircle icons and activity-dropdown integration, while memory a describes the parked proposal. Keep the resolved version."
     },
     {
       "a": "be31192a-5088-41a7-a026-14f5c34cc4e3",
       "b": "36ff0668-0a65-4fe7-b18e-8481cea4c824",
       "sim": 0.964,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "2c4ee4d1-3778-4724-9fa5-610c82285e9f",
       "b": "f26a5b73-4706-4500-9e7e-d0934cac39e1",
       "sim": 0.9636,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same core claim: NOD-252 Phase 2 builds 5 AI features on the NOD-251 substrate using Gemini. Memory b is newer (2026-06-15T22:36:54) and explicitly frames it as Phase 2 with locked implementation status and more precise technical detail (EU_GEMINI_VISION_MODEL constant, AI SDK v6.0.177, GDPR Chapter V constraint). Keep the newer, more precisely stated version."
     },
     {
       "a": "aa8679bd-afce-4fa9-92a5-316abb50cd46",
       "b": "193e0245-6f7c-4b65-b26d-27ec92ce1e68",
       "sim": 0.9625,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same core claim: NOD-275 adds resolveDepreciation() method to FiscalEngineService with four depreciation schedules, using depreciation-compute.ts helper, applying mijloc-fix gate and vehicle cap, writing one fiscal_calculation_log row. Memory b is newer (2026-06-15T22:34:39.311Z) and slightly more structured."
     },
     {
       "a": "63e1802e-861a-4551-a6a8-ceb02beb1147",
       "b": "a260f0a8-aad5-4a3b-89f7-5a4cfd510e17",
       "sim": 0.9601,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "63e1802e-861a-4551-a6a8-ceb02beb1147",
       "b": "bcff9df9-1ad8-4af4-b423-810bc22a9d31",
       "sim": 0.9601,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "a44aab35-34d9-423c-b657-3fe432001ea0",
       "b": "a260f0a8-aad5-4a3b-89f7-5a4cfd510e17",
       "sim": 0.9601,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "bcff9df9-1ad8-4af4-b423-810bc22a9d31",
       "b": "a44aab35-34d9-423c-b657-3fe432001ea0",
       "sim": 0.9601,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "068f06a8-0a2d-4af5-9526-59a461ed4fda",
       "b": "6db8dfb7-2d3b-4d04-b6a4-6d1654b94bed",
       "sim": 0.9576,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same core claim: NOD-243 W5 implements Custom Roles UI enforcement building on W4 foundation with guard enforcement, CRUD endpoints, notifications, and UI builder. Memory b is newer (2026-06-15T22:34:55.868Z) and more detailed."
     },
     {
       "a": "ba580525-86fc-40b3-bf4a-550f2576436c",
       "b": "b2b48d00-57cc-4aa3-bf92-a946e4402d4c",
       "sim": 0.9563,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "97485458-8d60-47e3-af68-f2b03747264c",
       "b": "d68cb618-178a-4341-b0b0-28aa57f8d11f",
       "sim": 0.9556,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same core claim: Wave 7 creates read-only FiscalController with three endpoints, optional logCalc flag gating calc-log emission, 60s preview cache, and Zod schemas. Memory b is newer (2026-06-15T22:34:48.988Z) and explicitly frames it as implementation plan."
     },
     {
       "a": "878d84fd-2e6c-4b85-a701-4107c2f96323",
       "b": "be7c20cf-7e4e-4881-b878-9b40663eb28c",
       "sim": 0.955,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "37185e9a-c259-44d6-808d-7cc9f7f3300a",
       "b": "6bb8f811-73d1-4ca4-92a6-d57ecec57e04",
       "sim": 0.9529,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same quarantine root cause and fix strategy. Memory b is newer (2026-06-15T22:39:37) and adds commit references (77a105b) and implementation timeline detail without contradicting a's core claim."
     },
     {
       "a": "9c27df04-afe3-424c-8d9b-c4bf2571014e",
       "b": "802d7914-f8f5-41e4-9668-a8db4e3d0528",
       "sim": 0.9519,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "fc98f689-fc6b-4bad-919d-41beb13f6515",
       "b": "2433ab3a-e5c0-4be3-a2ae-44cd49f33174",
       "sim": 0.9509,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "ffd87d32-4ff8-4340-b678-2a5ab9a64091",
       "b": "48473722-5c81-43ee-80f7-e34f707eb083",
       "sim": 0.9505,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert Path A.2 deferral to V1.5 with identical technical rationale. Memory b is newer (2026-06-15T22:39:11) and clarifies the Phase 1 Hetzner-runner lock mechanism without adding operational requirements a doesn't assert."
     },
     {
       "a": "c0fe84ea-b386-4ae0-bce8-e6e061358601",
       "b": "36b629d7-c5e8-4b22-985d-b86516e760ed",
       "sim": 0.95,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe the same W8 disclaimer implementation: single backend helper, zero engine/shared changes, zero new audit actions. Memory b is newer (2026-06-15T22:34:52) and adds implementation plan structure (W0 spike, W1/W2 commits, golden suite detail) without contradicting a's core technical claims."
     },
     {
       "a": "fb55fecd-43ab-4fc5-8f73-cc37a52c31bb",
       "b": "3e5adeef-7c15-452b-b3a8-41ed542d08e9",
       "sim": 0.95,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "d687a906-0450-4fe0-8fcd-b32f1b7ed587",
       "b": "d1e94ecd-8be8-4579-a3e8-ba2171ee9454",
       "sim": 0.9494,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both specify the same NOD-619 capital-gains engine pattern: pure kernel + service shell, bigint minor-units, holding-period via differenceInCalendarDays, OverrideResolver rate lookup, silent calc-log. Memory b is newer (2026-06-18T17:22:33) and adds explicit rate structure detail (1%/3%, 3%/6%, 10%/16% bifurcated by year/residency) without contradicting a's core design."
     },
     {
       "a": "e23490c1-4350-4165-81b9-f0eec1782cbe",
       "b": "87cf966c-e77b-418a-9fee-61473d7bf8ac",
       "sim": 0.9493,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "795ee60b-9e2a-4286-b640-328efa694031",
       "b": "14cccf5f-5cc4-4d07-bbda-2fd185fb9dc9",
       "sim": 0.9487,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe the same KPI tile font-fit fix (text-3xl→text-2xl, 178px width, 6-digit RON). Memory b is newer (16:46 vs 16:05) and includes merge confirmation + Dokploy redeploy detail."
     },
     {
       "a": "3cce5c9a-2347-4d5a-8a91-6953da904daf",
       "b": "c59196d3-b557-431d-86b7-82fa569d622a",
       "sim": 0.9474,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "0b757ad5-4a10-4169-bdd4-c35d162fc1a3",
       "b": "34f00f46-5a3c-41c0-a2a4-f7107253d4bc",
       "sim": 0.9466,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert Wave 6 adds 7 FiscalEngineService methods covering micro/VAT/CAS/CASS/reverse-charge/e-Factura/D212. Memory b is newer and specifies the two-layer architecture (4 compute kernels + 7 orchestration methods) with calc-log emission pattern more precisely."
     },
     {
       "a": "22777caa-1f08-4653-a57b-cb746fbc70be",
       "b": "b9e6ec28-e021-42ce-88d2-4e6eb3c0577f",
       "sim": 0.9466,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe the Money-out cluster rescope to 3 waves (W1 expenses/mileage, W2 matcher union, W3 AP stub) atop shipped NOD-239. Memory b is newer (22:36:25 vs 22:36:24) and explicitly references the rescope spec file and false-positive bug retractions."
     },
     {
       "a": "cca68e3b-6b08-4f75-b8bd-da5cfff3405d",
       "b": "6659231a-a66f-44af-ae5b-7b30d27a5271",
       "sim": 0.9458,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "9f5ab5f8-bccd-41ec-b157-631f7c14b3a7",
       "b": "f0f0f8d2-7fe1-437b-8017-05178af2e209",
       "sim": 0.9449,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe PR removing tmp-dash-live.png (163KB) from staging, adding .gitignore rule. Memory b is newer and includes PR number (#792) and explicit CI-passing confirmation."
     },
     {
       "a": "c63ff9e1-1fc5-454b-99fe-b3054bbc8204",
       "b": "fa72f8bc-1fe6-466b-a0b3-ce4f96250727",
       "sim": 0.9446,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "797d109a-17bd-451b-a3eb-b075dc698b82",
       "b": "dd7db5c5-1a79-4dde-af46-a0367e76f273",
       "sim": 0.9436,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "6392e1e7-a7e0-45f7-b48c-e25d20e7e7b9",
       "b": "5a6e2cc0-581a-4c33-995c-6c2ca0f99f1c",
       "sim": 0.9433,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "9e76ad11-f958-45f9-b268-18450b05395c",
       "b": "b6ffb65b-46be-47ae-87f0-cc628bb4a369",
       "sim": 0.9425,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "7458ce97-7502-4b29-a779-359e038b0f30",
       "b": "226837cb-c5a9-406e-99b1-57f50afa05b8",
       "sim": 0.9407,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "63e1802e-861a-4551-a6a8-ceb02beb1147",
       "b": "5dcc047e-2745-418a-887d-ae5ad63c9d61",
       "sim": 0.9404,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "a44aab35-34d9-423c-b657-3fe432001ea0",
       "b": "5dcc047e-2745-418a-887d-ae5ad63c9d61",
       "sim": 0.9404,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "63e1802e-861a-4551-a6a8-ceb02beb1147",
       "b": "8f542987-f8f6-4f16-a25f-3cbdf94bc9d2",
       "sim": 0.9404,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "8f542987-f8f6-4f16-a25f-3cbdf94bc9d2",
       "b": "a44aab35-34d9-423c-b657-3fe432001ea0",
       "sim": 0.9404,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "c8dd910c-d53e-4b5c-b0c5-459887a84b24",
       "b": "eadac20b-9e8e-4269-aedb-acf668c82c45",
       "sim": 0.939,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "aa9e8b15-df59-4c05-8356-b011ffe3574f",
       "b": "980c9a0a-93b6-411c-ba7c-2a8e7db7d9bb",
       "sim": 0.9388,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "de005291-3df3-4552-addd-a9559c976a1d",
       "b": "5ab86bc7-7437-44f7-80ab-e1aacce3e12d",
       "sim": 0.9384,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "cd5c2f73-136e-4cb6-94a3-f4e7e01e8b97",
       "b": "0b961b75-2201-4c9b-a8ff-fca478d8ab4a",
       "sim": 0.9355,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "3dde4ea3-aa1f-40ed-819a-0cb13376b951",
       "b": "c630dcd4-f3b2-4940-877c-89a7f7d297af",
       "sim": 0.9333,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same inability to complete the OCR investigation task. Memory b is more recent (2026-06-15T20:49:42.879Z vs .512Z) and provides slightly clearer structure of the constraints."
     },
     {
       "a": "d3f4bd23-3b2d-4be5-a33d-0eee981dcdb5",
       "b": "cbd57d97-6e75-45ed-9ecb-a398d79f8b4f",
       "sim": 0.9333,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "b4228fb1-5cee-4d72-b71e-2604bd8782b9",
       "b": "1b90eca2-06fc-4012-9ada-03703209c31f",
       "sim": 0.9327,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "c9bd8df9-ef4e-4920-b9af-9e0ec93391f8",
       "b": "e273e972-a23a-4a60-aa53-6b98b7eb94fc",
       "sim": 0.9316,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "b9e6ec28-e021-42ce-88d2-4e6eb3c0577f",
       "b": "139e3510-1b22-4774-8650-bca7565004b8",
       "sim": 0.9306,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same core claim: rescope money-out cluster from 7 waves to 3 waves after NOD-239 shipped. Memory b is more recent and equally detailed."
     },
     {
       "a": "7a0c6388-6deb-439e-a2c9-e8063693f41c",
       "b": "139e3510-1b22-4774-8650-bca7565004b8",
       "sim": 0.9297,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert rescoping from 7 waves to 3 waves with NOD-239 already shipped on f8a0c3ec. Memory b is later and more comprehensive in operational detail."
     },
     {
       "a": "22777caa-1f08-4653-a57b-cb746fbc70be",
       "b": "139e3510-1b22-4774-8650-bca7565004b8",
       "sim": 0.9296,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same rescope claim (3 waves, NOD-239 shipped, false positives retracted). Memory b is more recent and includes the full implementation plan structure."
     },
     {
       "a": "183d3fe7-dffd-4ffb-89e3-975df7cffad2",
       "b": "9162c612-1b6f-4c20-bb40-2c0f61551f0a",
       "sim": 0.9289,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "0af24227-2243-4455-af68-c1b22ee96177",
       "b": "c20a3289-69c2-4ab0-ad12-701161ece52c",
       "sim": 0.9284,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "0d9bb3e8-9c10-438a-a664-1013dde72575",
       "b": "139e3510-1b22-4774-8650-bca7565004b8",
       "sim": 0.9284,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "fe37945a-8f98-47dc-bec2-5fcb02fbae50",
       "b": "fd70f0bc-9508-48e2-af78-89a197c46183",
       "sim": 0.9281,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe the same dashboard skeleton redesign (five cards mirroring structure). Memory b is more recent and slightly more specific about the PR number and staging commit."
     },
     {
       "a": "e1118efc-2ad4-4ec2-84f1-8a1381b83d93",
       "b": "f3921f49-ef0c-4588-b1b2-244b61d50c61",
       "sim": 0.9278,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "9949f2c5-6dea-4a02-a16b-52664dc2a6c9",
       "b": "6398705c-c2d3-4497-a463-3b317fd1fb97",
       "sim": 0.9275,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same NOD-120 migration plan (hosted→embedded Stripe Checkout across 3 paths). 'b' is newer (22:37:07 vs 22:37:06) and provides complementary architecture detail (ui_mode gating, sdk pinning, critical invariants); 'a' provides wave breakdown. Both describe the same core claim. Keeping 'b' for recency."
     },
     {
       "a": "7a0c6388-6deb-439e-a2c9-e8063693f41c",
       "b": "6fc885cf-a782-49ba-8915-58471e2c3c02",
       "sim": 0.9273,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "c630dcd4-f3b2-4940-877c-89a7f7d297af",
       "b": "db8761bc-61b8-4c82-ab2a-07f3d05e5103",
       "sim": 0.9268,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both are identical meta-statements: Claude cannot access the filesystem or execute shell commands for the OCR bug investigation task. 'b' is newer (20:49:43.524 vs 20:49:42.879) and uses slightly clearer phrasing ('I'm a language model'). Same core claim, keep newer."
     },
     {
       "a": "db57fa48-108b-4937-ae83-804704c37f29",
       "b": "1757332a-1d03-4f5c-b643-039a4a9c913f",
       "sim": 0.926,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "33072088-f1a4-47b8-ae1e-82946e8cd23d",
       "b": "c681c452-4599-4162-b4a7-32319e4a6c37",
       "sim": 0.9259,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe NOD-246 Wave 3 decommissioning: stub listener flesh-out calling closeScheduleOnDecommission, try/catch logging, idempotent journal entry, schedule status update. 'b' is newer (22:35:45 vs 22:35:44) and includes DepreciationPanel decommissioned-branch display. Same core claim; keep newer."
     },
     {
       "a": "c38a1acd-28f3-4984-b536-5d70f0fadec2",
       "b": "3581cb35-12c7-471e-892d-2108998a02cf",
       "sim": 0.9252,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert NOD-104 Stripe billing dogfood loop: Nodex SRL auto-issues Romanian e-Factura to subscribers on invoice.payment_succeeded, rides finalize→PDF→efactura cascade, hard idempotency on Stripe Invoice.id. 'a' details 5 locked waves; 'b' provides architecture (EventEmitter2 bridge, ledger table, fiscal fields). Same claim, keeping 'b' (newer, 22:37:18 vs 22:37:16)."
     },
     {
       "a": "61ed3e68-eb63-45ad-9151-3a8aec797ca3",
       "b": "6b1790a4-2af7-4a84-b679-5cd44c98f73a",
       "sim": 0.9239,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "73b197bc-9517-46fe-bfd0-18d0910b6a22",
       "b": "0a508e94-9238-4471-be75-7be07162d097",
       "sim": 0.9237,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe NOD-273 Wave 3 VAT-Seam unification: absorb vat_rate_rules into fiscal_rules/fiscal_parameters, scalar keys for headline rates, jsonb allowed_set for date ranges. 'a' specifies technical structure and Drizzle/Supabase versions; 'b' is newer (22:34:31 vs 22:34:28) and sources rates from verified research document. Same core claim; keep newer."
     },
     {
       "a": "c0fe84ea-b386-4ae0-bce8-e6e061358601",
       "b": "2f8e05df-04ac-458f-acfb-7488e798a0d8",
       "sim": 0.9227,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "28fec5d7-d6a4-4246-8844-a85a5b5f91ff",
       "b": "460c20e0-c03d-4634-b0db-e0a7e6636b8f",
       "sim": 0.9223,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "6fc885cf-a782-49ba-8915-58471e2c3c02",
       "b": "0d9bb3e8-9c10-438a-a664-1013dde72575",
       "sim": 0.9221,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "51d5ccaa-2089-45db-a32d-f471ec12067d",
       "b": "a96f3009-ceb6-4a09-9050-b0e4fb22aab9",
       "sim": 0.9219,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "2a42a802-8d51-4118-8de3-d9d747ccbe62",
       "b": "b0410cea-6975-46a9-971e-99fe0c6483dd",
       "sim": 0.9212,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same core claim: daily BullMQ cron at 06:00 Europe/Bucharest scans recurring_invoice_schedules, clones invoices via unmodified InvoicesService.create()+finalize() pipeline with auto-fired listeners, and advances schedules. Memory b is newer (22:34:58 vs 22:34:56) and includes additional operational detail (3-layer idempotency guard: FOR UPDATE + last_run_at_date + IS DISTINCT FROM; specific migration numbers 0070/0074; 2-wave structure)."
     },
     {
       "a": "ab545d35-e038-4385-8881-9f0fcd580886",
       "b": "55f49864-1fdf-4c0b-b8fc-31a42d56cfab",
       "sim": 0.9212,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "d4c262b4-2835-4c46-8bc0-82e2c3d51e55",
       "b": "5cb9cb60-f563-46cb-ba1b-e44e1e0d3ede",
       "sim": 0.9211,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "a",
+      "reason": "Both assert the same core claim: V1.5 Document Ingestion Engine lacks auto-creation of counterparties when EntityResolutionService returns zero matches, and three approaches are under consideration. Memory a is older but richer in decision history (Founder chose Approach A at Phase 4 bootstrap on 2026-05-18, shipped as Wave 4.F supplement, includes confidence thresholds and ANAF VIES preflight context). Memory b is newer but less complete. Keep a for historical completeness."
     },
     {
       "a": "73b197bc-9517-46fe-bfd0-18d0910b6a22",
       "b": "8b8b6574-519b-4022-93ff-bef68f78defb",
       "sim": 0.9203,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "95dccc13-cebd-4b1e-94ef-adb08176530a",
       "b": "460c20e0-c03d-4634-b0db-e0a7e6636b8f",
       "sim": 0.9199,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "3e3665b6-c292-4775-b960-16d2f890c9f9",
       "b": "37d42ed7-0962-45c1-bbac-4a535c007fb3",
       "sim": 0.9193,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "bd98473b-12f8-4d31-999d-c318b845b140",
       "b": "e20af640-5e94-4953-bb54-0c91e637b036",
       "sim": 0.9181,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "8d14c7cd-f551-49da-88df-3eba22132335",
       "b": "2851593a-11b6-42df-9fb8-7f703e3e8e73",
       "sim": 0.918,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert inability to access filesystem/git; b is more concise and equally authoritative."
     },
     {
       "a": "b0410cea-6975-46a9-971e-99fe0c6483dd",
       "b": "88dcab97-e2ac-4e8e-aec2-5c662990c7bf",
       "sim": 0.9174,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "63e1802e-861a-4551-a6a8-ceb02beb1147",
       "b": "1239aa4c-bdf1-4419-8d3a-d143786d7e68",
       "sim": 0.9172,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "a44aab35-34d9-423c-b657-3fe432001ea0",
       "b": "1239aa4c-bdf1-4419-8d3a-d143786d7e68",
       "sim": 0.9172,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "63e1802e-861a-4551-a6a8-ceb02beb1147",
       "b": "32acdbe1-3f6f-435f-934e-496be5621002",
       "sim": 0.9172,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "32acdbe1-3f6f-435f-934e-496be5621002",
       "b": "a44aab35-34d9-423c-b657-3fe432001ea0",
       "sim": 0.9172,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "f4fff454-31d8-42ab-905d-e9f7f54b9844",
       "b": "0f38659e-8065-4299-a5fc-c889212cb2f1",
       "sim": 0.9163,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "f7e60a74-6fdd-4c6f-ad6c-8f581c952a6c",
       "b": "69006677-fcad-463a-91fc-6096cd1caa27",
       "sim": 0.9156,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "a",
+      "reason": "Both assert the same Wave 5 error-toast + EN locale work; (a) is the rescope correction of material errors in the original plan, making it the authoritative version."
     },
     {
       "a": "7dde30d7-9c3d-492f-9f0c-501a54cb732c",
       "b": "d70ede58-da63-4d53-81e3-8e83c56e80ef",
       "sim": 0.9155,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both document the same 2026-05-19 destructive-actions audit; (b) is created later (22:39:08 vs 14:44:06) and is more detailed/comprehensive."
     },
     {
       "a": "173abbde-64a6-4828-87e9-a5e49880ed09",
       "b": "9dabf699-ba50-47a0-98ae-f62c278f531e",
       "sim": 0.9151,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "4ac92d7e-10c4-4adf-a7de-e4859a834166",
       "b": "1bca073c-4ada-4a0c-b0a8-c9223ccb37be",
       "sim": 0.9148,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "a",
+      "reason": "Both assert the same NOD-81 work (accountant actorType threading); (a) is the higher-level implementation plan; (b) is step-by-step detail. Keep (a) as the authoritative plan."
     },
     {
       "a": "34d342f6-e8da-4e23-b05e-2cbfad32896c",
       "b": "7f558469-8624-43ac-bd25-d15a382c30a4",
       "sim": 0.9145,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "a",
+      "reason": "Both address NOD-254 command palette expansion; (a) is the solution architecture (locked approach); (b) is the implementation task tracking. Keep (a) as the locked design authority."
     },
     {
       "a": "3b9eb817-554b-4d38-964e-463bc709a3df",
       "b": "2833b97c-83ab-46a9-af04-8b663f79404c",
       "sim": 0.914,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "07639a92-34fb-40e8-a0d5-58f913887da8",
       "b": "36001808-41bb-49d9-a964-84417a29452c",
       "sim": 0.9127,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same locked ADR for Sync/Collaboration/Pair Pricing across V1, V1.5, V2/V3. Memory b is newer (2026-06-15T14:46:43 vs 14:44:13) and slightly richer in technical detail (explicit mention of Yjs CRDT, full ACL editor on Business+). Same core claim."
     },
     {
       "a": "81d62424-3d1d-4f7a-9b26-c628f0571fee",
       "b": "96d4794b-a107-4cbe-b334-b740503aa92d",
       "sim": 0.9126,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "e44f0b55-03b6-4957-99a0-b9fe293860ca",
       "b": "c4cef7f5-edd3-40ee-8e88-e0225de192ab",
       "sim": 0.9119,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "265c1df0-b5d1-461c-b79d-a079832fa96e",
       "b": "b738ff77-917b-40ac-9ea7-9d4e5d9dc453",
       "sim": 0.9117,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both acknowledge the same constraint: inability to access local filesystem and execute git commands. Memory b is marginally newer (2026-06-15T20:52:13.184 vs 20:52:12.431) and slightly more structured in listing capabilities. Same core claim about the limitation."
     },
     {
       "a": "97485458-8d60-47e3-af68-f2b03747264c",
       "b": "d184de93-9e51-4b83-bcc0-47b51f4adabf",
       "sim": 0.9108,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "d9eaa884-6840-40d3-9ce8-2762528a1678",
       "b": "717bed1f-a8a5-4ef2-aae9-967a949910cc",
       "sim": 0.9105,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe NOD-225 Phase A Platform-Admin Gate implementation (same ship date 2026-05-16, same core mechanisms: decorator, guard, EXISTS lookup, fail-closed behavior). Memory b is newer (2026-06-15T14:46:42 vs 14:45:20) and slightly more specific about file paths and audit events."
     },
     {
       "a": "d6c8389e-a9f5-4df5-9b9d-b587bf3e5b64",
       "b": "e3cd69d4-32e9-4e3e-9ba2-d13e15037a83",
       "sim": 0.9101,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "7458ce97-7502-4b29-a779-359e038b0f30",
       "b": "e597ce0f-5329-49de-a8b5-e588b0d9df40",
       "sim": 0.9095,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "b266e03e-164c-476a-aa7e-635a393e7c16",
       "b": "6b1790a4-2af7-4a84-b679-5cd44c98f73a",
       "sim": 0.9088,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "7e7ccca2-c0c8-4a6d-9720-8992a2f1b991",
       "b": "28e99049-6313-4d58-8e32-748eb9311cb4",
       "sim": 0.9084,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same Phase 14.5 PDF→UBL public converter architecture and locked decisions; b is more recent (22:18:19 vs 22:35:39) and provides additional architectural detail (Redis hash TTL reasoning, endpoint flow, schema specifics)."
     },
     {
       "a": "239bcf6e-505f-422e-8bc8-b379f14a2476",
       "b": "c7568880-10bb-4cd9-904a-a0e706b74cac",
       "sim": 0.9082,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe the same Nodex DB migrations automation plan at identical path `.claude/plans/2026-06-22-automate-db-migrations-cd/`; b is more recent (22:15:28) and includes specific wave details and commit hash `2f8b44e5`."
     },
     {
       "a": "0d9bb3e8-9c10-438a-a664-1013dde72575",
       "b": "b9e6ec28-e021-42ce-88d2-4e6eb3c0577f",
       "sim": 0.9081,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "fe3d3e1c-76f4-4298-81a9-060a17ba1f1c",
       "b": "3581cb35-12c7-471e-892d-2108998a02cf",
       "sim": 0.9081,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both address NOD-104 Stripe billing dogfood loop architecture; a is a codebase exploration report, b is the solution architecture recommendation. Both assert the same core claim about the dogfood loop mechanism, but b is more recent (22:37:18) and provides the canonical architectural recommendation."
     },
     {
       "a": "e973ecc1-0d93-4ca6-a056-78e387be3eb1",
       "b": "98896c6b-1b5e-4f18-8d17-90bfdea4f9c4",
       "sim": 0.908,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe NOD-224 notification bell feature; a describes the shipped V1.5 morphin upgrade, b describes Wave 1 implementation with hook composition and localStorage state. These assert equivalent functionality claims; b is more recent (22:18:36) and more detailed on implementation specifics."
     },
     {
       "a": "6706b7c5-f5f7-4630-87b4-28713ad6c37f",
       "b": "ca852ed0-0007-4e6f-848d-7e325a9436c2",
       "sim": 0.9074,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "65dd56ca-c14b-4ef5-a2a3-f5e0bb15b98b",
       "b": "cf6535f9-d775-49b1-a5af-353d5166e447",
       "sim": 0.9073,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "73b197bc-9517-46fe-bfd0-18d0910b6a22",
       "b": "1a4e690b-7df1-4470-a705-01c58e0754a4",
       "sim": 0.9069,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "b266e03e-164c-476a-aa7e-635a393e7c16",
       "b": "61ed3e68-eb63-45ad-9151-3a8aec797ca3",
       "sim": 0.9069,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same 6 locked decisions for NOD-246 depreciation engine. Memory (b) is newer (2026-06-15T22:35:40.528Z vs 22:35:39.928Z) and uses clearer numbering (1–6) while (a) uses Q1–Q6; both cover identical core claims: expense-immediate threshold, divisibility by 12, centralized period arithmetic, fiscal basis W1 with accounting W5, org columns W1, and crossover_year derivation."
     },
     {
       "a": "b752521f-14aa-4fd7-be19-854b737dd400",
       "b": "71c3ee2a-5921-4ad2-b17a-cb575e16323e",
       "sim": 0.9065,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "1c298b35-f884-4437-a723-104ef3ebfb07",
       "b": "cab643b2-37a9-4df8-a40d-87e47db0d079",
       "sim": 0.9063,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe NOD-274 Wave 4 Fiscal Rules Engine: full verified Romanian seed, NEEDS-COUNSEL sentinel rows, and dual-file migrations 0065/0069. Memory (b) is newer (2026-06-15T22:34:34.830Z vs 22:34:28.779Z) and explicitly names the implementation as closing NOD-274 with discriminated-union engine surface, providing richer operational detail while asserting the same core claims."
     },
     {
       "a": "4644b1d4-d616-4732-bf8e-0797e0ca2981",
       "b": "36001808-41bb-49d9-a964-84417a29452c",
       "sim": 0.9063,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "0aa386b9-9f8a-41e1-a79b-2b4aa2db536f",
       "b": "8951e68e-b7d7-454b-b3dd-326e8e5f45fb",
       "sim": 0.9053,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe Google OAuth setup (local dev and production, external consent screen, two OAuth clients, redirect URIs). Memory (b) is newer (2026-06-15T22:17:13.216Z vs 14:46:45.292Z) and adds specific implementation steps (config.toml blocks, env vars, localhost:18080 redirect) that (a) does not assert; however, they assert the same core system claim about OAuth wiring."
     },
     {
       "a": "6b6949ee-e647-49fd-8398-82e31dda4be5",
       "b": "eda5d4e1-9d77-46c9-900d-bb4b9e40ade1",
       "sim": 0.9051,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "e1f599e5-fa1c-4ae2-824a-9d79f8ea9eda",
       "b": "45adfa27-0f17-45ec-a9b3-c5cb2025f33a",
       "sim": 0.9048,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both describe NOD-218: desktop dock + Appearance settings with localStorage toggles. Memory (b) is newer (2026-06-15T22:18:37.369Z vs 22:18:37.037Z) and specifies 7 concrete implementation commits (shared DockItem extraction, morphin fetch, useDockPreferences hook, DesktopDock component) while (a) asserts only the architectural outline; (b) is richer and more operational while maintaining the same core claim."
     },
     {
       "a": "0f18ecd0-7015-4b9c-9323-3ce9848c94d0",
       "b": "dab1b242-0a84-4c70-856c-cfb2797086db",
       "sim": 0.9047,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "a",
+      "reason": "Both assert the same Wave 7 invite hardening scope (NOD-284, branded email + rate limiting). Memory 'a' provides richer operational detail (error-code distinction, guard placement, JWT resolution logic). Memory 'b' is an incomplete/truncated statement (cuts off mid-sentence at 'ty'). Keep 'a' as the complete, more detailed assertion."
     },
     {
       "a": "cd5c2f73-136e-4cb6-94a3-f4e7e01e8b97",
       "b": "5e94f052-ff08-4354-bbed-c55c6edf2fa3",
       "sim": 0.9047,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "bd0bebd0-7153-4ecc-9f47-dfc6883496bc",
       "b": "55fe98f2-1bcd-4dfd-9428-6f8e7271dd2a",
       "sim": 0.9042,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "cab643b2-37a9-4df8-a40d-87e47db0d079",
       "b": "d547e0e4-ad91-4f34-89cf-df60ded676ee",
       "sim": 0.9041,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "a",
+      "reason": "Both assert Wave 4 Fiscal Rules Engine (NOD-274): full verified seed + NEEDS-COUNSEL sentinel rows. Memory 'a' is complete and asserts the implementation approach (discriminated-union engine, refuses-to-resolve, migration details). Memory 'b' is truncated mid-sentence ('flagged NEEDS-COUN...'), making it incomplete. Keep 'a' as the complete assertion."
     },
     {
       "a": "0e33b5e9-7618-41ec-9653-7f6fde1dc41c",
       "b": "f1837d78-e029-4c8a-8b21-25ffb63a5736",
       "sim": 0.9036,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "ac4a5528-12aa-4e30-b010-8bb51c98e5e1",
       "b": "d94bdcad-c8f0-4956-8c56-8fe9f5492163",
       "sim": 0.9035,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "a",
+      "reason": "Both assert Wave 4 NOD-274 fiscal engine architecture. Memory 'a' directly describes the migration, seed rows, and FiscalResolution/FiscalNeedsCounselError implementation. Memory 'b' describes the schema verification and EXCLUDE constraint. Both cover the same core claim; 'a' is slightly more implementation-focused and complete. Keep 'a'."
     },
     {
       "a": "9caefd6d-3f4d-4a62-aed8-cd2186c3273a",
       "b": "240ff929-4dc7-412f-ac9f-3dbfc47b6440",
       "sim": 0.9027,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "8f95ee35-ec93-4750-b852-75b76985da1e",
       "b": "7ba0008c-5fc1-445c-bd0c-8aff02c26231",
       "sim": 0.9023,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "416e680a-6ca8-4522-9706-2a3ccca0113a",
       "b": "4684bfde-8a94-46ed-bd7f-cef8d59a3642",
       "sim": 0.9022,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same claim: NOD-242 Tiptap V1.5 single-user rich-text engine with `@nodex/editor-extensions` package, ProseMirror schema dual entrypoints, `rich_docs` table, and server-side PDF projection. Memory b is the Implementation Plan (newer, created 1.6s later) with added wave structure; memory a is the Solution Architecture. Both are equivalent claims; keeping b as the richer, newer assertion with wave breakdown."
     },
     {
       "a": "346a8cc8-e3f8-4e40-9004-6c205f02991c",
       "b": "6df578cf-998e-484e-be22-c0ff7783edc1",
       "sim": 0.902,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same claim: cross-entity labels (customers, invoices, inbound_documents) with `<LabelFilter>` wrapper architecture (not a mode prop), 4-wave delivery, fiscal firewall via separate join tables, and `?labelIds=` filters. Memory b is the Implementation Plan (newer, 1.4s later) with added PR sequence detail and composite FK mechanics. Both equivalent; keeping b as newer."
     },
     {
       "a": "db79121d-37f4-48bb-b48d-d999d3a4452c",
       "b": "390a979a-fab6-4b1a-904f-cf644ac17cd0",
       "sim": 0.9009,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same claim: NOD-271 Wave 1 fiscal rules engine with dual-table bitemporal schema (`fiscal_rules` text values, `fiscal_parameters` jsonb), append-only `fiscal_calculation_log`, hand-authored migrations, `btree_gist` EXCLUDE constraints, and forward-only triggers. Memory b is the Implementation Plan (newer, 1.7s later) with added schema file path and migration offset detail. Both equivalent; keeping b as newer."
     },
     {
       "a": "73b7a91d-e897-4894-826b-f7236db9ab87",
       "b": "faa83ef6-5d50-4562-a5ed-82241b97ba3e",
       "sim": 0.9005,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "bb48cdca-491f-4cb3-bbfe-7f018dfd7621",
       "b": "9193f80e-c5f2-4e13-bd42-3c3c3a818af9",
       "sim": 0.9002,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 0
     },
     {
       "a": "69d72643-0bba-448c-a24f-e22436389a61",
       "b": "2c3372e1-2af4-4eb0-8654-b602bf948896",
       "sim": 0.9,
       "source": "selfJoin",
-      "verdict": -1
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same tech debt claim: dock preferences persisted in localStorage only, requiring future DB-backed `user_preferences` table with RLS endpoints and migration. Memory b (created 22:39:26) is newer than memory a (created 14:46:05) by ~8 hours, and lists additional localStorage keys (`nodex.nav.mode.v1`, `nodex.dock.position.v1`, `nodex.dock.layout.v1`) and DB columns (`nav_mode`, `dock_position`, `dock_layout jsonb`). Both assert equivalent core claim; keeping b as newer with richer detail."
+    },
+    {
+      "a": "3c47800b-e618-410a-bb30-270f45fd3ca6",
+      "b": "470902df-46a1-4585-a3b4-e230a95e51e6",
+      "sim": 0.9992,
+      "source": "selfJoin",
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same claim: Nodex Phase 10 audit log with append-only architecture, 19 instrumentation sites, RLS enforcement, AuditLogService, and 5-year retention. Memory a is a summary headline; memory b (created 0.6s later) provides deeper technical detail on RLS layers, actor_id decoupling, CLS_AUDIT_PAYLOAD_OVERRIDE pattern, and keyset pagination. Both equivalent claims; keeping b as richer."
+    },
+    {
+      "a": "ef1f6d5d-dba9-4cef-9ae5-bea46a48940e",
+      "b": "684d71a8-4021-45ae-b390-c765bf91d58c",
+      "sim": 0.9991,
+      "source": "selfJoin",
+      "verdict": 1,
+      "keep": "b",
+      "reason": "Both assert the same claim: Code Review Phase 10 Fix Wave 2 (Bundle A+B) covering env enum, i18n flat-key fix, BullMQ retry race, and audit_log FK drop across 5 commits, 28 files, ~2670 lines. Memory a introduces the review; memory b (created 1.1s later) reiterates with identical scope and adds clearer critical issue labeling ([CRITICAL]-001). Both equivalent; keeping b as newer with marginally clearer structure."
     }
   ],
-  "judged": 0,
-  "unjudged": 230,
-  "wouldSupersede": 0,
+  "judged": 232,
+  "unjudged": 0,
+  "wouldSupersede": 98,
   "applied": 0
 }
