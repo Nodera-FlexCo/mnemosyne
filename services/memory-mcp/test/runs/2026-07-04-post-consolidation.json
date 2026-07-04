@@ -1,0 +1,203 @@
+{
+  "retrievalConfig": {
+    "service": "memory-mcp",
+    "scoringVersion": "blend-2",
+    "rrfK": 60,
+    "blend": {
+      "form": "additive",
+      "weights": {
+        "relevance": 0.7,
+        "recency": 0.2,
+        "importance": 0.1
+      },
+      "decay": {
+        "shape": "exp",
+        "tauDays": 30,
+        "tauDaysByType": {},
+        "powerExponent": 0.5,
+        "exempt": {
+          "types": [],
+          "sourceKinds": []
+        }
+      }
+    },
+    "candidatePool": 25,
+    "recallLimit": 50,
+    "embedModel": "voyage-4-large",
+    "contextModel": "voyage-context-4",
+    "rerankModel": "rerank-2.5",
+    "rerankDocTruncation": 1200,
+    "rerankDocIncludesSummary": true,
+    "snippetChars": 180
+  },
+  "evalVersion": 2,
+  "split": "test",
+  "rows": 20,
+  "perQuery": [
+    {
+      "id": "m-002",
+      "query": "how is hybrid search fused",
+      "poolRecall": 1,
+      "ndcg": 0.3065735963827292,
+      "mrr": 0.3333333333333333,
+      "rank": 3
+    },
+    {
+      "id": "m-005",
+      "query": "why is scip-typescript deferred",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-007",
+      "query": "voyage-context-3 vs voyage-code-3 bake-off",
+      "poolRecall": 1,
+      "ndcg": 0.6338412308988606,
+      "mrr": 0.5,
+      "rank": 2
+    },
+    {
+      "id": "m-010",
+      "query": "per-repo advisory lock during reindex",
+      "poolRecall": 1,
+      "ndcg": 0.6052602440527057,
+      "mrr": 0.5,
+      "rank": 2
+    },
+    {
+      "id": "m-013",
+      "query": "re-embed couples to fusion and rerank tuning",
+      "poolRecall": 0,
+      "ndcg": 0,
+      "mrr": 0,
+      "rank": null
+    },
+    {
+      "id": "m-016",
+      "query": "halfvec 1024 dimension column",
+      "poolRecall": 1,
+      "ndcg": 0.6240505200038379,
+      "mrr": 0.5,
+      "rank": 2
+    },
+    {
+      "id": "m-019",
+      "query": "create index concurrently cannot run in batch runner",
+      "poolRecall": 0,
+      "ndcg": 0,
+      "mrr": 0,
+      "rank": null
+    },
+    {
+      "id": "m-022",
+      "query": "query and corpus must use the same embedder family",
+      "poolRecall": 0,
+      "ndcg": 0,
+      "mrr": 0,
+      "rank": null
+    },
+    {
+      "id": "m-024",
+      "query": "backfill must be a deliberate paid ops action not auto-run",
+      "poolRecall": 0,
+      "ndcg": 0,
+      "mrr": 0,
+      "rank": null
+    },
+    {
+      "id": "m-026",
+      "query": "what branch do I base feature work on and how does code reach prod",
+      "poolRecall": 1,
+      "ndcg": 0.9197207891481876,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-029",
+      "query": "supabase migration up against staging fails with a TLS error",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-031",
+      "query": "why can't the accountant copilot use Google Search grounding",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-033",
+      "query": "what are the current Romanian VAT rates",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-036",
+      "query": "does Nodex emit its own e-Factura when a subscription payment succeeds",
+      "poolRecall": 1,
+      "ndcg": 0.9197207891481876,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-039",
+      "query": "how did we implement two-factor authentication",
+      "poolRecall": 1,
+      "ndcg": 0.6131471927654584,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-044",
+      "query": "hetzner box IPs staging prod CI",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-047",
+      "query": "when should a Nodex search surface be semantic vs syntactic",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-054",
+      "query": "which NOD-597 GL fix PRs landed after 2026-06-27",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-055",
+      "query": "which CD platform ran nodex prod before the Dokploy migration in June 2026",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-057",
+      "query": "is the register PDF generating-forever polling tech-debt still open",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    }
+  ],
+  "aggregates": {
+    "recallAt25": 0.8,
+    "ndcgAt10": 0.6811157181199984,
+    "mrr10": 0.6916666666666667
+  }
+}
