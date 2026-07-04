@@ -147,7 +147,10 @@ npm --prefix services/memory-mcp run eval:compare -- test/runs/<A>.json test/run
   newest-created ordering (`created_at DESC`).
 - **`memory_get`** includes `status`, `event_date`, and `superseded_by` in its JSON. It
   prepends `superseded — see <successor id>` for superseded rows with a successor, or
-  `status=<status>` for other non-active rows; the row is still returned.
+  `status=<status>` for other non-active rows; the row is still returned. Content is
+  budgeted by `maxChars` (default 6000 chars ≈ 1500 tokens; max 200000): oversized
+  content is cut with explicit `truncated: true`, `totalChars`, and a re-fetch note.
+  Pass `full=true` (or `maxChars=0`) for the complete body; `metadata` is never budgeted.
 - **`memory_store`** now accepts a typed **decision-log** shape (only meaningful when
   `sourceKind='decision'`): `decisionProject`, `decisionStatus`
   (`active`|`superseded`|`deferred`), `decidedAt`, `supersedesId` (the prior decision
