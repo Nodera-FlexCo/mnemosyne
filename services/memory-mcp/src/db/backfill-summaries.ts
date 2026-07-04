@@ -75,8 +75,10 @@ interface PendingRow {
   content: string;
 }
 
-/** Keyset cursor floor — uuid ordering starts above the all-zero uuid. */
-const CURSOR_ZERO = "00000000-0000-0000-0000-000000000000";
+/** Batch-appropriate summarizer timeout for the offline CLI. The 4 s
+ *  SUMMARY_TIMEOUT_MS bound protects interactive memory_store latency — a paid
+ *  backfill row should wait out a slow completion, not bill-and-skip it. */
+export const BACKFILL_SUMMARY_TIMEOUT_MS = 30_000;
 
 /**
  * Backfill `summary` for all active rows that lack it, one keyset page at a time.
@@ -93,16 +95,23 @@ export async function backfillSummaries(
   let processed = 0;
   let skipped = 0;
   let batches = 0;
-  let cursor = CURSOR_ZERO;
+  // NULL-seeded cursor: the FIRST page is unbounded. A strict `id > floor` with an
+  // all-zero-uuid floor would never visit a row bearing exactly that id, while
+  // countPendingSummaries still counts it — a permanently nonzero exit.
+  let cursor: string | null = null;
 
   for (;;) {
+    // Explicit tuple type: loop-narrowed `cursor` otherwise feeds the query's
+    // inferred values generic, which circles back through the `rows` assignment
+    // below (TS7022).
+    const params: [string | null, number] = [cursor, batchSize];
     const { rows } = await pool.query<PendingRow>(
       `SELECT id, title, content FROM memory.memories
-       WHERE id > $1::uuid AND summary IS NULL
+       WHERE ($1::uuid IS NULL OR id > $1::uuid) AND summary IS NULL
          AND archived_at IS NULL AND COALESCE(status,'active') = 'active'
        ORDER BY id
        LIMIT $2`,
-      [cursor, batchSize],
+      params,
     );
     if (rows.length === 0) break;
 
@@ -162,7 +171,10 @@ if (isMain) {
       // CLI consent OVERRIDES the SUMMARIZE_ON_STORE write-path gate (the operator
       // said --yes); the key requirement stays (checked above).
       summarize: (t, c) =>
-        summarizeMemory(t, c, { enabled: config.anthropicApiKey !== "" }),
+        summarizeMemory(t, c, {
+          enabled: config.anthropicApiKey !== "",
+          timeoutMs: BACKFILL_SUMMARY_TIMEOUT_MS,
+        }),
     });
     const after = await countPendingSummaries(defaultPool);
     console.error(

@@ -1,8 +1,11 @@
 // Wave 1 (retrieval token efficiency) — query-aware snippet behavior. Covers:
-//   AC-801 — lexical match → ts_headline snippet with ** markers; two match
-//            regions → the " … " fragment delimiter; whitespace collapsed
+//   AC-801 — lexical match → ts_headline snippet with ** markers (private-use
+//            sentinels internally, rendered as ** for display — sentinels never
+//            leak); two match regions → the " … " fragment delimiter; whitespace
+//            collapsed
 //   AC-802 — vector-only hit / stop-words-only query / headline-SQL failure →
-//            the deterministic 180-char prefix, and the search never rejects
+//            the deterministic 180-char prefix, and the search never rejects;
+//            literal ** markdown in content must NOT masquerade as a match
 //   AC-803 — getRecent issues NO ts_headline SQL and keeps prefix snippets
 //
 // Deterministic: Voyage is module-mocked (seeded PRNG vectors/rerank), fixture
@@ -103,6 +106,9 @@ interface Fixture {
 // whitespace-collapse of the headline is exercised for real.
 // Fixture 3: shares no lexeme with any query below — reachable only through the
 // vector arm, i.e. the AC-802 prefix-fallback hit.
+// Fixture 4: literal `**` markdown in the opening words and no lexeme shared with
+// any query — ts_headline's no-match fallback headline for it CONTAINS `**`, so a
+// naive `includes("**")` match check false-positives (the sentinel regression pin).
 const FIXTURES: Fixture[] = [
   {
     id: id(1),
@@ -127,6 +133,14 @@ const FIXTURES: Fixture[] = [
     title: "Saga compensation order",
     content:
       "saga compensation steps unwind bookings in reverse order when a leg fails midway",
+  },
+  {
+    id: id(4),
+    type: "semantic",
+    title: "Markdown emphasis note",
+    content:
+      "release notes keep **bold** emphasis markers and **callout** styling in the opening words so rendered changelogs stay readable. " +
+      "a trailing filler sentence pads this fixture comfortably past one hundred eighty characters to keep the raw body strictly longer than the collapsed prefix form.",
   },
 ];
 
@@ -193,6 +207,8 @@ describe.skipIf(skip)("query-aware snippets (AC-801/802/803)", () => {
     expect(hit.snippet).toContain(" … ");
     expect(hit.snippet).not.toBe(prefixOf(id(1)));
     expect(hit.snippet).not.toMatch(/\n| {2}/);
+    // The private-use match sentinels are internal only — never in display output.
+    expect(hit.snippet).not.toMatch(/[\uE000\uE001]/);
   });
 
   it("AC-801: headline whitespace is collapsed (newlines / space runs in the match region)", async () => {
@@ -216,6 +232,21 @@ describe.skipIf(skip)("query-aware snippets (AC-801/802/803)", () => {
     const hit = result.hits.find((h) => h.id === id(3))!;
     expect(hit).toBeTruthy();
     expect(hit.snippet).toBe(prefixOf(id(3)));
+  });
+
+  it("AC-802 regression: literal ** markdown in content must NOT masquerade as a lexical match", async () => {
+    const result = await searchMemory({
+      projectId: PROJ,
+      query: "vector index rebuild",
+      limit: 10,
+    });
+    // Fixture 4 shares no lexeme with the query, so its headline is the no-match
+    // document-prefix fallback — which CONTAINS the row's own literal `**`. Only
+    // sentinel presence may accept a headline: the 180-char prefix must survive.
+    const hit = result.hits.find((h) => h.id === id(4))!;
+    expect(hit).toBeTruthy();
+    expect(hit.snippet).toBe(prefixOf(id(4)));
+    expect(hit.snippet).toContain("**bold**"); // the prefix keeps the raw markdown
   });
 
   it("AC-802: stop-words-only query → every snippet is the prefix", async () => {

@@ -138,12 +138,14 @@ overlapping same-file chunks after top-k reranking, capped by `MAX_MERGED_LINES`
 
 Memory snippets are query-aware since wave 1 of the token-efficiency plan (AC-801..804):
 `searchMemory` runs one extra `ts_headline('english', …, plainto_tsquery)` query over
-ONLY the final ≤limit hit ids (options in `SNIPPET_HEADLINE_OPTS`: `**` markdown-safe
-markers, ≤2 fragments joined by `" … "`), so a hit the query matched lexically shows the
-matching fragments instead of the document head. The deterministic 180-char
-whitespace-collapsed prefix remains the fallback for every hit whose cleaned headline
-carries no `**` marker (vector-only hits, stop-words-only queries) and for ANY headline
-failure — and stays the only snippet form `memory_get_recent` produces. This is
+ONLY the final ≤limit hit ids (options in `SNIPPET_HEADLINE_OPTS`: private-use sentinel
+selectors `U+E000`/`U+E001`, rendered as markdown-safe `**` for display, ≤2 fragments
+joined by `" … "`), so a hit the query matched lexically shows the matching fragments
+instead of the document head. The deterministic 180-char whitespace-collapsed prefix
+remains the fallback for every hit whose cleaned headline carries no match sentinel
+(vector-only hits, stop-words-only queries — literal `**` in stored markdown
+deliberately does NOT count as a match) and for ANY headline failure — and stays the
+only snippet form `memory_get_recent` produces. This is
 display-only: `fuseCandidates` SQL and `rerankAndBlend` scoring are untouched, pool
 composition and hit order are provably unchanged (the golden ORDERED-ID pins did not
 move), and the headline options are deliberately NOT part of `retrievalConfig()`.

@@ -1008,7 +1008,7 @@ describe("judge prompt + paid gate (pure)", () => {
     expect(user).toContain("b [id-b] (created 2026-06-02T00:00:00.000Z): T B");
   });
 
-  it("buildJudgeUser prefers the dense summary over content; content is the NULL-summary fallback (wave-3 delta)", () => {
+  it("buildJudgeUser prefers the dense summary over content; content is the fallback for NULL and empty-string summaries (wave-3 delta)", () => {
     const rows = new Map<string, PairRowMeta>([
       [
         "id-s",
@@ -1032,14 +1032,31 @@ describe("judge prompt + paid gate (pure)", () => {
           pinned: false,
         },
       ],
+      [
+        "id-e",
+        {
+          id: "id-e",
+          title: "T E",
+          content: "EMPTY-SUMMARY fallback content",
+          // Out-of-band empty string (the schema writes NULL, but the judge body
+          // must match buildRerankDoc's truthiness — never an empty body).
+          summary: "",
+          createdAt: "2026-06-03T00:00:00.000Z",
+          pinned: false,
+        },
+      ],
     ]);
     const user = buildJudgeUser(
-      [{ a: "id-s", b: "id-n", sim: 0.95, source: "selfJoin" }],
+      [
+        { a: "id-s", b: "id-n", sim: 0.95, source: "selfJoin" },
+        { a: "id-e", b: "id-n", sim: 0.93, source: "selfJoin" },
+      ],
       rows,
     );
     expect(user).toContain("DENSE SUMMARY the judge should read");
     expect(user).not.toContain("RAW CONTENT");
     expect(user).toContain("fallback content for the summaryless row");
+    expect(user).toContain("EMPTY-SUMMARY fallback content");
   });
 
   it("guardConsolidateRun refuses without --yes (AC-108) and passes with it", () => {

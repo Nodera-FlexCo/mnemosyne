@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import pg from "pg";
 import {
+  BACKFILL_SUMMARY_TIMEOUT_MS,
   COST_NOTE,
   SUMMARY_BACKFILL_BATCH,
   backfillSummaries,
@@ -39,6 +40,17 @@ describe("guardPaidRun (AC-811 consent gate, pure)", () => {
 
   it("one LLM call per row → small pages", () => {
     expect(SUMMARY_BACKFILL_BATCH).toBe(50);
+  });
+
+  it("the CLI summarizer uses the batch 30 s timeout, not the interactive 4 s bound", () => {
+    // The 4 s SUMMARY_TIMEOUT_MS protects memory_store latency; a PAID offline row
+    // must wait out a slow completion instead of billing and skipping it.
+    expect(BACKFILL_SUMMARY_TIMEOUT_MS).toBe(30_000);
+    const src = readFileSync(
+      join(here, "..", "src", "db", "backfill-summaries.ts"),
+      "utf8",
+    );
+    expect(src).toMatch(/timeoutMs:\s*BACKFILL_SUMMARY_TIMEOUT_MS/);
   });
 });
 
@@ -182,6 +194,36 @@ describe.skipIf(!HAS_DB)(
       expect(typeof n).toBe("number");
       expect(n).toBeGreaterThanOrEqual(0);
     });
+
+    it("visits a row bearing the ALL-ZERO uuid (NULL-seeded keyset floor is inclusive)", async () => {
+      // Regression pin: a strict `id > '00000000-…-0'` floor never visits this row
+      // while countPendingSummaries still counts it → permanent nonzero exit.
+      const ZERO_ID = "00000000-0000-0000-0000-000000000000";
+      await pool.query(`DELETE FROM memory.memories WHERE id = $1`, [ZERO_ID]);
+      await pool.query(
+        `INSERT INTO memory.memories (id, project_id, type, title, content, importance)
+         VALUES ($1, $2, 'semantic', 'bfsum zero-floor row', 'zero uuid body', 0.5)`,
+        [ZERO_ID, projectId],
+      );
+      const summarize: RowSummarizer = async (title) =>
+        `zero-floor summary of ${title}`;
+      const res = await backfillSummaries({
+        pool,
+        summarize,
+        batchSize: 2,
+        log: () => {},
+      });
+      // Pending here: the zero-id row + the row the throwing summarizer skipped in
+      // the previous test — both are summarized in one page.
+      expect(res).toEqual({ processed: 2, skipped: 0, batches: 1 });
+      const { rows } = await pool.query<{ summary: string | null }>(
+        `SELECT summary FROM memory.memories WHERE id = $1`,
+        [ZERO_ID],
+      );
+      expect(rows[0].summary).toBe(
+        "zero-floor summary of bfsum zero-floor row",
+      );
+    });
   },
 );
 
@@ -190,8 +232,10 @@ describe.skipIf(!HAS_DB)(
 describe("backfillSummaries keyset termination (mock pool, no DB)", () => {
   it("an all-null summarizer terminates with everything skipped", async () => {
     const rows = Array.from({ length: 5 }, (_, i) => ({
-      // uuid-sortable fake ids — keyset compares as text in the mock below.
-      id: `00000000-0000-0000-0000-00000000000${i + 1}`,
+      // uuid-sortable fake ids — keyset compares as text in the mock below. The
+      // FIRST id is the ALL-ZERO uuid: the NULL-seeded first page must include it
+      // (a strict `id > floor` cursor would never visit it).
+      id: `00000000-0000-0000-0000-00000000000${i}`,
       title: `t${i}`,
       content: `c${i}`,
     }));
@@ -200,22 +244,30 @@ describe("backfillSummaries keyset termination (mock pool, no DB)", () => {
       query: vi.fn(async (text: string, params?: unknown[]) => {
         queries.push(text);
         if (text.includes("SELECT id, title, content")) {
-          const [cursor, limit] = params as [string, number];
-          const page = rows.filter((r) => r.id > cursor).slice(0, limit);
+          const [cursor, limit] = params as [string | null, number];
+          const page = rows
+            .filter((r) => cursor === null || r.id > cursor)
+            .slice(0, limit);
           return { rows: page };
         }
         throw new Error(`unexpected write: ${text}`);
       }),
     } as unknown as pg.Pool;
 
+    const visited: string[] = [];
     const res = await backfillSummaries({
       pool: mockPool,
-      summarize: async () => null,
+      summarize: async (title) => {
+        visited.push(title);
+        return null;
+      },
       batchSize: 2,
       log: () => {},
     });
-    // 5 rows in pages of 2,2,1 — all skipped, ZERO UPDATE statements issued.
+    // 5 rows in pages of 2,2,1 — all skipped, ZERO UPDATE statements issued —
+    // and the all-zero-uuid row (t0) WAS visited.
     expect(res).toEqual({ processed: 0, skipped: 5, batches: 3 });
+    expect(visited).toEqual(["t0", "t1", "t2", "t3", "t4"]);
     expect(queries.some((q) => q.includes("UPDATE"))).toBe(false);
   });
 });

@@ -756,7 +756,11 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (memory-mcp)", () => {
       // Snippet contract (AC-801/802): a query-aware ts_headline extract with
       // `**` markers when the query lexically matches the content, otherwise the
       // deterministic 180-char whitespace-collapsed prefix. Both forms are
-      // whitespace-collapsed; only the prefix form is char-bounded.
+      // whitespace-collapsed; only the prefix form is char-bounded. Matches are
+      // detected internally via private-use sentinels (never literal `**`, which
+      // stored markdown may contain) and the sentinels must never reach display.
+      // The `**` branch split below is sound because these fixtures contain none.
+      expect(h.snippet).not.toMatch(/[\uE000\uE001]/);
       const collapsed = f.content.replace(/\s+/g, " ");
       if (h.snippet.includes("**")) {
         expect(h.snippet).not.toMatch(/\n| {2}/);

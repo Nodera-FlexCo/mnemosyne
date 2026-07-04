@@ -183,8 +183,10 @@ export function buildJudgeUser(
         // Summary-aware delta (wave-3, retrieval-token-efficiency plan): prefer the
         // wave-2 dense summary over raw content — cheaper per pair AND not
         // tail-truncated like a long content prefix. Content is the fallback for
-        // rows the backfill has not reached (summary NULL).
-        const body = r.summary ?? r.content;
+        // rows the backfill has not reached (summary NULL) AND — matching
+        // buildRerankDoc's truthiness — for an out-of-band empty-string summary,
+        // so the judge never reads an empty body.
+        const body = r.summary || r.content;
         return (
           `  ${slot} [${r.id}] (created ${r.createdAt}${pin}): ${collapse(r.title)}\n` +
           `     ${collapse(body).slice(0, PAIR_CONTENT_CHARS)}`

@@ -67,9 +67,15 @@ export const SNIPPET_CHARS = 180; // whitespace-collapsed snippet length in Hit
 
 // ts_headline options for query-aware snippets (display-only — deliberately NOT part of
 // retrievalConfig(): headlines decorate the final hits and never touch pool or ranking).
-// `**` delimiters are markdown-safe; ≤2 fragments keep the snippet compact.
-export const SNIPPET_HEADLINE_OPTS =
-  'StartSel=**, StopSel=**, MaxFragments=2, MaxWords=20, MinWords=8, FragmentDelimiter=" … "';
+// The selectors are PRIVATE-USE sentinels that cannot occur in stored content: a real
+// lexical match is detected by sentinel presence, then the sentinels are rendered as
+// markdown-safe `**` for display. Detecting on literal `**` would false-positive —
+// ts_headline's no-match fallback is a document-prefix headline, and this corpus is
+// markdown-heavy, so content's own `**` must never masquerade as a match. ≤2 fragments
+// keep the snippet compact.
+export const SNIPPET_START_SEL = "\uE000";
+export const SNIPPET_STOP_SEL = "\uE001";
+export const SNIPPET_HEADLINE_OPTS = `StartSel=${SNIPPET_START_SEL}, StopSel=${SNIPPET_STOP_SEL}, MaxFragments=2, MaxWords=20, MinWords=8, FragmentDelimiter=" … "`;
 
 /**
  * The FULL retrieval configuration, serialized into every eval-run artifact (AC-104)
@@ -494,9 +500,11 @@ export function toPublicHits(hits: ScoredHit[]): Hit[] {
  * the SAME text-search config + query function as the BM25 arm ('english' +
  * plainto_tsquery), so a headline lights up iff the ranking query matched lexically.
  * A hit's snippet is replaced only when the whitespace-collapsed headline actually
- * carries a `**` marker: a marker-less headline is ts_headline's no-match fallback
- * (vector-only hit, stop-words-only query) and the deterministic 180-char prefix is
- * better. Display-only and error-swallowing by design (logSearch pattern): on ANY
+ * carries a match SENTINEL (SNIPPET_START_SEL): a sentinel-less headline is
+ * ts_headline's no-match fallback (vector-only hit, stop-words-only query — even when
+ * the content's own literal `**` markdown appears in it) and the deterministic
+ * 180-char prefix is better. Accepted sentinels are rendered as `**` for display.
+ * Display-only and error-swallowing by design (logSearch pattern): on ANY
  * failure the hits are returned unchanged — snippets must never fail a search.
  */
 export async function applyQuerySnippets(
@@ -520,8 +528,15 @@ export async function applyQuerySnippets(
       const cleaned = (headlineById.get(h.id) ?? "")
         .replace(/\s+/g, " ")
         .trim();
-      if (cleaned.length === 0 || !cleaned.includes("**")) return h;
-      return { ...h, snippet: cleaned };
+      if (cleaned.length === 0 || !cleaned.includes(SNIPPET_START_SEL)) {
+        return h;
+      }
+      return {
+        ...h,
+        snippet: cleaned
+          .replaceAll(SNIPPET_START_SEL, "**")
+          .replaceAll(SNIPPET_STOP_SEL, "**"),
+      };
     });
   } catch {
     return hits; // AC-802: snippet decoration must never surface into the search path
