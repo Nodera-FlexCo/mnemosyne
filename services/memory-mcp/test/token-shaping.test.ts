@@ -826,3 +826,40 @@ describe.skipIf(skip)("memory token shaping (AC-201/202/203/204/207)", () => {
     expect("truncated" in row).toBe(false);
   });
 });
+
+// ── Wave-2: formatHits summary line (pure — no DB) ───────────────────────────
+
+describe("formatHits summary line (wave-2)", () => {
+  const base = {
+    id: "00000000-0000-4000-8000-00000000fee1",
+    title: "A memory",
+    type: "semantic" as const,
+    snippet: "the snippet text",
+    summary: null as string | null,
+    importance: 0.5,
+    createdAt: "2026-06-20T00:00:00.000Z",
+    eventDate: null,
+    effectiveDate: "2026-06-20T00:00:00.000Z",
+    status: "active",
+  };
+
+  it("a NULL-summary hit renders EXACTLY the pre-wave-2 two-line form (pin)", () => {
+    expect(formatHits([base])).toBe(
+      `1. [semantic] A memory  (2026-06-20, id: ${base.id})\n   the snippet text`,
+    );
+  });
+
+  it("a summarized hit appends the third indented summary line", () => {
+    const hit = { ...base, summary: "Dense stored summary." };
+    expect(formatHits([hit])).toBe(
+      `1. [semantic] A memory  (2026-06-20, id: ${base.id})\n   the snippet text\n   summary: Dense stored summary.`,
+    );
+  });
+
+  it("the summary line composes with a non-default status note", () => {
+    const hit = { ...base, summary: "S.", status: "superseded" };
+    expect(formatHits([hit])).toBe(
+      `1. [semantic] A memory  (2026-06-20, status: superseded, id: ${base.id})\n   the snippet text\n   summary: S.`,
+    );
+  });
+});
