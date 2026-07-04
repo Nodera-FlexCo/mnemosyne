@@ -88,10 +88,12 @@ vi.mock("../src/voyage.js", () => ({
 process.env.VOYAGE_API_KEY ??= "test-key";
 
 import {
+  budgetMemoryBody,
   formatHits,
   fuseCandidates,
   getRecent,
   searchMemory,
+  MEMORY_GET_DEFAULT_MAX_CHARS,
   type MemoryType,
 } from "../src/memory.js";
 import { TOOL_DESCRIPTIONS, buildServer } from "../src/server.js";
@@ -302,6 +304,46 @@ describe("memory tool descriptions (AC-205)", () => {
     } finally {
       await client.close();
     }
+  });
+});
+
+describe("budgetMemoryBody (AC-805/806, pure)", () => {
+  const row = (content: unknown): Record<string, unknown> => ({
+    id: "x",
+    content,
+    metadata: { keep: true },
+  });
+
+  it("content exactly at the budget passes through unchanged (no truncation fields)", () => {
+    const r = row("a".repeat(6000));
+    const shaped = budgetMemoryBody(r, MEMORY_GET_DEFAULT_MAX_CHARS);
+    expect(shaped).toBe(r);
+    expect("truncated" in shaped).toBe(false);
+    expect("totalChars" in shaped).toBe(false);
+    expect("note" in shaped).toBe(false);
+  });
+
+  it("one char over the budget → truncated content + markers + pinned note", () => {
+    const shaped = budgetMemoryBody(row("a".repeat(6001)), 6000);
+    expect(shaped.truncated).toBe(true);
+    expect(shaped.totalChars).toBe(6001);
+    expect((shaped.content as string).length).toBe(6000);
+    expect(shaped.note).toBe(
+      "content truncated to 6000 of 6001 chars — call memory_get again with full=true (or maxChars=0) for the complete body",
+    );
+    // Only content is budgeted — structured fields stay intact.
+    expect(shaped.metadata).toEqual({ keep: true });
+    expect(shaped.id).toBe("x");
+  });
+
+  it("maxChars=0 means unlimited — oversized content passes through unchanged", () => {
+    const r = row("a".repeat(50000));
+    expect(budgetMemoryBody(r, 0)).toBe(r);
+  });
+
+  it("non-string content passes through unchanged", () => {
+    const r = row(null);
+    expect(budgetMemoryBody(r, 10)).toBe(r);
   });
 });
 
@@ -602,7 +644,15 @@ describe.skipIf(skip)("memory token shaping (AC-201/202/203/204/207)", () => {
     for (const probe of [id(1), id(2)]) {
       const s = search.hits.find((x) => x.id === probe)!;
       const r = recent.find((x) => x.id === probe)!;
-      expect(r).toEqual(s);
+      // Field parity holds, but snippet TEXT deliberately differs since wave 1
+      // (AC-801/803): search snippets may be query-aware headlines, while
+      // getRecent always keeps the deterministic 180-char prefix.
+      const prefix = byId
+        .get(probe)!
+        .content.replace(/\s+/g, " ")
+        .slice(0, 180);
+      expect(r).toEqual({ ...s, snippet: prefix });
+      expect(r.snippet).toBe(prefix);
     }
     for (const r of recent) {
       expect("score" in r).toBe(false);
@@ -719,5 +769,97 @@ describe.skipIf(skip)("memory token shaping (AC-201/202/203/204/207)", () => {
     >;
     expect(row.status).toBe("archived");
     expect(row.id).toBe(id(8));
+  });
+
+  // ── AC-805/806: memory_get content budget ──────────────────────────────────
+
+  const BIG_ID = id(9);
+  const BIG_CONTENT = "lorem ".repeat(1200); // 7200 chars > the 6000 default
+
+  /** Idempotent oversized fixture (no embedding — memory_get never needs one). */
+  async function insertBigRow(): Promise<void> {
+    await pool.query(
+      `INSERT INTO memory.memories (id, project_id, type, title, content)
+       VALUES ($1, $2, 'semantic', 'Oversized body', $3)
+       ON CONFLICT (id) DO NOTHING`,
+      [BIG_ID, PROJ, BIG_CONTENT],
+    );
+  }
+
+  it("AC-805: default memory_get truncates >6000-char content with explicit markers", async () => {
+    await insertBigRow();
+    const got = await callTool(client, "memory_get", { id: BIG_ID });
+    expect(got.isError).toBe(false);
+    const row = JSON.parse(got.text) as Record<string, unknown>;
+    expect((row.content as string).length).toBe(6000);
+    expect(row.content).toBe(BIG_CONTENT.slice(0, 6000));
+    expect(row.truncated).toBe(true);
+    expect(row.totalChars).toBe(7200);
+    expect(row.note).toContain("full=true");
+    // metadata is never budgeted, and the JSON stayed parseable by construction.
+    expect(row.metadata).toEqual({});
+  });
+
+  it("AC-806: full=true returns the complete content with no truncation fields", async () => {
+    await insertBigRow();
+    const got = await callTool(client, "memory_get", {
+      id: BIG_ID,
+      full: true,
+    });
+    expect(got.isError).toBe(false);
+    const row = JSON.parse(got.text) as Record<string, unknown>;
+    expect(row.content).toBe(BIG_CONTENT);
+    expect("truncated" in row).toBe(false);
+    expect("totalChars" in row).toBe(false);
+    expect("note" in row).toBe(false);
+  });
+
+  it("AC-806: maxChars=0 is the same escape hatch as full=true", async () => {
+    await insertBigRow();
+    const got = await callTool(client, "memory_get", {
+      id: BIG_ID,
+      maxChars: 0,
+    });
+    expect(got.isError).toBe(false);
+    const row = JSON.parse(got.text) as Record<string, unknown>;
+    expect(row.content).toBe(BIG_CONTENT);
+    expect("truncated" in row).toBe(false);
+  });
+});
+
+// ── Wave-2: formatHits summary line (pure — no DB) ───────────────────────────
+
+describe("formatHits summary line (wave-2)", () => {
+  const base = {
+    id: "00000000-0000-4000-8000-00000000fee1",
+    title: "A memory",
+    type: "semantic" as const,
+    snippet: "the snippet text",
+    summary: null as string | null,
+    importance: 0.5,
+    createdAt: "2026-06-20T00:00:00.000Z",
+    eventDate: null,
+    effectiveDate: "2026-06-20T00:00:00.000Z",
+    status: "active",
+  };
+
+  it("a NULL-summary hit renders EXACTLY the pre-wave-2 two-line form (pin)", () => {
+    expect(formatHits([base])).toBe(
+      `1. [semantic] A memory  (2026-06-20, id: ${base.id})\n   the snippet text`,
+    );
+  });
+
+  it("a summarized hit appends the third indented summary line", () => {
+    const hit = { ...base, summary: "Dense stored summary." };
+    expect(formatHits([hit])).toBe(
+      `1. [semantic] A memory  (2026-06-20, id: ${base.id})\n   the snippet text\n   summary: Dense stored summary.`,
+    );
+  });
+
+  it("the summary line composes with a non-default status note", () => {
+    const hit = { ...base, summary: "S.", status: "superseded" };
+    expect(formatHits([hit])).toBe(
+      `1. [semantic] A memory  (2026-06-20, status: superseded, id: ${base.id})\n   the snippet text\n   summary: S.`,
+    );
   });
 });

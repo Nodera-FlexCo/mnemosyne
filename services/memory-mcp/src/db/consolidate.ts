@@ -78,6 +78,8 @@ export interface PairRowMeta {
   id: string;
   title: string;
   content: string;
+  /** Wave-2 dense summary (nullable) — the judge reads it over content when present. */
+  summary: string | null;
   createdAt: string;
   pinned: boolean;
 }
@@ -178,9 +180,16 @@ export function buildJudgeUser(
         const r = rowsById.get(id);
         if (!r) return `  ${slot} [${id}] (missing)`;
         const pin = r.pinned ? ", pinned" : "";
+        // Summary-aware delta (wave-3, retrieval-token-efficiency plan): prefer the
+        // wave-2 dense summary over raw content — cheaper per pair AND not
+        // tail-truncated like a long content prefix. Content is the fallback for
+        // rows the backfill has not reached (summary NULL) AND — matching
+        // buildRerankDoc's truthiness — for an out-of-band empty-string summary,
+        // so the judge never reads an empty body.
+        const body = r.summary || r.content;
         return (
           `  ${slot} [${r.id}] (created ${r.createdAt}${pin}): ${collapse(r.title)}\n` +
-          `     ${collapse(r.content).slice(0, PAIR_CONTENT_CHARS)}`
+          `     ${collapse(body).slice(0, PAIR_CONTENT_CHARS)}`
         );
       };
       return `Pair ${i + 1}:\n${side("a", p.a)}\n${side("b", p.b)}`;
@@ -257,12 +266,14 @@ interface RawPairRow {
   a_id: string;
   a_title: string;
   a_content: string;
+  a_summary: string | null;
   a_created_at: Date;
   a_pinned: boolean;
   a_judged: string[];
   b_id: string | null;
   b_title: string | null;
   b_content: string | null;
+  b_summary: string | null;
   b_created_at: Date | null;
   b_pinned: boolean | null;
   b_judged: string[] | null;
@@ -283,6 +294,7 @@ function registerRow(
   id: string,
   title: string,
   content: string,
+  summary: string | null,
   createdAt: Date,
   pinned: boolean,
 ): void {
@@ -291,6 +303,7 @@ function registerRow(
       id,
       title,
       content,
+      summary,
       createdAt: createdAt.toISOString(),
       pinned,
     });
@@ -350,6 +363,7 @@ export async function collectPairs(
       row.a_id,
       row.a_title,
       row.a_content,
+      row.a_summary,
       row.a_created_at,
       row.a_pinned,
     );
@@ -358,6 +372,7 @@ export async function collectPairs(
       row.b_id,
       row.b_title ?? "",
       row.b_content ?? "",
+      row.b_summary,
       row.b_created_at ?? row.a_created_at,
       row.b_pinned ?? false,
     );
@@ -403,9 +418,11 @@ export async function collectPairs(
   // string can never hit a ::uuid cast error — it simply matches nothing.
   const flagged = await pool.query(
     `SELECT m.id AS a_id, m.title AS a_title, m.content AS a_content,
+            m.summary AS a_summary,
             m.created_at AS a_created_at, m.pinned AS a_pinned,
             ${JUDGED("m")} AS a_judged,
             p.id AS b_id, p.title AS b_title, p.content AS b_content,
+            p.summary AS b_summary,
             p.created_at AS b_created_at, p.pinned AS b_pinned,
             ${JUDGED("p")} AS b_judged,
             CASE WHEN (c ->> 'sim') ~ '^-?[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?$'
@@ -429,14 +446,16 @@ export async function collectPairs(
   for (;;) {
     const page = await pool.query(
       `SELECT a.id AS a_id, a.title AS a_title, a.content AS a_content,
+              a.summary AS a_summary,
               a.created_at AS a_created_at, a.pinned AS a_pinned,
               ARRAY(SELECT jsonb_array_elements_text(a.judged)) AS a_judged,
               n.id AS b_id, n.title AS b_title, n.content AS b_content,
+              n.summary AS b_summary,
               n.created_at AS b_created_at, n.pinned AS b_pinned,
               ARRAY(SELECT jsonb_array_elements_text(n.judged)) AS b_judged,
               n.sim::float8 AS sim
        FROM (
-         SELECT id, title, content, created_at, pinned, embedding_v2,
+         SELECT id, title, content, summary, created_at, pinned, embedding_v2,
                 CASE WHEN jsonb_typeof(metadata #> '{consolidation,judged}') = 'array'
                      THEN metadata #> '{consolidation,judged}' ELSE '[]'::jsonb END AS judged
          FROM memory.memories a0
@@ -447,7 +466,7 @@ export async function collectPairs(
          LIMIT $3
        ) a
        LEFT JOIN LATERAL (
-         SELECT b.id, b.title, b.content, b.created_at, b.pinned,
+         SELECT b.id, b.title, b.content, b.summary, b.created_at, b.pinned,
                 CASE WHEN jsonb_typeof(b.metadata #> '{consolidation,judged}') = 'array'
                      THEN b.metadata #> '{consolidation,judged}' ELSE '[]'::jsonb END AS judged,
                 1 - (b.embedding_v2 <=> a.embedding_v2) AS sim
@@ -801,7 +820,7 @@ async function hydrateRowMeta(
   );
   if (missing.length === 0) return;
   const { rows } = await pool.query(
-    `SELECT id, title, content, created_at, pinned
+    `SELECT id, title, content, summary, created_at, pinned
      FROM memory.memories WHERE id = ANY($1::uuid[])`,
     [missing],
   );
@@ -809,10 +828,19 @@ async function hydrateRowMeta(
     id: string;
     title: string;
     content: string;
+    summary: string | null;
     created_at: Date;
     pinned: boolean;
   }>) {
-    registerRow(rowsById, r.id, r.title, r.content, r.created_at, r.pinned);
+    registerRow(
+      rowsById,
+      r.id,
+      r.title,
+      r.content,
+      r.summary,
+      r.created_at,
+      r.pinned,
+    );
   }
 }
 

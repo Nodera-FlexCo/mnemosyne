@@ -7,13 +7,16 @@ import {
   toVectorLiteral,
 } from "./voyage.js";
 import { config } from "./config.js";
+import { summarizeMemory } from "./summarize.js";
 
 // ── Fusion constant (Wave P → wave-7 bakeoff) ────────────────────────────────────────
 // RRF k stays a module const (the code default); the blend/decay knobs moved to
 // config.blendConfig (src/config.ts, wave-7 AC-702) so the bakeoff winner can ship as
 // compose env pins with the code default unchanged. `fuseCandidates` accepts an
-// injectable `rrfK` for the wave-7 k-sweep axis; a non-60 winner would ship as an env
-// pin too (decision record: test/retune.md).
+// injectable `rrfK` for the wave-7 k-sweep axis; retrievalConfig() serializes the
+// shipped DEFAULT (RRF_K) — sweep arms record their per-call k in their own run
+// artifacts. A non-60 winner would ship as an env pin too (decision record:
+// test/retune.md).
 const RRF_K = 60;
 
 /** Bump when `blendScores` SEMANTICS change (not when env pins retune the knobs) —
@@ -63,6 +66,8 @@ export interface Hit {
   title: string;
   type: MemoryType;
   snippet: string;
+  /** Stored dense summary (wave-2, AC-808) — NULL until summarized. */
+  summary: string | null;
   importance: number;
   createdAt: string;
   eventDate: string | null;
@@ -78,6 +83,7 @@ interface CandidateRow {
   id: string;
   title: string;
   content: string;
+  summary: string | null;
   type: MemoryType;
   importance: number;
   created_at: Date;
@@ -93,6 +99,18 @@ const RECALL_LIMIT = 50; // per-arm (BM25 / vector) recall before fusion
 // with — the snapshot can never drift from the pipeline (AC-104 groundwork).
 export const RERANK_DOC_TRUNCATION = 1200; // chars of title+content handed to the reranker
 export const SNIPPET_CHARS = 180; // whitespace-collapsed snippet length in Hit
+
+// ts_headline options for query-aware snippets (display-only — deliberately NOT part of
+// retrievalConfig(): headlines decorate the final hits and never touch pool or ranking).
+// The selectors are PRIVATE-USE sentinels that cannot occur in stored content: a real
+// lexical match is detected by sentinel presence, then the sentinels are rendered as
+// markdown-safe `**` for display. Detecting on literal `**` would false-positive —
+// ts_headline's no-match fallback is a document-prefix headline, and this corpus is
+// markdown-heavy, so content's own `**` must never masquerade as a match. ≤2 fragments
+// keep the snippet compact.
+export const SNIPPET_START_SEL = "\uE000";
+export const SNIPPET_STOP_SEL = "\uE001";
+export const SNIPPET_HEADLINE_OPTS = `StartSel=${SNIPPET_START_SEL}, StopSel=${SNIPPET_STOP_SEL}, MaxFragments=2, MaxWords=20, MinWords=8, FragmentDelimiter=" … "`;
 
 /**
  * The FULL retrieval configuration, serialized into every eval-run artifact (AC-104)
@@ -128,6 +146,9 @@ export function retrievalConfig() {
     contextModel: config.contextModel,
     rerankModel: config.rerankModel,
     rerankDocTruncation: RERANK_DOC_TRUNCATION,
+    // Wave-2 (AC-810): reranker docs are title\n(summary\n)content — the doc
+    // composition is a ranking-bearing knob, so artifacts must carry it (AC-104).
+    rerankDocIncludesSummary: true,
     snippetChars: SNIPPET_CHARS,
   };
 }
@@ -237,9 +258,15 @@ export async function storeMemory(
   // Burn-in: write BOTH the legacy `embedding` (voyage-4-large) and the contextual
   // `embedding_v2` (voyage-context-4) so a rollback stays possible. After the Step 8
   // burn-in window, the legacy column + its embed() call are dropped.
+  // The summary rides the same Promise.all: when the summarize gate is closed
+  // (default) it resolves null instantly, so the write path gains zero latency;
+  // when open, summarizeMemory's own 4 s timeout bounds it (AC-808).
   const text = `${input.title}\n${input.content}`;
-  const [vec] = await embed([text], "document");
-  const [vec2] = await embedContextualSingle([text], "document");
+  const [[vec], [vec2], summary] = await Promise.all([
+    embed([text], "document"),
+    embedContextualSingle([text], "document"),
+    summarizeMemory(input.title, input.content),
+  ]);
 
   // A transaction so the supersession bookkeeping (insert the new decision + flip the
   // superseded row) stays consistent — the chain never half-updates.
@@ -276,9 +303,10 @@ export async function storeMemory(
       `INSERT INTO memory.memories
          (project_id, type, title, content, importance, metadata, source_session_id, source_kind,
           embedding, embedding_v2, content_sha256,
-          decision_project, decision_status, decided_at, supersedes_id, decided_in, related_ids)
+          decision_project, decision_status, decided_at, supersedes_id, decided_in, related_ids,
+          summary)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::halfvec,$10::halfvec,$11,
-               $12,$13,$14,$15,$16,$17)
+               $12,$13,$14,$15,$16,$17,$18)
        RETURNING id, title`,
       [
         input.projectId,
@@ -298,6 +326,7 @@ export async function storeMemory(
         supersedesId,
         decidedIn,
         relatedIds,
+        summary,
       ],
     );
     const newId = rows[0].id;
@@ -513,6 +542,55 @@ export function toPublicHits(hits: ScoredHit[]): Hit[] {
 }
 
 /**
+ * Query-aware snippet decoration (AC-801/802): one extra small SQL query computes
+ * ts_headline fragments for EXACTLY the final ≤limit hit ids — never the pool — using
+ * the SAME text-search config + query function as the BM25 arm ('english' +
+ * plainto_tsquery), so a headline lights up iff the ranking query matched lexically.
+ * A hit's snippet is replaced only when the whitespace-collapsed headline actually
+ * carries a match SENTINEL (SNIPPET_START_SEL): a sentinel-less headline is
+ * ts_headline's no-match fallback (vector-only hit, stop-words-only query — even when
+ * the content's own literal `**` markdown appears in it) and the deterministic
+ * 180-char prefix is better. Accepted sentinels are rendered as `**` for display.
+ * Display-only and error-swallowing by design (logSearch pattern): on ANY
+ * failure the hits are returned unchanged — snippets must never fail a search.
+ */
+export async function applyQuerySnippets(
+  query: string,
+  hits: Hit[],
+): Promise<Hit[]> {
+  if (hits.length === 0) return hits;
+  try {
+    // Options passed as a text PARAMETER (never interpolated); left(content, 50000)
+    // caps headline parsing cost on giant rows. Raw content is deliberately not
+    // selected — only the headline travels back.
+    const { rows } = await pool.query<{ id: string; headline: string }>(
+      `SELECT id, ts_headline('english', left(content, 50000),
+                              plainto_tsquery('english', $1), $3) AS headline
+       FROM memory.memories
+       WHERE id = ANY($2::uuid[])`,
+      [query, hits.map((h) => h.id), SNIPPET_HEADLINE_OPTS],
+    );
+    const headlineById = new Map(rows.map((r) => [r.id, r.headline]));
+    return hits.map((h) => {
+      const cleaned = (headlineById.get(h.id) ?? "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (cleaned.length === 0 || !cleaned.includes(SNIPPET_START_SEL)) {
+        return h;
+      }
+      return {
+        ...h,
+        snippet: cleaned
+          .replaceAll(SNIPPET_START_SEL, "**")
+          .replaceAll(SNIPPET_STOP_SEL, "**"),
+      };
+    });
+  } catch {
+    return hits; // AC-802: snippet decoration must never surface into the search path
+  }
+}
+
+/**
  * Phase 1: hybrid recall + RRF fusion. Embeds the query (contextual — the corpus is
  * voyage-context-4) and returns the fused candidate pool: `config.candidatePool` rows
  * max, RRF-ordered, with per-arm ranks. `input.limit` is the FINAL hit limit used by
@@ -534,6 +612,7 @@ export async function fuseCandidates(input: {
   rrfK?: number;
 }): Promise<FusedCandidate[]> {
   // Validate the k override BEFORE any spend (embed) or SQL — reject garbage loudly.
+  // k travels as a bound SQL parameter ($5::float8), never string interpolation.
   const rrfK = input.rrfK ?? RRF_K;
   if (!Number.isFinite(rrfK) || rrfK <= 0) {
     throw new Error(
@@ -583,7 +662,7 @@ export async function fuseCandidates(input: {
       ORDER BY m.embedding_v2 <=> $2::halfvec
       LIMIT ${RECALL_LIMIT}
     )
-    SELECT m.id, m.title, m.content, m.type, m.importance, m.created_at, m.event_date,
+    SELECT m.id, m.title, m.content, m.summary, m.type, m.importance, m.created_at, m.event_date,
            m.source_kind,
            COALESCE(m.status,'active') AS status,
            bm25.rank::int AS bm25_rank, vec.rank::int AS vec_rank,
@@ -608,6 +687,24 @@ export interface BlendableCandidate {
   event_date?: Date | null;
   source_kind?: string | null;
   relevance: number;
+}
+
+/**
+ * Reranker document composition (wave-2, AC-810): `title\n` + (`summary\n` when
+ * non-null) + `content`, truncated AS A WHOLE to RERANK_DOC_TRUNCATION — prefix
+ * shape, never summary-only. Slicing the JOINED string (not the content alone) is
+ * what keeps the doc-length invariant and makes a summary displace content tail
+ * within the same budget; with summary = NULL the output is byte-identical to the
+ * pre-wave-2 `title\ncontent` doc, so golden pins hold with zero edits.
+ */
+export function buildRerankDoc(r: {
+  title: string;
+  content: string;
+  summary?: string | null;
+}): string {
+  return [r.title, ...(r.summary ? [r.summary] : []), r.content]
+    .join("\n")
+    .slice(0, RERANK_DOC_TRUNCATION);
 }
 
 /**
@@ -664,18 +761,17 @@ export function blendScores<T extends BlendableCandidate>(
 }
 
 /**
- * Phase 2: rerank the candidate pool, blend relevance with recency + importance
- * (`blendScores` under `config.blendConfig`), and shape the top-`limit` hits
- * (180-char whitespace-collapsed snippet, 4-decimal score).
+ * Phase 2: rerank the candidate pool (summary-aware docs via `buildRerankDoc`),
+ * blend relevance with recency + importance (`blendScores` under
+ * `config.blendConfig`), and shape the top-`limit` hits (180-char
+ * whitespace-collapsed snippet, 4-decimal score).
  */
 export async function rerankAndBlend(
   query: string,
   rows: FusedCandidate[],
   limit: number,
 ): Promise<ScoredHit[]> {
-  const docs = rows.map((r) =>
-    `${r.title}\n${r.content}`.slice(0, RERANK_DOC_TRUNCATION),
-  );
+  const docs = rows.map((r) => buildRerankDoc(r));
   const ranked = await rerank(query, docs, rows.length);
   const relById = new Map<string, number>();
   for (const r of ranked) relById.set(rows[r.index].id, r.score);
@@ -691,6 +787,7 @@ export async function rerankAndBlend(
     title: r.title,
     type: r.type,
     snippet: r.content.replace(/\s+/g, " ").slice(0, SNIPPET_CHARS),
+    summary: r.summary,
     importance: r.importance,
     ...toIsoDateFields(r),
     status: r.status,
@@ -778,7 +875,9 @@ export async function searchMemory(input: {
     rows.length === 0
       ? []
       : await rerankAndBlend(input.query, rows, input.limit);
-  const hits = toPublicHits(scoredHits);
+  // Snippet decoration happens AFTER ranking and BEFORE logging — logSearch records
+  // ids only, so the log is unaffected either way (AC-801; getRecent is untouched).
+  const hits = await applyQuerySnippets(input.query, toPublicHits(scoredHits));
   logSearch({
     projectId: input.projectId,
     query: input.query,
@@ -803,6 +902,32 @@ export async function searchMemory(input: {
   };
 }
 
+// Default memory_get response budget: 6000 chars ≈ 1500 tokens at ~4 chars/token.
+export const MEMORY_GET_DEFAULT_MAX_CHARS = 6000;
+
+/**
+ * Budget a memory_get row to `maxChars` of content (AC-805/806). Truncates ONLY the
+ * `content` field value — metadata stays intact and the JSON stays parseable — and
+ * marks the cut explicitly with `truncated`/`totalChars` plus a re-fetch note naming
+ * the escape hatches. `maxChars <= 0` means unlimited; under-budget rows (and rows
+ * with a non-string content) pass through unchanged, with no truncation fields.
+ */
+export function budgetMemoryBody(
+  row: Record<string, unknown>,
+  maxChars: number,
+): Record<string, unknown> {
+  if (maxChars <= 0) return row;
+  const content = row.content;
+  if (typeof content !== "string" || content.length <= maxChars) return row;
+  return {
+    ...row,
+    content: content.slice(0, maxChars),
+    truncated: true,
+    totalChars: content.length,
+    note: `content truncated to ${maxChars} of ${content.length} chars — call memory_get again with full=true (or maxChars=0) for the complete body`,
+  };
+}
+
 export async function getMemory(
   id: string,
 ): Promise<Record<string, unknown> | null> {
@@ -810,7 +935,7 @@ export async function getMemory(
     `UPDATE memory.memories
        SET access_count = access_count + 1, last_accessed_at = now()
      WHERE id = $1
-     RETURNING id, project_id, type, title, content, importance, access_count,
+     RETURNING id, project_id, type, title, content, summary, importance, access_count,
                metadata, source_session_id, pinned, created_at, last_accessed_at,
                status, event_date, superseded_by`,
     [id],
@@ -830,7 +955,7 @@ export async function getRecent(input: {
     params.push(input.type);
   }
   const { rows } = await pool.query<CandidateRow>(
-    `SELECT id, title, content, type, importance, created_at, event_date, source_kind,
+    `SELECT id, title, content, summary, type, importance, created_at, event_date, source_kind,
             COALESCE(status,'active') AS status, 0 AS rrf
      FROM memory.memories
      WHERE archived_at IS NULL AND COALESCE(status,'active') = 'active' AND project_id = $1 ${typeFilter}
@@ -843,6 +968,7 @@ export async function getRecent(input: {
     title: r.title,
     type: r.type,
     snippet: r.content.replace(/\s+/g, " ").slice(0, SNIPPET_CHARS),
+    summary: r.summary,
     importance: r.importance,
     ...toIsoDateFields(r),
     status: r.status,
@@ -911,6 +1037,12 @@ export async function updateMemory(
       // embedding, so dropping the hint costs nothing but stale-judge spend.
       sets.push(`metadata = metadata - 'dupCandidates' - 'dupFlaggedAt'`);
     }
+    // Never-stale invariant (wave-2): a title/content change recomputes the summary;
+    // a null result (gate closed or summarizer failure) CLEARS the stale one — the
+    // next backfill run regenerates it.
+    const summary = await summarizeMemory(title, content);
+    sets.push(`summary = $${i++}`);
+    params.push(summary);
   }
   if (sets.length === 0) return { id };
   params.push(id);
@@ -973,7 +1105,10 @@ export function formatHits(
         // hits are always 'active', so a constant `status: active` is token waste
         // (LOW-001; the hit OBJECT keeps its `status` field either way).
         const statusNote = h.status === "active" ? "" : `, status: ${h.status}`;
-        return `${i + 1}. [${h.type}] ${h.title}  (${h.effectiveDate.slice(0, 10)}${statusNote}, id: ${h.id})\n   ${h.snippet}`;
+        // Wave-2: the stored dense summary renders as a third indented line when
+        // present; NULL-summary hits keep the exact pre-wave-2 two-line form.
+        const summaryLine = h.summary ? `\n   summary: ${h.summary}` : "";
+        return `${i + 1}. [${h.type}] ${h.title}  (${h.effectiveDate.slice(0, 10)}${statusNote}, id: ${h.id})\n   ${h.snippet}${summaryLine}`;
       })
       .join("\n"),
   );

@@ -149,6 +149,34 @@ available filters as optional refinements. Code hits additionally merge adjacent
 overlapping same-file chunks after top-k reranking, capped by `MAX_MERGED_LINES`
 (default 120); k is a cap, so merged responses are not backfilled.
 
+Memory snippets are query-aware since wave 1 of the token-efficiency plan (AC-801..804):
+`searchMemory` runs one extra `ts_headline('english', …, plainto_tsquery)` query over
+ONLY the final ≤limit hit ids (options in `SNIPPET_HEADLINE_OPTS`: private-use sentinel
+selectors `U+E000`/`U+E001`, rendered as markdown-safe `**` for display, ≤2 fragments
+joined by `" … "`), so a hit the query matched lexically shows the matching fragments
+instead of the document head. The deterministic 180-char whitespace-collapsed prefix
+remains the fallback for every hit whose cleaned headline carries no match sentinel
+(vector-only hits, stop-words-only queries — literal `**` in stored markdown
+deliberately does NOT count as a match) and for ANY headline failure — and stays the
+only snippet form `memory_get_recent` produces. This is
+display-only: `fuseCandidates` SQL and `rerankAndBlend` scoring are untouched, pool
+composition and hit order are provably unchanged (the golden ORDERED-ID pins did not
+move), and the headline options are deliberately NOT part of `retrievalConfig()`.
+Headline pins in `test/search-golden.test.ts` are recorded on pg17 — the live stack's
+Postgres major — and only need re-recording on a major bump.
+
+Since wave 2 of the token-efficiency plan (AC-807..812), `memory.memories.summary`
+stores an optional 1–3 sentence dense summary (NULL until populated). Hits and
+`memory_get` carry it, `formatHits` renders a `summary:` line when present, and the
+reranker doc becomes `title\n(summary\n)content` truncated as a whole to
+`RERANK_DOC_TRUNCATION` (`retrievalConfig().rerankDocIncludesSummary`). **The summary
+BACKFILL is a FLIP GATE:** rerank docs change for summarized rows, so the corpus-wide
+`npm run backfill:summaries -- --yes` run must be followed by the live recall-gate
+re-record per `test/retune.md`'s wave-2 runbook (pre-backfill, all summaries are NULL
+and docs are byte-identical — the gate stays green at merge by construction). Write-time
+summaries stay OFF by default: the double gate is `ANTHROPIC_API_KEY` present AND
+`SUMMARIZE_ON_STORE=1`.
+
 ## Gold lifecycle: synthetic-now, logs-forever
 
 1. **Seed** (`provenance: "seed-v1"`) — the hand-written rows, migrated to stable ids
@@ -172,6 +200,7 @@ none in CI:
 | Script | Service | Cost | Consent |
 | --- | --- | --- | --- |
 | `npm run distill-eval -- --yes` | both | Anthropic quota (Haiku-class; `ANTHROPIC_API_KEY`, `DISTILL_MODEL` with `CONSOLIDATE_MODEL` fallback) | refuses without `--yes` |
+| `npm run backfill:summaries -- --yes` | memory | Anthropic quota (Haiku-class, one call per `summary IS NULL` row; ≈ min(content,8000)/4 + 256 tokens each) | refuses without `--yes`; the run is a FLIP GATE (see retune.md) |
 | `npm run backfill:context` | memory | Voyage quota ($0.12/M) | deliberate operator step |
 | `npm run bakeoff` | codebase | Voyage quota | deliberate operator step |
 | `npm run consolidate -- --yes [--apply]` | memory | Anthropic quota (judge; `CONSOLIDATE_MODEL`, ≈500 tok/pair) — dry-run by DEFAULT, `--apply` flips losers | refuses without `--yes` |

@@ -32,6 +32,7 @@ describe("retrievalConfig() snapshot (memory-mcp)", () => {
         "contextModel",
         "rerankModel",
         "rerankDocTruncation",
+        "rerankDocIncludesSummary",
         "snippetChars",
       ].sort(),
     );
@@ -94,6 +95,8 @@ describe("retrievalConfig() snapshot (memory-mcp)", () => {
     expect(snap.snippetChars).toBe(SNIPPET_CHARS);
     expect(RERANK_DOC_TRUNCATION).toBe(1200);
     expect(SNIPPET_CHARS).toBe(180);
+    // Wave-2 (AC-810): reranker docs carry the stored summary as a prefix line.
+    expect(snap.rerankDocIncludesSummary).toBe(true);
   });
 
   it("is JSON-safe (round-trips losslessly)", () => {

@@ -181,6 +181,12 @@ export const config = {
   // them; src/llm.ts raises a clear message when a script needs the key and it is
   // absent (AC-108). Haiku-class default: cheap judge/distill work.
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  // Write-time summary gate (src/summarize.ts) — an EXTRA gate beyond the key being
+  // present, because compose passes ANTHROPIC_API_KEY through for operator scripts:
+  // without this flag, provisioning the key for `consolidate` would silently start
+  // spending on every memory_store (write-path-stays-cheap lock, program wave-5
+  // design lock). Default off; NOT in assertServerConfig.
+  summarizeOnStore: process.env.SUMMARIZE_ON_STORE === "1",
   consolidateModel: process.env.CONSOLIDATE_MODEL ?? "claude-haiku-4-5",
   // Eval-candidate distiller model; falls back to the consolidate model.
   distillModel:

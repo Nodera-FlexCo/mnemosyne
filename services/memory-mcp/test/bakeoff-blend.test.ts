@@ -127,6 +127,7 @@ function mkCand(over: {
     id: over.id,
     title: over.title,
     content: `content of ${over.id}`,
+    summary: null,
     type: over.type ?? "semantic",
     importance: over.importance ?? 0.5,
     created_at: new Date(NOW - over.createdDaysAgo * DAY),

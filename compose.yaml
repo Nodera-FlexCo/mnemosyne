@@ -146,10 +146,18 @@ services:
       # rerank-2.5 over rerank-2.5-lite (no-regression gate, AC-502). FROZEN for the
       # wave-7 blend bakeoff. Rollback = repin rerank-2.5-lite + re-record baselines.
       VOYAGE_RERANK_MODEL: rerank-2.5
-      # Operator-script inputs only (distill-eval / consolidate, wave 5) — optional,
-      # NOT part of assertServerConfig; the server never reads them.
+      # Primarily operator-script inputs (distill-eval / consolidate / backfill:summaries,
+      # waves 2/5) — optional, NOT part of assertServerConfig. The LIVE server also reads
+      # ANTHROPIC_API_KEY for write-time summarization (src/summarize.ts), but ONLY when
+      # SUMMARIZE_ON_STORE=1 below is ALSO set (double gate) — the key alone never spends
+      # on memory_store.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       CONSOLIDATE_MODEL: ${CONSOLIDATE_MODEL:-}
+      # Write-time summary gate (wave-2 token-efficiency): summaries on memory_store
+      # ONLY when this is "1" AND the key above is set — the key alone must never
+      # start spending (the backfill:summaries operator script is the intended
+      # population path). Optional, default off.
+      SUMMARIZE_ON_STORE: ${SUMMARIZE_ON_STORE:-}
       MNEMO_TOKEN: ${MNEMO_TOKEN:-}
       DEFAULT_PROJECT_ID: ${DEFAULT_PROJECT_ID:-nodex}
       PORT: "8080"

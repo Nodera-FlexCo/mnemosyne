@@ -189,6 +189,38 @@ spot-check.
 > The frozen **test** split is spent only by flip gates (AC-109). Handbook:
 > `test/eval.md`.
 
+## Wave-2 summary-backfill flip gate (token-efficiency plan, AC-812)
+
+The stored-summary feature changes reranker docs (`title\n(summary\n)content`, capped
+as a whole at `RERANK_DOC_TRUNCATION`) — but only for rows whose `summary` is non-NULL.
+At merge time every corpus row is NULL, docs are byte-identical, and the CI gate stays
+green by construction. The PAID backfill is therefore the flip moment; the operator
+runs it as a recorded gate:
+
+1. **Confirm the current committed baseline** (`test/runs/baseline-dev.json`
+   aggregates): pool Recall@25 0.9474 / nDCG@10 0.7211 / MRR@10 0.7555 (the
+   post-750d0e4 merge-point refresh — the file on disk is authoritative).
+2. **Backfill the summaries** (PAID — Anthropic quota, one Haiku-class call per
+   pending row; resumable, re-run to continue after a crash):
+   ```
+   ANTHROPIC_API_KEY=<key> DATABASE_URL=<live> \
+     npm --prefix services/memory-mcp run backfill:summaries -- --yes
+   ```
+3. **Live gate re-run, recorded** (PAID — Voyage quota, embeds every dev query):
+   ```
+   EVAL_RECORD=1 DATABASE_URL=<live> VOYAGE_API_KEY=<live> npx vitest run recall-gate
+   ```
+   Commit the dated `test/runs/<date>-dev.json` artifact.
+4. **Gate green + operator accepts** → freeze it as the new baseline and commit the
+   artifact PAIR (wave-4 convention):
+   ```
+   cp test/runs/<date>-dev.json test/runs/baseline-dev.json
+   ```
+5. **Regression** → revert the wave-2 `buildRerankDoc` commit (code rollback: docs go
+   back to `title\ncontent`); KEEP the paid summaries in place — they are inert once
+   the doc builder ignores them, and display surfaces (`formatHits`, `memory_get`)
+   remain useful.
+
 ## Two-phase search core (Wave 1, retrieval-improvement program)
 
 `searchMemory` is now composition over two exported phases in `src/memory.ts`:
