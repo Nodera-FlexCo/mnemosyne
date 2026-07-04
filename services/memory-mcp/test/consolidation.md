@@ -23,9 +23,25 @@ file's changelog if the split is ever touched.
 | Artifact comparator | `npm run eval:compare -- <A.json> <B.json>` | FREE |
 
 The dry-run report `test/runs/consolidate-<date>.json` is the review surface, the
-UNDO LOG (its `pairs` list is the exact flip-back target set), and the resumability
-cursor store. `--apply` on the same day re-uses the reviewed dry-run report without
-re-judging and writes `consolidate-<date>-applied.json`.
+UNDO LOG (its `pairs` list is the exact flip-back target set), and a REAL resumability
+checkpoint: it is (re)written with `complete:false` after every sweep page and every
+judge batch, so a crash at any point resumes on the next run without re-buying
+already-judged verdicts (`npm run consolidate -- --yes` again picks it up). In apply
+mode the fully-judged report additionally lands BEFORE the first row flips, so the
+undo log always exists.
+
+CLI decision table (`resolveCliAction` — `--apply` NEVER judge-and-applies fresh):
+
+| Today's report state | `--yes` (dry-run) | `--yes --apply` |
+| --- | --- | --- |
+| none | fresh dry-run | REFUSED — dry-run + review first |
+| incomplete checkpoint | resumes it | REFUSED — finish the dry-run first |
+| complete dry-run | re-run reusing bought verdicts | applies it (no re-judging) → `-applied.json` |
+| apply record | REFUSED — never overwrites the undo log | idempotent re-apply (crash recovery) |
+
+Reports are keyed by UTC date: a dry-run reviewed before midnight UTC and applied
+after it will REFUSE (no same-day report) rather than silently re-judge — pass
+`--report test/runs/consolidate-<date>.json` explicitly in that case.
 
 Semantics guaranteed by `src/db/consolidate.ts` (proven in `test/consolidate.test.ts`):
 losers only ever get `status='superseded'` + `superseded_by=<winner>` — content is
@@ -85,14 +101,16 @@ would-supersede set. Check the `reason` fields; anything that reads like a
 restatement-with-added-detail being merged is a judge false-positive — STOP and
 tighten before applying. UNJUDGED (-1) pairs are fine (they re-enter next run).
 
-### 3. Apply (PAID only if the dry-run report is absent/stale)
+### 3. Apply (FREE — applies the reviewed report, never re-judges)
 
 ```bash
-DATABASE_URL=<live> ANTHROPIC_API_KEY=<key> npm run consolidate -- --yes --apply
+DATABASE_URL=<live> npm run consolidate -- --yes --apply
 ```
 
-Same-day dry-run report present → applied WITHOUT re-judging (zero new judge
-spend); writes `consolidate-<date>-applied.json`.
+Applies the same-day reviewed dry-run report WITHOUT re-judging (zero new judge
+spend) and writes `consolidate-<date>-applied.json`. Refuses when no same-day
+complete dry-run report exists (see the decision table above) — there is no CLI
+path that flips rows on un-reviewed verdicts.
 
 ### 4. Post-consolidation run + paired comparison (PAID small + FREE)
 

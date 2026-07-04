@@ -26,7 +26,12 @@
 //
 // Dry-run is the DEFAULT: the identical pipeline with zero UPDATEs, writing the report
 // artifact test/runs/consolidate-<date>.json — the human-review surface, the undo log
-// (pair list = exact flip-back targets), and the resumability cursor store.
+// (pair list = exact flip-back targets), and the resumability checkpoint: the report is
+// (re)written with complete:false after EVERY sweep page and EVERY judge batch, so a
+// crash at any point resumes without re-buying already-judged verdicts. In apply mode
+// the fully-judged report additionally lands BEFORE the first row flips (undo-log
+// guarantee). The CLI never judge-and-applies fresh: `--apply` requires a reviewed
+// same-day dry-run report (or an explicit --report <path>) — see resolveCliAction.
 //
 // AC-108: PAID — runs ONLY via `npm run consolidate -- --yes [--apply]`, main-guarded,
 // never imported by server.ts, never in CI. Tests inject a mock judge (zero live calls).
@@ -313,7 +318,12 @@ export async function collectPairs(
   deps: Pick<
     ConsolidateDeps,
     "pool" | "projectId" | "scanBatch" | "topS" | "threshold"
-  > & { resumeCursor?: string | null },
+  > & {
+    resumeCursor?: string | null;
+    /** Checkpoint hook: called after every non-final sweep page with the page cursor
+     *  and every pair collected so far — the caller persists a resumable report. */
+    onPage?: (cursor: string | null, pairsSoFar: CandidatePair[]) => void;
+  },
 ): Promise<CollectedPairs> {
   const { pool, projectId } = deps;
   const scanBatch = deps.scanBatch ?? SCAN_BATCH;
@@ -378,20 +388,34 @@ export async function collectPairs(
      AND COALESCE(${alias}.status,'active') = 'active'
      AND ${alias}.source_kind IS DISTINCT FROM 'decision'`;
 
+  // Guarded judged-array read: metadata is caller-suppliable, so a scalar at
+  // {consolidation,judged} must read as [] instead of crashing jsonb_array_elements_text.
+  const JUDGED = (alias: string) =>
+    `ARRAY(SELECT jsonb_array_elements_text(
+       CASE WHEN jsonb_typeof(${alias}.metadata #> '{consolidation,judged}') = 'array'
+            THEN ${alias}.metadata #> '{consolidation,judged}' ELSE '[]'::jsonb END))`;
+
   // Pass A — write-path dupCandidates flags (prioritization optimization ONLY).
+  // Robust against malformed caller metadata: a non-array dupCandidates reads as []
+  // (the CASE runs INSIDE the lateral — a WHERE-level jsonb_typeof guard does not
+  // reliably protect the lateral call), a non-numeric sim reads as NULL (dropped by
+  // addPair), and the partner join compares p.id::text so an arbitrary non-uuid id
+  // string can never hit a ::uuid cast error — it simply matches nothing.
   const flagged = await pool.query(
     `SELECT m.id AS a_id, m.title AS a_title, m.content AS a_content,
             m.created_at AS a_created_at, m.pinned AS a_pinned,
-            ARRAY(SELECT jsonb_array_elements_text(COALESCE(m.metadata #> '{consolidation,judged}', '[]'::jsonb))) AS a_judged,
+            ${JUDGED("m")} AS a_judged,
             p.id AS b_id, p.title AS b_title, p.content AS b_content,
             p.created_at AS b_created_at, p.pinned AS b_pinned,
-            ARRAY(SELECT jsonb_array_elements_text(COALESCE(p.metadata #> '{consolidation,judged}', '[]'::jsonb))) AS b_judged,
-            (c ->> 'sim')::float8 AS sim
+            ${JUDGED("p")} AS b_judged,
+            CASE WHEN (c ->> 'sim') ~ '^-?[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?$'
+                 THEN (c ->> 'sim')::float8 ELSE NULL END AS sim
      FROM memory.memories m
-     CROSS JOIN LATERAL jsonb_array_elements(m.metadata -> 'dupCandidates') c
-     JOIN memory.memories p ON p.id = (c ->> 'id')::uuid
+     CROSS JOIN LATERAL jsonb_array_elements(
+       CASE WHEN jsonb_typeof(m.metadata -> 'dupCandidates') = 'array'
+            THEN m.metadata -> 'dupCandidates' ELSE '[]'::jsonb END) c
+     JOIN memory.memories p ON p.id::text = (c ->> 'id')
      WHERE m.project_id = $1 AND ${LIVE("m")}
-       AND jsonb_typeof(m.metadata -> 'dupCandidates') = 'array'
        AND p.project_id = $1 AND ${LIVE("p")}`,
     [projectId],
   );
@@ -413,7 +437,8 @@ export async function collectPairs(
               n.sim::float8 AS sim
        FROM (
          SELECT id, title, content, created_at, pinned, embedding_v2,
-                COALESCE(metadata #> '{consolidation,judged}', '[]'::jsonb) AS judged
+                CASE WHEN jsonb_typeof(metadata #> '{consolidation,judged}') = 'array'
+                     THEN metadata #> '{consolidation,judged}' ELSE '[]'::jsonb END AS judged
          FROM memory.memories a0
          WHERE a0.project_id = $1 AND ${LIVE("a0")}
            AND a0.embedding_v2 IS NOT NULL
@@ -423,7 +448,8 @@ export async function collectPairs(
        ) a
        LEFT JOIN LATERAL (
          SELECT b.id, b.title, b.content, b.created_at, b.pinned,
-                COALESCE(b.metadata #> '{consolidation,judged}', '[]'::jsonb) AS judged,
+                CASE WHEN jsonb_typeof(b.metadata #> '{consolidation,judged}') = 'array'
+                     THEN b.metadata #> '{consolidation,judged}' ELSE '[]'::jsonb END AS judged,
                 1 - (b.embedding_v2 <=> a.embedding_v2) AS sim
          FROM memory.memories b
          WHERE b.project_id = $1 AND b.id <> a.id AND ${LIVE("b")}
@@ -442,6 +468,7 @@ export async function collectPairs(
       complete = true;
       break;
     }
+    deps.onPage?.(cursor, [...byKey.values()]);
   }
 
   // dupCandidates-sourced pairs first — the flags are a PRIORITIZATION optimization.
@@ -470,13 +497,19 @@ function chunk<T>(arr: T[], size: number): T[][] {
 /** Judge all pairs in batches. Any transport-level failure (judge throws / wholly
  *  unparseable output) marks that WHOLE batch UNJUDGED and the run CONTINUES. */
 export async function judgePairs(
-  deps: Pick<ConsolidateDeps, "judge" | "judgeBatch" | "log">,
+  deps: Pick<ConsolidateDeps, "judge" | "judgeBatch" | "log"> & {
+    /** Checkpoint hook: called after every non-final judge batch with verdicts so far
+     *  and the pairs still queued — the caller persists a resumable report so a crash
+     *  never re-buys already-judged pairs. */
+    onBatch?: (judgedSoFar: JudgedPair[], remaining: CandidatePair[]) => void;
+  },
   pairs: CandidatePair[],
   rowsById: Map<string, PairRowMeta>,
 ): Promise<JudgedPair[]> {
   const log = deps.log ?? ((m: string) => console.error(m));
   const judgeBatch = deps.judgeBatch ?? JUDGE_BATCH;
   const out: JudgedPair[] = [];
+  let processed = 0;
   for (const batch of chunk(pairs, judgeBatch)) {
     try {
       const raw = await deps.judge(
@@ -493,6 +526,10 @@ export async function judgePairs(
       );
       out.push(...batch.map((p) => ({ ...p, verdict: -1 as const })));
     }
+    processed += batch.length;
+    if (processed < pairs.length) {
+      deps.onBatch?.([...out], pairs.slice(processed));
+    }
   }
   return out;
 }
@@ -500,26 +537,43 @@ export async function judgePairs(
 // ── Apply phase (ONLY with --apply) ───────────────────────────────────────────────────
 
 /** Supersede one loser: status flip + forward pointer, guarded so a pinned, already-
- *  superseded, or decision row can never be flipped — content is NEVER touched. */
+ *  superseded, or decision row can never be flipped — content is NEVER touched. The
+ *  winner must itself still be active: two overlapping stale reports with opposite
+ *  verdicts could otherwise create an A↔B supersession cycle. */
 const SUPERSEDE_SQL = `
   UPDATE memory.memories
   SET status = 'superseded', superseded_by = $1
   WHERE id = $2 AND pinned = false
     AND COALESCE(status,'active') = 'active'
-    AND source_kind IS DISTINCT FROM 'decision'`;
+    AND source_kind IS DISTINCT FROM 'decision'
+    AND EXISTS (
+      SELECT 1 FROM memory.memories w
+      WHERE w.id = $1 AND w.archived_at IS NULL
+        AND COALESCE(w.status,'active') = 'active'
+    )`;
 
 /** Append the partner id to the OLDER row's metadata.consolidation.judged array
- *  (idempotent). UNJUDGED pairs never reach this. */
+ *  (idempotent). UNJUDGED pairs never reach this. metadata is caller-suppliable via
+ *  memory_store, so a non-object `consolidation` or non-array `judged` is overwritten
+ *  with a clean shape rather than turning the marker write into a silent no-op (which
+ *  would re-judge — re-spend — the pair on every future run). */
 const MARKER_SQL = `
   UPDATE memory.memories
   SET metadata = jsonb_set(
     jsonb_set(metadata, '{consolidation}',
-              COALESCE(metadata -> 'consolidation', '{}'::jsonb), true),
+              CASE WHEN jsonb_typeof(metadata -> 'consolidation') = 'object'
+                   THEN metadata -> 'consolidation' ELSE '{}'::jsonb END, true),
     '{consolidation,judged}',
-    COALESCE(metadata #> '{consolidation,judged}', '[]'::jsonb) || to_jsonb($2::text),
+    CASE WHEN jsonb_typeof(metadata #> '{consolidation,judged}') = 'array'
+         THEN metadata #> '{consolidation,judged}' ELSE '[]'::jsonb END
+      || to_jsonb($2::text),
     true)
   WHERE id = $1
-    AND NOT (COALESCE(metadata #> '{consolidation,judged}', '[]'::jsonb) ? $2)`;
+    AND NOT COALESCE(
+      jsonb_typeof(metadata #> '{consolidation,judged}') = 'array'
+      AND (metadata #> '{consolidation,judged}') ? $2,
+      false
+    )`;
 
 /** Apply judged verdicts: verdict-1 losers flip to superseded; every JUDGED pair
  *  (verdict 0 or 1) gets its marker; UNJUDGED (-1) pairs modify nothing. */
@@ -555,7 +609,16 @@ export async function applyFromReport(
   pool: ConsolidateDeps["pool"],
   report: ConsolidateReport,
   log: (msg: string) => void = (m) => console.error(m),
+  expectedProjectId?: string,
 ): Promise<{ superseded: number; markers: number }> {
+  if (expectedProjectId && report.config.projectId !== expectedProjectId) {
+    // UUID-targeted, so still safe — but a cross-project report is almost certainly
+    // an operator env mix-up worth flagging before the flips land.
+    log(
+      `consolidate: WARNING — report was generated for project "${report.config.projectId}" ` +
+        `but the current project is "${expectedProjectId}"; applying to the report's rows anyway`,
+    );
+  }
   return applyJudged(pool, report.pairs, log);
 }
 
@@ -568,16 +631,84 @@ export function defaultReportPath(date = new Date()): string {
   return join(RUNS_DIR, `consolidate-${date.toISOString().slice(0, 10)}.json`);
 }
 
+/** Merge freshly-collected pairs with a prior report's re-entered UNJUDGED pairs:
+ *  carried (already-judged) pairs are dropped, duplicates dedupe by pair key. */
+function mergePending(
+  fresh: CandidatePair[],
+  reentered: CandidatePair[],
+  carriedKeys: Set<string>,
+): CandidatePair[] {
+  const out: CandidatePair[] = [];
+  const seen = new Set<string>();
+  for (const p of [...fresh, ...reentered]) {
+    const key = pairKey(p.a, p.b);
+    if (carriedKeys.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    out.push(p);
+  }
+  return out;
+}
+
 export async function consolidate(
   deps: ConsolidateDeps,
 ): Promise<{ report: ConsolidateReport; reportPath: string }> {
   const log = deps.log ?? ((m: string) => console.error(m));
   const apply = deps.apply ?? false;
   const prior = deps.priorReport;
+  const reportPath = deps.reportPath ?? defaultReportPath();
 
-  // 1. Candidate collection (free). A prior interrupted run's judged pairs stand
-  //    (never re-judged); its UNJUDGED pairs re-enter the queue; the sweep resumes
-  //    after its cursor.
+  // The report file is the resumability checkpoint: it is (re)written after every
+  // sweep page and every judge batch with complete:false, so a crash at ANY point
+  // leaves a resumable report — already-bought verdicts are never re-bought.
+  // config.complete=true means the whole RUN (collection + judging) finished.
+  const writeReport = (
+    pairs: JudgedPair[],
+    cursor: string | null,
+    complete: boolean,
+    applied: number,
+  ): ConsolidateReport => {
+    const judged = pairs.filter((p) => p.verdict !== -1).length;
+    const report: ConsolidateReport = {
+      config: {
+        threshold: deps.threshold ?? DUP_COSINE_THRESHOLD,
+        model: deps.model ?? config.consolidateModel,
+        batch: deps.scanBatch ?? SCAN_BATCH,
+        judgeBatch: deps.judgeBatch ?? JUDGE_BATCH,
+        topS: deps.topS ?? SWEEP_TOP_S,
+        cursor,
+        complete,
+        apply,
+        projectId: deps.projectId,
+        generatedAt: new Date().toISOString(),
+      },
+      pairs,
+      judged,
+      unjudged: pairs.length - judged,
+      wouldSupersede: pairs.filter((p) => p.verdict === 1).length,
+      applied,
+    };
+    mkdirSync(dirname(reportPath), { recursive: true });
+    writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\n");
+    return report;
+  };
+
+  // Prior interrupted/completed run: judged pairs stand (never re-judged, never
+  // re-bought); UNJUDGED pairs re-enter the queue; an incomplete sweep resumes
+  // after its cursor.
+  const carried: JudgedPair[] = [];
+  const reentered: CandidatePair[] = [];
+  for (const p of prior?.pairs ?? []) {
+    if (p.verdict === -1) {
+      reentered.push({ a: p.a, b: p.b, sim: p.sim, source: p.source });
+    } else {
+      carried.push(p);
+    }
+  }
+  const carriedKeys = new Set(carried.map((c) => pairKey(c.a, c.b)));
+  const asUnjudged = (ps: CandidatePair[]): JudgedPair[] =>
+    ps.map((p) => ({ ...p, verdict: -1 as const }));
+
+  // 1. Candidate collection (free), checkpointing after every page.
   const collected = await collectPairs({
     pool: deps.pool,
     projectId: deps.projectId,
@@ -585,25 +716,19 @@ export async function consolidate(
     topS: deps.topS,
     threshold: deps.threshold,
     resumeCursor: prior && !prior.config.complete ? prior.config.cursor : null,
+    onPage: (cursor, pairsSoFar) =>
+      writeReport(
+        [
+          ...carried,
+          ...asUnjudged(mergePending(pairsSoFar, reentered, carriedKeys)),
+        ],
+        cursor,
+        false,
+        0,
+      ),
   });
-  const carried: JudgedPair[] = [];
-  let pending = collected.pairs;
+  const pending = mergePending(collected.pairs, reentered, carriedKeys);
   if (prior) {
-    const seen = new Set<string>();
-    for (const p of prior.pairs) {
-      seen.add(pairKey(p.a, p.b));
-      if (p.verdict === -1) {
-        pending.push({ a: p.a, b: p.b, sim: p.sim, source: p.source });
-      } else {
-        carried.push(p);
-      }
-    }
-    pending = pending.filter((p, i) => {
-      const key = pairKey(p.a, p.b);
-      if (carried.some((c) => pairKey(c.a, c.b) === key)) return false;
-      // dedupe re-entered UNJUDGED pairs against freshly-collected duplicates
-      return pending.findIndex((q) => pairKey(q.a, q.b) === key) === i;
-    });
     // Re-entered pairs may reference rows the fresh collection did not touch.
     await hydrateRowMeta(deps.pool, pending, collected.rowsById);
   }
@@ -615,45 +740,46 @@ export async function consolidate(
       (apply ? " [APPLY]" : " [dry-run]"),
   );
 
-  // 2. Judge (PAID — the injected judge; fail-open per batch).
-  const freshJudged = await judgePairs(deps, pending, collected.rowsById);
+  // 2. Judge (PAID — the injected judge; fail-open per batch), checkpointing after
+  //    every batch so a crash mid-judging keeps every verdict bought so far.
+  const freshJudged = await judgePairs(
+    {
+      judge: deps.judge,
+      judgeBatch: deps.judgeBatch,
+      log,
+      onBatch: (judgedSoFar, remaining) =>
+        writeReport(
+          [...carried, ...judgedSoFar, ...asUnjudged(remaining)],
+          collected.cursor,
+          false,
+          0,
+        ),
+    },
+    pending,
+    collected.rowsById,
+  );
   const allPairs = [...carried, ...freshJudged];
 
   // 3. Apply (ONLY with --apply): dry-run performs ZERO row changes (AC-303).
+  //    The fully-judged report lands on disk BEFORE the first row flips, so a crash
+  //    mid-apply always leaves the undo log (pair list = exact flip-back targets).
   //    Carried pairs from a resumed run are included — re-applying is idempotent
   //    (the UPDATE's status/pinned/kind guards make a stale pair a no-op).
   let appliedCounts = { superseded: 0, markers: 0 };
   if (apply) {
+    writeReport(allPairs, collected.cursor, true, 0);
     appliedCounts = await applyJudged(deps.pool, allPairs, log);
   }
 
-  // 4. Report artifact — review surface, undo log, resumability cursor store.
-  const judged = allPairs.filter((p) => p.verdict !== -1).length;
-  const unjudged = allPairs.length - judged;
-  const report: ConsolidateReport = {
-    config: {
-      threshold: deps.threshold ?? DUP_COSINE_THRESHOLD,
-      model: deps.model ?? config.consolidateModel,
-      batch: deps.scanBatch ?? SCAN_BATCH,
-      judgeBatch: deps.judgeBatch ?? JUDGE_BATCH,
-      topS: deps.topS ?? SWEEP_TOP_S,
-      cursor: collected.cursor,
-      complete: collected.complete,
-      apply,
-      projectId: deps.projectId,
-      generatedAt: new Date().toISOString(),
-    },
-    pairs: allPairs,
-    judged,
-    unjudged,
-    wouldSupersede: allPairs.filter((p) => p.verdict === 1).length,
-    applied: appliedCounts.superseded,
-  };
-  const reportPath = deps.reportPath ?? defaultReportPath();
-  mkdirSync(dirname(reportPath), { recursive: true });
-  writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\n");
+  // 4. Final report artifact — review surface, undo log, resumability checkpoint.
+  const report = writeReport(
+    allPairs,
+    collected.cursor,
+    true,
+    appliedCounts.superseded,
+  );
   log(
-    `consolidate: ${judged} judged, ${unjudged} UNJUDGED, ` +
+    `consolidate: ${report.judged} judged, ${report.unjudged} UNJUDGED, ` +
       `${report.wouldSupersede} equivalent pair(s)` +
       (apply
         ? `, ${report.applied} row(s) superseded`
@@ -690,7 +816,92 @@ async function hydrateRowMeta(
   }
 }
 
-// ── CLI entrypoint (npm run consolidate -- --yes [--apply]) ──────────────────────────
+// ── CLI decision table (exported pure — unit-tested offline) ─────────────────────────
+
+export type CliAction =
+  | { kind: "refuse"; message: string }
+  | { kind: "applyReport"; report: ConsolidateReport; note: string }
+  | { kind: "run"; apply: boolean; priorReport?: ConsolidateReport };
+
+/**
+ * Resolve what `npm run consolidate -- --yes [...]` should do, given today's report
+ * state. The invariant behind every branch: `--apply` NEVER judge-and-applies fresh —
+ * a human-reviewed dry-run report (same UTC day, or an explicit --report path) is
+ * required, so no un-reviewed verdict can ever flip a row via the CLI.
+ */
+export function resolveCliAction(opts: {
+  apply: boolean;
+  existing: ConsolidateReport | null;
+  explicitReport?: ConsolidateReport | null;
+}): CliAction {
+  const { apply, existing, explicitReport } = opts;
+
+  if (explicitReport) {
+    if (!apply) {
+      return {
+        kind: "refuse",
+        message: "consolidate: --report is only valid together with --apply",
+      };
+    }
+    return {
+      kind: "applyReport",
+      report: explicitReport,
+      note: "applying explicitly-passed report",
+    };
+  }
+
+  if (apply) {
+    if (!existing) {
+      return {
+        kind: "refuse",
+        message:
+          "consolidate --apply: no same-day dry-run report found — run the dry-run first " +
+          "(npm run consolidate -- --yes), review the report, then --apply. " +
+          "Reports are keyed by UTC date; to apply a report from another day, pass " +
+          "--report <path> explicitly.",
+      };
+    }
+    if (existing.config.apply) {
+      // A crashed (or finished) apply run: re-applying the same report is idempotent
+      // (the DB guards no-op already-flipped pairs), so this is the crash-recovery path.
+      return {
+        kind: "applyReport",
+        report: existing,
+        note: "re-applying today's apply report (idempotent — crash recovery)",
+      };
+    }
+    if (!existing.config.complete) {
+      return {
+        kind: "refuse",
+        message:
+          "consolidate --apply: today's report is an INCOMPLETE dry-run checkpoint — " +
+          "finish the dry-run first (npm run consolidate -- --yes resumes it), review, " +
+          "then --apply.",
+      };
+    }
+    return {
+      kind: "applyReport",
+      report: existing,
+      note: "applying reviewed dry-run report",
+    };
+  }
+
+  // Dry-run.
+  if (existing?.config.apply) {
+    return {
+      kind: "refuse",
+      message:
+        "consolidate: today's report is an APPLY record (the undo log for applied " +
+        "supersessions) — a fresh dry-run would overwrite it. It is preserved as-is; " +
+        "re-run tomorrow, or move the report aside deliberately first.",
+    };
+  }
+  // Resume an interrupted run, or reuse a completed dry-run's bought verdicts
+  // (carried pairs are never re-judged; only new/UNJUDGED pairs hit the judge).
+  return { kind: "run", apply: false, priorReport: existing ?? undefined };
+}
+
+// ── CLI entrypoint (npm run consolidate -- --yes [--apply] [--report <path>]) ────────
 // Skipped when imported (tests import the exported functions directly).
 const isMain = process.argv[1]
   ? import.meta.url === new URL(`file://${process.argv[1]}`).href
@@ -704,28 +915,53 @@ if (isMain) {
     process.exit(1);
   }
   const apply = argv.includes("--apply");
+  const reportFlagIdx = argv.indexOf("--report");
+  const reportFlagPath =
+    reportFlagIdx >= 0 ? (argv[reportFlagIdx + 1] ?? null) : null;
+  if (
+    reportFlagIdx >= 0 &&
+    (!reportFlagPath || reportFlagPath.startsWith("--"))
+  ) {
+    console.error("consolidate: --report requires a path argument");
+    process.exit(1);
+  }
   (async () => {
     const reportPath = defaultReportPath();
-    const existing = existsSync(reportPath)
-      ? (JSON.parse(readFileSync(reportPath, "utf8")) as ConsolidateReport)
-      : null;
+    const readReport = (p: string): ConsolidateReport =>
+      JSON.parse(readFileSync(p, "utf8")) as ConsolidateReport;
+    const existing = existsSync(reportPath) ? readReport(reportPath) : null;
+    const explicitReport = reportFlagPath ? readReport(reportFlagPath) : null;
 
-    if (apply && existing && !existing.config.apply) {
-      // Operator reviewed today's dry-run report → apply it WITHOUT re-judging.
+    const action = resolveCliAction({ apply, existing, explicitReport });
+    if (action.kind === "refuse") {
+      console.error(action.message);
+      process.exitCode = 1;
+      return;
+    }
+
+    if (action.kind === "applyReport") {
       console.error(
-        `consolidate --apply: applying reviewed dry-run report ${reportPath}`,
+        `consolidate --apply: ${action.note} (${reportFlagPath ?? reportPath})`,
       );
-      const res = await applyFromReport(defaultPool, existing);
+      const res = await applyFromReport(
+        defaultPool,
+        action.report,
+        undefined,
+        config.defaultProjectId,
+      );
       const applied: ConsolidateReport = {
-        ...existing,
+        ...action.report,
         config: {
-          ...existing.config,
+          ...action.report.config,
           apply: true,
           generatedAt: new Date().toISOString(),
         },
         applied: res.superseded,
       };
-      const appliedPath = reportPath.replace(/\.json$/, "-applied.json");
+      const appliedPath = (reportFlagPath ?? reportPath).replace(
+        /\.json$/,
+        "-applied.json",
+      );
       writeFileSync(appliedPath, JSON.stringify(applied, null, 2) + "\n");
       console.error(
         `consolidate --apply: ${res.superseded} row(s) superseded, ` +
@@ -739,9 +975,8 @@ if (isMain) {
       pool: defaultPool,
       judge: (system, user) => judgeComplete(system, user),
       projectId: config.defaultProjectId,
-      apply,
-      // Resume an interrupted same-day run (judged pairs stand; UNJUDGED re-enter).
-      priorReport: existing && !existing.config.complete ? existing : undefined,
+      apply: action.apply,
+      priorReport: action.priorReport,
     });
     await defaultPool.end();
   })().catch((e) => {

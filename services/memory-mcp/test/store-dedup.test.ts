@@ -288,6 +288,85 @@ describe.skipIf(skip)("storeMemory write-path dedup (AC-301/AC-302)", () => {
     );
     expect(row.rows[0].content_sha256).toBe(contentSha256(edited));
   });
+
+  it("a decision store NEVER short-circuits — duplicate content still inserts and flips its supersedesId target", async () => {
+    const content = "Decision: rerank-2.5 is the pinned reranker.";
+    // An active NON-decision row already carries the exact hash.
+    const plain = await storeMemory({
+      projectId: PROJ,
+      type: "semantic",
+      title: "plain twin",
+      content,
+    });
+    expect(plain.duplicate).toBeUndefined();
+
+    const prior = await storeMemory({
+      projectId: PROJ,
+      type: "semantic",
+      title: "old decision",
+      content: "Decision: rerank-2.5-lite is the pinned reranker.",
+      sourceKind: "decision",
+    });
+
+    // The decision re-assertion byte-matches the plain row — it must STILL insert
+    // and still run its user-authored supersession bookkeeping (AC-041), never
+    // silently return duplicate:true.
+    const d = await storeMemory({
+      projectId: PROJ,
+      type: "semantic",
+      title: "new decision",
+      content,
+      sourceKind: "decision",
+      supersedesId: prior.id,
+    });
+    expect(d.duplicate).toBeUndefined();
+    expect(d.id).not.toBe(plain.id);
+
+    const flipped = await pool.query<{
+      decision_status: string;
+      superseded_by: string;
+    }>(
+      `SELECT decision_status, superseded_by FROM memory.memories WHERE id = $1`,
+      [prior.id],
+    );
+    expect(flipped.rows[0].decision_status).toBe("superseded");
+    expect(flipped.rows[0].superseded_by).toBe(d.id);
+  });
+
+  it("updateMemory clears stale dupCandidates flags on content edits (title edits keep them)", async () => {
+    // Anchor at unit0, then a NEARDUP store that flags it (same geometry as the
+    // AC-302 test above).
+    await pool.query(
+      `INSERT INTO memory.memories (project_id, type, title, content, embedding_v2)
+       VALUES ($1, 'semantic', 'flag anchor', 'flag anchor content', $2::halfvec)`,
+      [PROJ, `[${H.unit0.join(",")}]`],
+    );
+    const r = await storeMemory({
+      projectId: PROJ,
+      type: "semantic",
+      title: "flagged row",
+      content: "NEARDUP of the flag anchor.",
+    });
+    const meta = async () =>
+      (
+        await pool.query<{ metadata: Record<string, unknown> }>(
+          `SELECT metadata FROM memory.memories WHERE id = $1`,
+          [r.id],
+        )
+      ).rows[0].metadata;
+    expect((await meta()).dupCandidates).toBeDefined();
+
+    // Title-only edit: the write-time flags still describe the content — kept.
+    await updateMemory(r.id, { title: "flagged row, renamed" });
+    expect((await meta()).dupCandidates).toBeDefined();
+
+    // Content edit: the recorded sims describe the OLD content — cleared, so the
+    // consolidation judge is never fed stale write-time similarity.
+    await updateMemory(r.id, { content: "Entirely different content now." });
+    const after = await meta();
+    expect(after.dupCandidates).toBeUndefined();
+    expect(after.dupFlaggedAt).toBeUndefined();
+  });
 });
 
 // Pure guards — always run, no DB.

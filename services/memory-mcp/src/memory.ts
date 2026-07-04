@@ -162,16 +162,28 @@ export async function storeMemory(
   // AC-301: exact-dup short-circuit BEFORE any embed spend. Scoped to the project's
   // ACTIVE, non-archived rows only — a superseded/archived row with the same hash must
   // not block a re-store (the re-store is how a retired fact comes back).
+  //
+  // Decision stores NEVER short-circuit: their supersession axis is user-authored
+  // (supersedesId flips the prior decision below), and a content match against an
+  // arbitrary active row must not silently swallow that bookkeeping. Duplicate decision
+  // content is legal — the decision LOG is the point.
+  //
+  // Known TOCTOU: the SELECT runs outside the insert transaction and mem_sha carries no
+  // unique constraint (deliberate — status is mutable, so the partial-index semantics
+  // can't be expressed). Two concurrent identical stores can both insert; the batch
+  // sweep (AC-306) is the backstop.
   const sha = contentSha256(input.content);
-  const dup = await pool.query<{ id: string; title: string }>(
-    `SELECT id, title FROM memory.memories
-     WHERE project_id = $1 AND content_sha256 = $2
-       AND archived_at IS NULL AND COALESCE(status,'active') = 'active'
-     LIMIT 1`,
-    [input.projectId, sha],
-  );
-  if (dup.rows.length > 0) {
-    return { ...dup.rows[0], duplicate: true };
+  if (!isDecision) {
+    const dup = await pool.query<{ id: string; title: string }>(
+      `SELECT id, title FROM memory.memories
+       WHERE project_id = $1 AND content_sha256 = $2
+         AND archived_at IS NULL AND COALESCE(status,'active') = 'active'
+       LIMIT 1`,
+      [input.projectId, sha],
+    );
+    if (dup.rows.length > 0) {
+      return { ...dup.rows[0], duplicate: true };
+    }
   }
 
   // Burn-in: write BOTH the legacy `embedding` (voyage-4-large) and the contextual
@@ -777,6 +789,11 @@ export async function updateMemory(
       // that no longer says it.
       sets.push(`content_sha256 = $${i++}`);
       params.push(contentSha256(content));
+      // The write-time dupCandidates flags recorded the OLD content's neighbors — a
+      // content edit invalidates them (stale sims would feed the consolidation judge).
+      // The batch self-join sweep (AC-306) rediscovers real pairs from the fresh
+      // embedding, so dropping the hint costs nothing but stale-judge spend.
+      sets.push(`metadata = metadata - 'dupCandidates' - 'dupFlaggedAt'`);
     }
   }
   if (sets.length === 0) return { id };

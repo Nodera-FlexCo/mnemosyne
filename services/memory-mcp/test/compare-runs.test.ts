@@ -163,6 +163,18 @@ describe("eval:record recorder (pure guards, AC-108/AC-109)", () => {
     expect(parseRunEvalArgs(["--yes", "--split", "prod"])).toMatch(
       /invalid --split/,
     );
+    // A flag-shaped "value" is an omitted value, never swallowed as the value
+    // (the label flows into the artifact filename).
+    expect(parseRunEvalArgs(["--yes", "--label", "--split", "test"])).toEqual({
+      yes: true,
+      split: "test",
+      label: "test",
+    });
+    expect(parseRunEvalArgs(["--yes", "--split"])).toEqual({
+      yes: true,
+      split: "test",
+      label: "test",
+    });
   });
 
   it("both new operator scripts are npm-run gated with import.meta.url main-guards (AC-108)", () => {

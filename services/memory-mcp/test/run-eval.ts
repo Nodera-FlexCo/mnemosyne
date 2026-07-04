@@ -41,7 +41,10 @@ export function parseRunEvalArgs(argv: string[]): RunEvalArgs | string {
   if (!argv.includes("--yes")) return EVAL_RECORD_COST_NOTE;
   const opt = (name: string): string | undefined => {
     const i = argv.indexOf(`--${name}`);
-    return i !== -1 ? argv[i + 1] : undefined;
+    const v = i !== -1 ? argv[i + 1] : undefined;
+    // A flag-shaped "value" means the real value was omitted (`--label --split test`);
+    // the label also becomes part of the artifact filename, so never swallow a flag.
+    return v !== undefined && v.startsWith("--") ? undefined : v;
   };
   const split = opt("split") ?? "test";
   if (split !== "dev" && split !== "test") {
