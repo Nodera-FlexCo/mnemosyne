@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { pool } from "./db/pool.js";
 import {
   embed,
@@ -99,6 +100,29 @@ export interface DecisionFields {
   relatedIds?: string[];
 }
 
+// ── Write-path dedup (Wave 5, AC-301/AC-302) ─────────────────────────────────────────
+
+/**
+ * Exact-dup key: sha256 hex over CONTENT ONLY — deliberately the importers' recipe
+ * (`services/importer/distill-transcripts.mjs` `sha256(content)`), so write-path and
+ * importer dedup keys never diverge. Title is NOT hashed: a retitled restatement of the
+ * same content is still the same content.
+ */
+export function contentSha256(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+/** Cosine-similarity floor above which a neighbor is flagged as a dup CANDIDATE
+ *  (AC-302 write-path flag; also the wave-5 consolidation pair threshold). */
+export const DUP_COSINE_THRESHOLD = 0.9;
+/** Top-s neighbors inspected per new memory on the write path. */
+export const DUP_CANDIDATE_TOP_S = 3;
+
+export interface DupCandidate {
+  id: string;
+  sim: number;
+}
+
 export async function storeMemory(
   input: {
     projectId: string;
@@ -110,7 +134,7 @@ export async function storeMemory(
     sourceSessionId?: string;
     sourceKind?: string;
   } & DecisionFields,
-): Promise<{ id: string; title: string }> {
+): Promise<{ id: string; title: string; duplicate?: boolean }> {
   const isDecision = input.sourceKind === "decision";
   // AC-040: validate the typed shape in code (the DB CHECK is the backstop) so the
   // connector gets a clean error instead of a raw constraint violation.
@@ -135,6 +159,21 @@ export async function storeMemory(
   const decidedIn = isDecision ? (input.decidedIn ?? null) : null;
   const relatedIds = isDecision ? (input.relatedIds ?? null) : null;
 
+  // AC-301: exact-dup short-circuit BEFORE any embed spend. Scoped to the project's
+  // ACTIVE, non-archived rows only — a superseded/archived row with the same hash must
+  // not block a re-store (the re-store is how a retired fact comes back).
+  const sha = contentSha256(input.content);
+  const dup = await pool.query<{ id: string; title: string }>(
+    `SELECT id, title FROM memory.memories
+     WHERE project_id = $1 AND content_sha256 = $2
+       AND archived_at IS NULL AND COALESCE(status,'active') = 'active'
+     LIMIT 1`,
+    [input.projectId, sha],
+  );
+  if (dup.rows.length > 0) {
+    return { ...dup.rows[0], duplicate: true };
+  }
+
   // Burn-in: write BOTH the legacy `embedding` (voyage-4-large) and the contextual
   // `embedding_v2` (voyage-context-4) so a rollback stays possible. After the Step 8
   // burn-in window, the legacy column + its embed() call are dropped.
@@ -147,13 +186,39 @@ export async function storeMemory(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    // AC-302: cheap write-path pass 2 — top-s cosine neighbors above the dup threshold
+    // are RECORDED into metadata.dupCandidates as a flag for the batch consolidation
+    // job (a prioritization hint, never an action). One extra indexed vector query;
+    // deliberately NO LLM anywhere on this path.
+    const { rows: neighborRows } = await client.query<{
+      id: string;
+      sim: number;
+    }>(
+      `SELECT id, 1 - (embedding_v2 <=> $1::halfvec) AS sim
+       FROM memory.memories
+       WHERE project_id = $2 AND archived_at IS NULL
+         AND COALESCE(status,'active') = 'active' AND embedding_v2 IS NOT NULL
+       ORDER BY embedding_v2 <=> $1::halfvec
+       LIMIT ${DUP_CANDIDATE_TOP_S}`,
+      [toVectorLiteral(vec2), input.projectId],
+    );
+    const dupCandidates: DupCandidate[] = neighborRows
+      .filter((n) => Number(n.sim) > DUP_COSINE_THRESHOLD)
+      .map((n) => ({ id: n.id, sim: Number(Number(n.sim).toFixed(4)) }));
+    const metadata: Record<string, unknown> = { ...(input.metadata ?? {}) };
+    if (dupCandidates.length > 0) {
+      metadata.dupCandidates = dupCandidates;
+      metadata.dupFlaggedAt = new Date().toISOString();
+    }
+
     const { rows } = await client.query<{ id: string; title: string }>(
       `INSERT INTO memory.memories
          (project_id, type, title, content, importance, metadata, source_session_id, source_kind,
-          embedding, embedding_v2,
+          embedding, embedding_v2, content_sha256,
           decision_project, decision_status, decided_at, supersedes_id, decided_in, related_ids)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::halfvec,$10::halfvec,
-               $11,$12,$13,$14,$15,$16)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::halfvec,$10::halfvec,$11,
+               $12,$13,$14,$15,$16,$17)
        RETURNING id, title`,
       [
         input.projectId,
@@ -161,11 +226,12 @@ export async function storeMemory(
         input.title,
         input.content,
         input.importance ?? 0.5,
-        JSON.stringify(input.metadata ?? {}),
+        JSON.stringify(metadata),
         input.sourceSessionId ?? null,
         input.sourceKind ?? null,
         toVectorLiteral(vec),
         toVectorLiteral(vec2),
+        sha,
         decisionProject,
         decisionStatus,
         decidedAt,
@@ -705,6 +771,13 @@ export async function updateMemory(
     params.push(toVectorLiteral(vec));
     sets.push(`embedding_v2 = $${i++}::halfvec`);
     params.push(toVectorLiteral(vec2));
+    if (fields.content !== undefined) {
+      // Keep the AC-301 dedup key true to the row: a content edit that leaves the old
+      // hash behind would let a later store of the OLD content short-circuit onto a row
+      // that no longer says it.
+      sets.push(`content_sha256 = $${i++}`);
+      params.push(contentSha256(content));
+    }
   }
   if (sets.length === 0) return { id };
   params.push(id);
