@@ -33,6 +33,21 @@ describe("contextModel config default (AC-022)", () => {
     expect(config.embedModel).toBe("voyage-4-large");
   });
 
+  it("consolidateModel treats an EMPTY env string as unset (compose `${VAR:-}` materializes empty)", async () => {
+    vi.resetModules();
+    process.env.CONSOLIDATE_MODEL = "";
+    const { config } = await import("../src/config.js");
+    expect(config.consolidateModel).toBe("claude-haiku-4-5");
+  });
+
+  it("distillModel falls through empty DISTILL_MODEL and empty CONSOLIDATE_MODEL", async () => {
+    vi.resetModules();
+    process.env.DISTILL_MODEL = "";
+    process.env.CONSOLIDATE_MODEL = "";
+    const { config } = await import("../src/config.js");
+    expect(config.distillModel).toBe("claude-haiku-4-5");
+  });
+
   it("assertServerConfig does NOT require the context model (starts cleanly)", async () => {
     vi.resetModules();
     delete process.env.VOYAGE_CONTEXT_MODEL;
