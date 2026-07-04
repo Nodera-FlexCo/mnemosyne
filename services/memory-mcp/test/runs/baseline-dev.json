@@ -12,7 +12,7 @@
     "recallLimit": 50,
     "embedModel": "voyage-4-large",
     "contextModel": "voyage-context-4",
-    "rerankModel": "rerank-2.5-lite",
+    "rerankModel": "rerank-2.5",
     "rerankDocTruncation": 1200,
     "snippetChars": 180
   },
@@ -24,15 +24,15 @@
       "id": "m-001",
       "query": "what embedding model does memory-mcp use",
       "poolRecall": 1,
-      "ndcg": 0.4911492931622974,
-      "mrr": 0.3333333333333333,
-      "rank": 3
+      "ndcg": 0.5714285040141098,
+      "mrr": 0.5,
+      "rank": 2
     },
     {
       "id": "m-003",
       "query": "reranker blend weights for final scoring",
       "poolRecall": 1,
-      "ndcg": 0.35853358850813305,
+      "ndcg": 0.34337431936037655,
       "mrr": 0.25,
       "rank": 4
     },
@@ -72,15 +72,15 @@
       "id": "m-011",
       "query": "decision log typed shape and supersession",
       "poolRecall": 1,
-      "ndcg": 0.23463936301137822,
-      "mrr": 0.3333333333333333,
-      "rank": 3
+      "ndcg": 0.2960819109658652,
+      "mrr": 0.5,
+      "rank": 2
     },
     {
       "id": "m-012",
       "query": "blue green re-embed backfill strategy",
       "poolRecall": 1,
-      "ndcg": 0.3044671974905181,
+      "ndcg": 0.15642624200758548,
       "mrr": 0.14285714285714285,
       "rank": 7
     },
@@ -88,23 +88,23 @@
       "id": "m-014",
       "query": "recall gate not eyeball for embedder flip",
       "poolRecall": 1,
-      "ndcg": 0.1480409554829326,
-      "mrr": 0.125,
-      "rank": 8
+      "ndcg": 0.14126697285982898,
+      "mrr": 0.1111111111111111,
+      "rank": 9
     },
     {
       "id": "m-015",
       "query": "importer hardcodes voyage-4-large model",
       "poolRecall": 1,
-      "ndcg": 0.4415801103577823,
-      "mrr": 0.2,
-      "rank": 5
+      "ndcg": 0.36181498356361597,
+      "mrr": 0.1111111111111111,
+      "rank": 9
     },
     {
       "id": "m-017",
       "query": "migration numbering collision between waves",
       "poolRecall": 1,
-      "ndcg": 0.6114902967340503,
+      "ndcg": 0.6720873970026143,
       "mrr": 1,
       "rank": 1
     },
@@ -120,7 +120,7 @@
       "id": "m-020",
       "query": "code_graph_expand depth cap and limit defaults",
       "poolRecall": 1,
-      "ndcg": 0.6240505200038379,
+      "ndcg": 0.6052602440527057,
       "mrr": 0.5,
       "rank": 2
     },
@@ -128,7 +128,7 @@
       "id": "m-021",
       "query": "contextualized embeddings endpoint nested inputs",
       "poolRecall": 1,
-      "ndcg": 0.8529278650606567,
+      "ndcg": 0.8385465274895063,
       "mrr": 1,
       "rank": 1
     },
@@ -144,17 +144,17 @@
       "id": "m-025",
       "query": "burn-in writes both embedding columns for rollback",
       "poolRecall": 1,
-      "ndcg": 0.23719771276929622,
-      "mrr": 0.2,
-      "rank": 5
+      "ndcg": 0.21840743681816419,
+      "mrr": 0.16666666666666666,
+      "rank": 6
     },
     {
       "id": "m-027",
       "query": "did we move prod hosting off Coolify",
       "poolRecall": 1,
-      "ndcg": 0.6309297535714575,
-      "mrr": 0.5,
-      "rank": 2
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
     },
     {
       "id": "m-028",
@@ -184,15 +184,15 @@
       "id": "m-034",
       "query": "how do I apply the R2 bucket lock in production",
       "poolRecall": 1,
-      "ndcg": 1,
-      "mrr": 1,
-      "rank": 1
+      "ndcg": 0.6309297535714575,
+      "mrr": 0.5,
+      "rank": 2
     },
     {
       "id": "m-035",
       "query": "why did we reject merchant-of-record billing and pick Stripe Direct",
       "poolRecall": 1,
-      "ndcg": 0.6131471927654584,
+      "ndcg": 0.7903864795495061,
       "mrr": 1,
       "rank": 1
     },
@@ -232,9 +232,9 @@
       "id": "m-042",
       "query": "which LLM powers the accountant copilot",
       "poolRecall": 1,
-      "ndcg": 0.19342640361727081,
-      "mrr": 0.125,
-      "rank": 8
+      "ndcg": 0.20438239758848611,
+      "mrr": 0.14285714285714285,
+      "rank": 7
     },
     {
       "id": "m-043",
@@ -264,7 +264,7 @@
       "id": "m-048",
       "query": "how do database migrations run on deploy",
       "poolRecall": 1,
-      "ndcg": 0.8315546295836225,
+      "ndcg": 0.8503449055347546,
       "mrr": 1,
       "rank": 1
     },
@@ -272,7 +272,7 @@
       "id": "m-049",
       "query": "how is the public Mnemosyne remote MCP connector authenticated",
       "poolRecall": 1,
-      "ndcg": 0.9197207891481876,
+      "ndcg": 1,
       "mrr": 1,
       "rank": 1
     },
@@ -296,7 +296,7 @@
       "id": "m-052",
       "query": "current status of the mnemosyne retrieval improvement program",
       "poolRecall": 1,
-      "ndcg": 0.8503449055347546,
+      "ndcg": 0.8175295903539445,
       "mrr": 1,
       "rank": 1
     },
@@ -304,7 +304,7 @@
       "id": "m-053",
       "query": "what is the current state of the NOD-597 GL close-wide atomicity work",
       "poolRecall": 1,
-      "ndcg": 1,
+      "ndcg": 0.9197207891481876,
       "mrr": 1,
       "rank": 1
     },
@@ -327,7 +327,7 @@
   ],
   "aggregates": {
     "recallAt25": 0.9473684210526315,
-    "ndcgAt10": 0.7211470043288389,
-    "mrr10": 0.7555137844611529
+    "ndcgAt10": 0.7231151063572355,
+    "mrr10": 0.7611737677527151
   }
 }
