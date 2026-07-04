@@ -40,6 +40,39 @@ split is spent only by flip gates, and its every change is recorded in the eval 
 changelog header. Metrics, artifact format (`test/runs/`, `retrievalConfig()` snapshot),
 and gate semantics: [`../../memory-mcp/test/eval.md`](../../memory-mcp/test/eval.md).
 
+## Rerank bakeoff (wave-6, WS5)
+
+This section is filled in by the operator after running the paid, live rerank bakeoff
+against a live `DATABASE_URL` + `VOYAGE_API_KEY`, per AC-501/AC-502:
+
+```bash
+DATABASE_URL=<live> VOYAGE_API_KEY=<live> \
+  npm --prefix services/codebase-mcp run bakeoff:rerank -- --yes <projectId> [repositoryId]
+```
+
+| Field | BEFORE / incumbent | AFTER / candidate |
+| --- | --- | --- |
+| Date | 2026-07-04 | 2026-07-04 |
+| Models compared | `rerank-2.5-lite` | `rerank-2.5` |
+| Aggregate nDCG@10 (22 frozen test rows) | 0.7475 | 0.7700 |
+| Pool Recall@25 | 0.8636 | 0.8636 (identical pool — rerank only reorders) |
+| Paired-bootstrap CI (full-minus-lite, seed 42) | — | mean +0.0226, 95% CI [−0.0566, +0.1055] |
+| Script verdict | — | NO SIGNIFICANT DIFFERENCE — operator's call |
+
+**Decision (operator, 2026-07-04): SWAP to `rerank-2.5`.** The AC-502 gate passes on its
+no-regression arm (full ≥ lite directionally, +0.023 mean, CI straddles zero at N=22 —
+the harness can only detect ~±0.05 here by design); cost is immaterial at this corpus
+scale; the research report expected the full model to lead on quality. Rollback is one
+env flip (repin `rerank-2.5-lite`), no code change, no re-embed. Artifact:
+`test/runs/2026-07-04-bakeoff-rerank.json`.
+
+Consequence honored at merge: the compose pin (`VOYAGE_RERANK_MODEL: rerank-2.5`) is
+applied to BOTH service env blocks, the rerank pin is then FROZEN for the wave-7 blend
+bakeoff (changing it mid-bakeoff makes captured arm relevances incomparable), and the
+committed `baseline-dev.json` files are re-recorded post-redeploy (a rerank swap changes
+final-layer ordering, so pre-swap baselines no longer describe the live pipeline —
+see eval.md's baseline-lifetime doctrine).
+
 ## Operator runbook (the paid measurement)
 
 Prerequisites: Waves 1–4 merged, the codebase corpus indexed (`embedding` populated),

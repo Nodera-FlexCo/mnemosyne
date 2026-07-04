@@ -30,8 +30,8 @@ interface Row {
   rrf: number;
 }
 
-const RECALL_LIMIT = 50;
-const RRF_K = 60;
+export const RECALL_LIMIT = 50;
+export const RRF_K = 60;
 
 // Named (and exported) so retrievalConfig() serializes the SAME values the code runs
 // with — the snapshot can never drift from the pipeline (AC-104 groundwork).

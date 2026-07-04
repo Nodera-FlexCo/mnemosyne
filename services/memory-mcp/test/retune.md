@@ -123,7 +123,7 @@ any future retune lands there and re-records here.
 | `BLEND_RECENCY`          | 0.2                | 0.2 (kept)       |
 | `BLEND_IMPORTANCE`       | 0.1                | 0.1 (kept)       |
 | `RECENCY_HALFLIFE_DAYS`  | 30                 | 30 (kept)        |
-| reranker                 | rerank-2.5-lite    | rerank-2.5-lite (wave-6 bakeoff decides the 2.5 swap) |
+| reranker                 | rerank-2.5-lite    | rerank-2.5-lite (wave-6 bakeoff decides the 2.5 swap; decision record: [`../../codebase-mcp/test/bakeoff.md`](../../codebase-mcp/test/bakeoff.md#rerank-bakeoff-wave-6-ws5)) |
 
 ## Why a recall gate, not eyeball
 

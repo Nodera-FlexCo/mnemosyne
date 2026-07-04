@@ -1,0 +1,830 @@
+{
+  "retrievalConfig": {
+    "service": "codebase-mcp",
+    "rrfK": 60,
+    "candidatePool": 25,
+    "recallLimit": 50,
+    "codeEmbedModel": "voyage-code-3",
+    "codeContextModel": "voyage-context-3",
+    "rerankModel": "rerank-2.5-lite",
+    "rerankDocTruncation": 1500,
+    "snippetLines": 4,
+    "snippetChars": 240
+  },
+  "evalVersion": 2,
+  "split": "test",
+  "rows": 22,
+  "models": {
+    "lite": "rerank-2.5-lite",
+    "full": "rerank-2.5"
+  },
+  "aggregates": {
+    "lite": {
+      "recallAt25": 0.8636363636363636,
+      "ndcgAt10": 0.7474609724822865
+    },
+    "full": {
+      "recallAt25": 0.8636363636363636,
+      "ndcgAt10": 0.770041631510567
+    }
+  },
+  "pairedBootstrap": {
+    "mean": 0.02258065902828071,
+    "ciLow": -0.05662814130048434,
+    "ciHigh": 0.10551735138698982
+  },
+  "verdict": "NO SIGNIFICANT DIFFERENCE — operator's call, cost immaterial",
+  "perQuery": [
+    {
+      "id": "c-003",
+      "query": "DNS rebinding origin allowlist guard",
+      "relevantPaths": [
+        "services/codebase-mcp/src/origin.ts",
+        "services/memory-mcp/src/origin.ts",
+        "services/secrets-mcp/src/origin.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/origin.ts",
+          "services/memory-mcp/src/origin.ts",
+          "services/secrets-mcp/src/origin.ts",
+          "apps/api/src/fiscal/law-fetch.guard.ts",
+          "apps/api/src/fiscal/__tests__/law-fetch-guard.spec.ts",
+          "apps/api/src/firm/white-label/white-label.service.ts",
+          ".claude/worktrees/caen-first-class/apps/web/lib/csp.ts",
+          "apps/web/lib/csp.ts",
+          ".claude/plans/2026-06-18-mnemosyne-remote-connectors-cf-access/wave-2-cf-tunnel-oauth.md"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/origin.ts",
+          "services/memory-mcp/src/origin.ts",
+          "services/secrets-mcp/src/origin.ts",
+          "apps/api/src/fiscal/law-fetch.guard.ts",
+          "apps/api/src/fiscal/__tests__/law-fetch-guard.spec.ts",
+          "apps/api/src/firm/white-label/white-label.service.ts",
+          ".claude/plans/2026-06-18-mnemosyne-remote-connectors-cf-access/wave-2-cf-tunnel-oauth.md",
+          "apps/web/lib/csp.ts",
+          ".claude/worktrees/caen-first-class/apps/web/lib/csp.ts"
+        ]
+      },
+      "fullMinusLite": 0
+    },
+    {
+      "id": "c-006",
+      "query": "voyage embeddings client with retry on 429",
+      "relevantPaths": [
+        "services/codebase-mcp/src/voyage.ts",
+        "services/memory-mcp/src/voyage.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/memory-mcp/src/voyage.ts",
+          "services/codebase-mcp/src/voyage.ts",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/memory-mcp/src/db/backfill-context.ts",
+          "apps/api/src/llm/providers/__tests__/cohere-embed.provider.spec.ts",
+          "apps/api/src/queues/embedding/embedding.types.ts",
+          "apps/api/src/queues/embedding/embedding-backfill.processor.ts",
+          "services/importer/importer.mjs",
+          "services/importer/distill-transcripts.mjs"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/memory-mcp/src/voyage.ts",
+          "services/codebase-mcp/src/voyage.ts",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/memory-mcp/src/db/backfill-context.ts",
+          "apps/api/src/llm/providers/__tests__/cohere-embed.provider.spec.ts",
+          "services/importer/distill-transcripts.mjs",
+          "apps/api/src/queues/embedding/embedding.types.ts",
+          "services/importer/importer.mjs",
+          "apps/api/src/queues/embedding/embedding-backfill.processor.ts",
+          "apps/api/src/llm/providers/__tests__/gemini-embed.provider.spec.ts"
+        ]
+      },
+      "fullMinusLite": 0
+    },
+    {
+      "id": "c-009",
+      "query": "sliding window code chunker",
+      "relevantPaths": [
+        "services/codebase-mcp/src/chunker.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 0.6309297535714575,
+        "rank": 2,
+        "hits": [
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/codebase-mcp/src/chunker.ts",
+          "apps/api/src/queues/embedding/chunker.ts",
+          "apps/api/src/queues/embedding/__tests__/chunker.spec.ts",
+          "services/codebase-mcp/src/search.ts"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/chunker.ts",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "apps/api/src/queues/embedding/chunker.ts",
+          "apps/api/src/queues/embedding/__tests__/chunker.spec.ts"
+        ]
+      },
+      "fullMinusLite": 0.36907024642854247
+    },
+    {
+      "id": "c-012",
+      "query": "codebase MCP tool registration and HTTP server entrypoint",
+      "relevantPaths": [
+        "services/codebase-mcp/src/server.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/server.ts",
+          ".claude/plans/2026-06-19-copilot-mistral-mcp-native/wave-2.md",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/memory-mcp/src/server.ts",
+          "apps/api/src/copilot/mcp/mcp-fiscal-server.service.ts"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/server.ts",
+          ".claude/plans/2026-06-19-copilot-mistral-mcp-native/wave-2.md",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "apps/api/src/copilot/mcp/mcp-fiscal-server.service.ts",
+          "services/memory-mcp/src/server.ts"
+        ]
+      },
+      "fullMinusLite": 0
+    },
+    {
+      "id": "c-015",
+      "query": "how do we skip unchanged files during reindex",
+      "relevantPaths": [
+        "services/codebase-mcp/src/indexer.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 0.5,
+        "rank": 3,
+        "hits": [
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/codebase-mcp/test/indexer-graph.test.ts",
+          "services/codebase-mcp/src/indexer.ts",
+          "services/codebase-mcp/test/force-graph.test.ts",
+          "services/codebase-mcp/src/server.ts",
+          "services/memory-mcp/test/fixtures/recall-eval.json"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/indexer.ts",
+          "services/codebase-mcp/test/force-graph.test.ts",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/codebase-mcp/test/indexer-graph.test.ts",
+          "services/codebase-mcp/test/chunk-embed-cache.test.ts",
+          "services/memory-mcp/test/fixtures/recall-eval.json",
+          "services/codebase-mcp/test/conformance-w13.test.ts"
+        ]
+      },
+      "fullMinusLite": 0.5
+    },
+    {
+      "id": "c-018",
+      "query": "how do we resolve by-name call edges after the walk",
+      "relevantPaths": [
+        "services/codebase-mcp/src/indexer.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 0,
+        "ndcgAt10": 0,
+        "rank": null,
+        "hits": [
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/codebase-mcp/test/fixtures/graph-fixture.md",
+          "services/codebase-mcp/src/graph/traverse.ts",
+          "README.md",
+          "services/codebase-mcp/src/server.ts",
+          "apps/api/src/validation/__tests__/fixtures/gold-set-500.json"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 0,
+        "ndcgAt10": 0,
+        "rank": null,
+        "hits": [
+          "services/codebase-mcp/src/graph/traverse.ts",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/codebase-mcp/test/fixtures/graph-fixture.md",
+          "README.md",
+          "apps/api/src/validation/__tests__/fixtures/gold-set-500.json",
+          "services/codebase-mcp/src/server.ts"
+        ]
+      },
+      "fullMinusLite": 0
+    },
+    {
+      "id": "c-021",
+      "query": "how do we guess a symbol name from a chunk",
+      "relevantPaths": [
+        "services/codebase-mcp/src/chunker.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/chunker.ts",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/codebase-mcp/src/graph/traverse.ts",
+          "services/codebase-mcp/src/graph/extractor.ts",
+          "services/codebase-mcp/test/code-search-golden.test.ts",
+          "services/codebase-mcp/test/conformance-w13.test.ts"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/chunker.ts",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/codebase-mcp/src/graph/traverse.ts",
+          "services/codebase-mcp/src/graph/extractor.ts",
+          "services/codebase-mcp/test/code-search-golden.test.ts"
+        ]
+      },
+      "fullMinusLite": 0
+    },
+    {
+      "id": "c-024",
+      "query": "how do we run the contextual embedding bake-off scratch re-embed",
+      "relevantPaths": [
+        "services/codebase-mcp/src/db/bakeoff-embed.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/db/bakeoff-embed.ts",
+          "services/codebase-mcp/test/bakeoff.md",
+          "services/codebase-mcp/test/bakeoff-embed.test.ts",
+          "docs/Runbooks-CodeGraph-ContextEmbeddings.md",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/codebase-mcp/sql/004_bakeoff_scratch.sql"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/db/bakeoff-embed.ts",
+          "services/codebase-mcp/test/bakeoff.md",
+          "docs/Runbooks-CodeGraph-ContextEmbeddings.md",
+          "services/codebase-mcp/test/bakeoff-embed.test.ts",
+          "services/codebase-mcp/sql/004_bakeoff_scratch.sql"
+        ]
+      },
+      "fullMinusLite": 0
+    },
+    {
+      "id": "c-027",
+      "query": "embedCodeContextual contextualized embeddings",
+      "relevantPaths": [
+        "services/codebase-mcp/src/voyage.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/voyage.ts",
+          "services/memory-mcp/src/voyage.ts",
+          "services/codebase-mcp/src/db/bakeoff-embed.ts",
+          "services/memory-mcp/test/embed-contextual.test.ts",
+          "services/importer/distill-transcripts.mjs",
+          "services/codebase-mcp/test/fixtures/code-eval.json"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/voyage.ts",
+          "services/memory-mcp/test/embed-contextual.test.ts",
+          "services/memory-mcp/src/voyage.ts",
+          "services/codebase-mcp/src/db/bakeoff-embed.ts",
+          "services/importer/distill-transcripts.mjs",
+          "services/codebase-mcp/test/fixtures/code-eval.json"
+        ]
+      },
+      "fullMinusLite": 0
+    },
+    {
+      "id": "c-030",
+      "query": "chunkFile",
+      "relevantPaths": [
+        "services/codebase-mcp/src/chunker.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 0.5,
+        "rank": 3,
+        "hits": [
+          "services/codebase-mcp/src/indexer.ts",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/codebase-mcp/src/chunker.ts",
+          "services/codebase-mcp/test/code-search-golden.test.ts",
+          "services/codebase-mcp/src/db/bakeoff-embed.ts",
+          ".claude/worktrees/caen-first-class/apps/web/lib/hooks/use-resumable-upload.ts",
+          "apps/web/lib/hooks/use-resumable-upload.ts"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 0.5,
+        "rank": 3,
+        "hits": [
+          "services/codebase-mcp/src/indexer.ts",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/codebase-mcp/src/chunker.ts",
+          "services/codebase-mcp/test/code-search-golden.test.ts",
+          "services/codebase-mcp/src/db/bakeoff-embed.ts",
+          "apps/web/lib/hooks/use-resumable-upload.ts",
+          ".claude/worktrees/caen-first-class/apps/web/lib/hooks/use-resumable-upload.ts"
+        ]
+      },
+      "fullMinusLite": 0
+    },
+    {
+      "id": "c-033",
+      "query": "assertServerConfig",
+      "relevantPaths": [
+        "services/codebase-mcp/src/config.ts",
+        "services/memory-mcp/src/config.ts",
+        "services/secrets-mcp/src/config.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 0.9060254355346823,
+        "rank": 1,
+        "hits": [
+          "services/secrets-mcp/src/config.ts",
+          "services/memory-mcp/test/config-default.test.ts",
+          "services/codebase-mcp/src/config.ts",
+          "services/memory-mcp/src/config.ts",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/memory-mcp/src/server.ts",
+          "services/secrets-mcp/src/server.ts"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 0.46927872602275644,
+        "rank": 1,
+        "hits": [
+          "services/secrets-mcp/src/config.ts",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/codebase-mcp/src/server.ts",
+          "services/memory-mcp/test/config-default.test.ts",
+          "services/secrets-mcp/src/server.ts",
+          "services/memory-mcp/src/server.ts"
+        ]
+      },
+      "fullMinusLite": -0.43674670951192585
+    },
+    {
+      "id": "c-036",
+      "query": "bakeoffEmbedContextual scratch embedder",
+      "relevantPaths": [
+        "services/codebase-mcp/src/db/bakeoff-embed.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/db/bakeoff-embed.ts",
+          "services/codebase-mcp/test/bakeoff-embed.test.ts",
+          "services/codebase-mcp/sql/004_bakeoff_scratch.sql",
+          "services/codebase-mcp/test/bakeoff.md",
+          "services/codebase-mcp/test/fixtures/code-eval.json"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/db/bakeoff-embed.ts",
+          "services/codebase-mcp/test/bakeoff-embed.test.ts",
+          "services/codebase-mcp/test/bakeoff.md",
+          "services/codebase-mcp/sql/004_bakeoff_scratch.sql",
+          "docs/Runbooks-CodeGraph-ContextEmbeddings.md"
+        ]
+      },
+      "fullMinusLite": 0
+    },
+    {
+      "id": "c-039",
+      "query": "code_reindex tool spawning the indexer",
+      "relevantPaths": [
+        "services/codebase-mcp/src/server.ts",
+        "services/codebase-mcp/src/indexer.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 0.8315546295836225,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/server.ts",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          ".claude/scripts/cron/mnemo-reindex.sh",
+          ".claude/plans/2026-06-18-mnemosyne-cron-stack/plan.md",
+          ".claude/scripts/cron/README.md",
+          "services/codebase-mcp/src/indexer.ts",
+          "services/codebase-mcp/test/graph-tools.test.ts",
+          "README.md",
+          "services/codebase-mcp/test/indexer-graph.test.ts"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 0.8503449055347546,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/server.ts",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          ".claude/scripts/cron/mnemo-reindex.sh",
+          ".claude/plans/2026-06-18-mnemosyne-cron-stack/plan.md",
+          "services/codebase-mcp/src/indexer.ts",
+          ".claude/scripts/cron/README.md",
+          "README.md",
+          "services/codebase-mcp/test/graph-tools.test.ts",
+          "services/codebase-mcp/test/indexer-graph.test.ts"
+        ]
+      },
+      "fullMinusLite": 0.01879027595113214
+    },
+    {
+      "id": "c-042",
+      "query": "codebase MCP request origin validation before handling MCP calls",
+      "relevantPaths": [
+        "services/codebase-mcp/src/origin.ts",
+        "services/codebase-mcp/src/server.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 0.8315546295836225,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/origin.ts",
+          "services/memory-mcp/src/origin.ts",
+          "services/secrets-mcp/src/origin.ts",
+          "apps/api/src/copilot/mcp/mcp.controller.ts",
+          "PLAN-remote-mcp-connector.md",
+          "services/codebase-mcp/src/server.ts",
+          "services/secrets-mcp/src/server.ts",
+          "apps/api/src/copilot/mcp/__tests__/mcp.controller.spec.ts"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 0.8772153153380493,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/src/origin.ts",
+          "services/memory-mcp/src/origin.ts",
+          "services/secrets-mcp/src/origin.ts",
+          "services/codebase-mcp/src/server.ts",
+          "apps/api/src/copilot/mcp/mcp.controller.ts",
+          "PLAN-remote-mcp-connector.md",
+          "services/secrets-mcp/src/server.ts",
+          "apps/api/src/copilot/mcp/__tests__/mcp.controller.spec.ts"
+        ]
+      },
+      "fullMinusLite": 0.04566068575442683
+    },
+    {
+      "id": "c-045",
+      "query": "where the code chunk embedding halfvec 1024 column is defined and written",
+      "relevantPaths": [
+        "services/codebase-mcp/sql/001_codebase.sql",
+        "services/codebase-mcp/src/indexer.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 0,
+        "ndcgAt10": 0,
+        "rank": null,
+        "hits": [
+          "packages/db/drizzle/0105_nod251_w1_documents_index_embedding.sql",
+          "supabase/migrations/0113_nod251_w1_documents_index_embedding.sql",
+          ".claude/worktrees/caen-first-class/packages/db/drizzle/0105_nod251_w1_documents_index_embedding.sql",
+          "services/codebase-mcp/sql/004_bakeoff_scratch.sql",
+          "docs/ArchitecturalDecisions/DataModel-Tables-AI.md",
+          ".claude/worktrees/caen-first-class/docs/ArchitecturalDecisions/DataModel-Tables-AI.md",
+          "packages/db/drizzle/0106_nod251_w2_documents_index_embedding_1536.sql"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 0,
+        "ndcgAt10": 0,
+        "rank": null,
+        "hits": [
+          "packages/db/drizzle/0105_nod251_w1_documents_index_embedding.sql",
+          "supabase/migrations/0113_nod251_w1_documents_index_embedding.sql",
+          ".claude/worktrees/caen-first-class/packages/db/drizzle/0105_nod251_w1_documents_index_embedding.sql",
+          "services/codebase-mcp/sql/004_bakeoff_scratch.sql",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "docs/ArchitecturalDecisions/DataModel-Tables-AI.md",
+          ".claude/worktrees/caen-first-class/docs/ArchitecturalDecisions/DataModel-Tables-AI.md"
+        ]
+      },
+      "fullMinusLite": 0
+    },
+    {
+      "id": "c-048",
+      "query": "index_runs observability table migration",
+      "relevantPaths": [
+        "services/codebase-mcp/sql/002_index_jobs.sql"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/sql/002_index_jobs.sql",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          ".claude/plans/2026-06-03-nod-250-pair-pricing/wave-1.md",
+          "services/codebase-mcp/test/migrate.test.ts",
+          "README.md",
+          "services/codebase-mcp/test/index-runs.test.ts",
+          "supabase/migrations/0117_nod250_w1_pair_pricing_runs.sql",
+          "services/memory-mcp/test/fixtures/recall-eval.json",
+          "packages/db/src/schema/pair-pricing-runs.ts",
+          "packages/db/drizzle/0109_nod250_w1_pair_pricing_runs.sql"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/codebase-mcp/sql/002_index_jobs.sql",
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/codebase-mcp/test/migrate.test.ts",
+          "README.md",
+          "services/codebase-mcp/test/index-runs.test.ts",
+          ".claude/plans/2026-06-03-nod-250-pair-pricing/wave-1.md",
+          "services/memory-mcp/test/fixtures/recall-eval.json",
+          "supabase/migrations/0117_nod250_w1_pair_pricing_runs.sql",
+          ".claude/worktrees/caen-first-class/packages/db/drizzle/0109_nod250_w1_pair_pricing_runs.sql",
+          "packages/db/drizzle/0109_nod250_w1_pair_pricing_runs.sql"
+        ]
+      },
+      "fullMinusLite": 0
+    },
+    {
+      "id": "c-051",
+      "query": "memory search hybrid rrf and relevance blend",
+      "relevantPaths": [
+        "services/memory-mcp/src/memory.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 0.6309297535714575,
+        "rank": 2,
+        "hits": [
+          "services/codebase-mcp/test/fixtures/code-eval.json",
+          "services/memory-mcp/src/memory.ts",
+          "services/memory-mcp/test/retune.md",
+          "services/codebase-mcp/src/search.ts",
+          "services/memory-mcp/test/search-golden.test.ts",
+          "apps/api/src/copilot/copilot-context.service.ts",
+          "services/memory-mcp/test/fixtures/recall-eval.json"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "services/memory-mcp/src/memory.ts",
+          "services/memory-mcp/test/retune.md",
+          "apps/api/src/copilot/copilot-context.service.ts",
+          ".claude/research/2026-06-04-nodex-semantic-search-hybrid-retrieval.md",
+          "services/codebase-mcp/src/search.ts",
+          "apps/api/src/documents-index/__tests__/semantic-search-w8-acceptance.integration.spec.ts",
+          "services/codebase-mcp/test/fixtures/code-eval.json"
+        ]
+      },
+      "fullMinusLite": 0.36907024642854247
+    },
+    {
+      "id": "c-054",
+      "query": "how does withRls set request.jwt.claims for row level security",
+      "relevantPaths": [
+        "packages/db/src/with-rls.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "packages/db/src/with-rls.ts",
+          "packages/db/drizzle/0004_rls_policies.sql",
+          ".claude/worktrees/caen-first-class/packages/db/drizzle/0004_rls_policies.sql",
+          "apps/api/src/drizzle/__tests__/rls.spec.ts",
+          ".claude/plans/2026-06-15-search-v2-upgrade/_explorer-findings.md",
+          "apps/api/src/drizzle/__tests__/export-log-rls.spec.ts",
+          "apps/api/src/vault/__tests__/cross-tenant-vault-grants-rls.integration.spec.ts",
+          "apps/api/src/billing/pair-pricing/__tests__/pair-pricing-leg2.integration.spec.ts",
+          "apps/api/src/copilot/__tests__/copilot-anomalies-rls.integration.spec.ts"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "packages/db/src/with-rls.ts",
+          "packages/db/drizzle/0004_rls_policies.sql",
+          ".claude/worktrees/caen-first-class/packages/db/drizzle/0004_rls_policies.sql",
+          "apps/api/src/drizzle/__tests__/rls.spec.ts",
+          "apps/api/src/vault/__tests__/cross-tenant-vault-grants-rls.integration.spec.ts",
+          ".claude/plans/2026-06-15-search-v2-upgrade/_explorer-findings.md",
+          "apps/api/src/drizzle/__tests__/export-log-rls.spec.ts",
+          "apps/api/src/billing/pair-pricing/__tests__/pair-pricing-leg2.integration.spec.ts",
+          "apps/api/src/copilot/__tests__/copilot-anomalies-rls.integration.spec.ts"
+        ]
+      },
+      "fullMinusLite": 0
+    },
+    {
+      "id": "c-057",
+      "query": "queue processor that submits invoice XML to ANAF SPV",
+      "relevantPaths": [
+        "apps/api/src/efactura/efactura-submit.processor.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "apps/api/src/efactura/efactura-submit.processor.ts",
+          "docs/specs/2026-05-03-nodex-v1-and-v1.5-design.md",
+          "apps/api/src/efactura/__tests__/efactura-pipeline.spec.ts",
+          "apps/api/src/efactura/efactura-archive.processor.ts"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "apps/api/src/efactura/efactura-submit.processor.ts",
+          "docs/specs/2026-05-03-nodex-v1-and-v1.5-design.md",
+          "apps/api/src/efactura/__tests__/efactura-pipeline.spec.ts",
+          "docs/ArchitecturalDecisions/EFacturaCompliance.md",
+          "apps/api/src/efactura/efactura-poll.processor.ts"
+        ]
+      },
+      "fullMinusLite": 0
+    },
+    {
+      "id": "c-060",
+      "query": "how are invoice line VAT amounts computed and rounded in minor units",
+      "relevantPaths": [
+        "packages/fiscal/src/utils/invoice-math.ts",
+        "packages/fiscal/src/utils/money-math.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 0.6131471927654584,
+        "rank": 1,
+        "hits": [
+          "packages/fiscal/src/utils/invoice-math.ts",
+          "apps/api/src/free-efactura/__tests__/ubl-mapper.spec.ts",
+          "packages/fiscal/src/__tests__/invoice-math.test.ts",
+          ".claude/evals/tasks/fiscal/mixed-rate-invoice.yaml",
+          "apps/api/src/billing-dogfood/dogfood-line-builder.ts",
+          "apps/api/src/queues/validate/layers/layer-4-deterministic.ts"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 0.6131471927654584,
+        "rank": 1,
+        "hits": [
+          "packages/fiscal/src/utils/invoice-math.ts",
+          "packages/fiscal/src/__tests__/invoice-math.test.ts",
+          "apps/api/src/free-efactura/__tests__/ubl-mapper.spec.ts",
+          "apps/api/src/billing-dogfood/dogfood-line-builder.ts",
+          ".claude/evals/tasks/fiscal/mixed-rate-invoice.yaml",
+          "apps/api/src/queues/validate/layers/layer-4-deterministic.ts"
+        ]
+      },
+      "fullMinusLite": 0
+    },
+    {
+      "id": "c-063",
+      "query": "organization switcher combobox in the web app",
+      "relevantPaths": [
+        "apps/web/components/app/org-switcher.tsx"
+      ],
+      "lite": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 1,
+        "rank": 1,
+        "hits": [
+          "apps/web/components/app/org-switcher.tsx",
+          "apps/web/components/app/__tests__/org-switcher-combobox.test.tsx",
+          ".claude/tech-debt/v1.5-cmd-o-org-palette.md"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 1,
+        "ndcgAt10": 0.6309297535714575,
+        "rank": 2,
+        "hits": [
+          "apps/web/components/app/__tests__/org-switcher-combobox.test.tsx",
+          "apps/web/components/app/org-switcher.tsx",
+          ".claude/tech-debt/v1.5-cmd-o-org-palette.md",
+          ".claude/plans/2026-05-27-cluster-c-audit-closeout/wave-3.md"
+        ]
+      },
+      "fullMinusLite": -0.36907024642854247
+    },
+    {
+      "id": "c-066",
+      "query": "document vault hybrid retrieval with reciprocal rank fusion",
+      "relevantPaths": [
+        "apps/api/src/documents-index/semantic-search.service.ts"
+      ],
+      "lite": {
+        "poolRecallAt25": 0,
+        "ndcgAt10": 0,
+        "rank": null,
+        "hits": [
+          "docs/ApiEndpoints-Advanced.md",
+          ".claude/research/2026-06-04-nodex-semantic-search-hybrid-retrieval.md",
+          ".claude/plans/2026-06-04-nodex-v15-semantic-search/index.md",
+          "apps/api/src/documents-index/__tests__/semantic-search.service.spec.ts",
+          "apps/api/src/copilot/copilot-context.service.ts",
+          "docs/ArchitecturalDecisions/AI-Substrate.md",
+          ".claude/worktrees/caen-first-class/docs/ArchitecturalDecisions/AI-Substrate.md",
+          "apps/api/src/documents-index/search.controller.ts",
+          ".claude/research/2026-06-06-cohere-vs-gemini-rerank-quality.md"
+        ]
+      },
+      "full": {
+        "poolRecallAt25": 0,
+        "ndcgAt10": 0,
+        "rank": null,
+        "hits": [
+          "docs/ApiEndpoints-Advanced.md",
+          ".claude/research/2026-06-04-nodex-semantic-search-hybrid-retrieval.md",
+          ".claude/plans/2026-06-04-nodex-v15-semantic-search/index.md",
+          "apps/api/src/copilot/copilot-context.service.ts",
+          "apps/api/src/documents-index/search.controller.ts",
+          "apps/api/src/documents-index/__tests__/semantic-search.service.spec.ts",
+          ".claude/plans/2026-06-15-search-v2-upgrade/wave-10.md",
+          ".claude/research/2026-06-06-cohere-vs-gemini-rerank-quality.md",
+          "docs/ArchitecturalDecisions/AI-Substrate.md"
+        ]
+      },
+      "fullMinusLite": 0
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   embedContextual,
   embedContextualSingle,
+  rerank,
   toVectorLiteral,
 } from "../src/voyage.js";
 
@@ -104,6 +105,31 @@ describe("embedContextual (AC-020)", () => {
     mockFetch(fakeContextualResponse([1]));
     await embedContextual([["what did we decide"]], "query");
     expect(captured[0].body.input_type).toBe("query");
+  });
+});
+
+describe("rerank model override (wave-6)", () => {
+  it("POSTs the passed model when provided", async () => {
+    mockFetch({
+      data: [{ index: 1, relevance_score: 0.9 }],
+    });
+
+    const out = await rerank(
+      "where is the rollout note",
+      ["doc a", "doc b"],
+      5,
+      "rerank-2.5",
+    );
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].url).toBe("https://api.voyageai.com/v1/rerank");
+    expect(captured[0].body).toMatchObject({
+      query: "where is the rollout note",
+      documents: ["doc a", "doc b"],
+      model: "rerank-2.5",
+      top_k: 2,
+    });
+    expect(out).toEqual([{ index: 1, score: 0.9 }]);
   });
 });
 
