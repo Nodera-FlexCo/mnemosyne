@@ -110,6 +110,12 @@ const nextReportPath = () => join(outDir, `consolidate-${reportSeq++}.json`);
 
 const here = dirname(fileURLToPath(import.meta.url));
 
+// Strictly-increasing created_at per seeded row: two fast successive INSERTs can
+// land in the same now() microsecond, and slot normalization (older-first) then
+// tie-breaks by RANDOM uuid — flipping which row carries the marker/loses ~50%
+// of the time (the applyFromReport flake the wave-7 gate reproduced).
+let seedClock = Date.parse("2026-01-01T00:00:00Z");
+
 async function seed(
   projectId: string,
   o: {
@@ -120,10 +126,11 @@ async function seed(
     metadata?: Record<string, unknown> | string;
   },
 ): Promise<string> {
+  seedClock += 60_000;
   const { rows } = await pool.query<{ id: string }>(
     `INSERT INTO memory.memories
-       (project_id, type, title, content, importance, metadata, pinned, embedding_v2)
-     VALUES ($1, 'semantic', $2, $3, 0.5, $4::jsonb, $5, $6::halfvec)
+       (project_id, type, title, content, importance, metadata, pinned, embedding_v2, created_at)
+     VALUES ($1, 'semantic', $2, $3, 0.5, $4::jsonb, $5, $6::halfvec, $7::timestamptz)
      RETURNING id`,
     [
       projectId,
@@ -134,6 +141,7 @@ async function seed(
         : JSON.stringify(o.metadata ?? {}),
       o.pinned ?? false,
       o.vec ? `[${o.vec.join(",")}]` : null,
+      new Date(seedClock).toISOString(),
     ],
   );
   return rows[0].id;
