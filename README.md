@@ -113,9 +113,13 @@ record: [`services/memory-mcp/test/consolidation.md`](services/memory-mcp/test/c
 ```bash
 # PAID (Anthropic quota — the assertion-equivalence judge; needs ANTHROPIC_API_KEY,
 # optional CONSOLIDATE_MODEL) — DRY-RUN by default: writes the report artifact
-# test/runs/consolidate-<date>.json (review surface + undo log), changes ZERO rows;
-# --apply marks reviewed losers superseded. Refuses without --yes.
+# test/runs/consolidate-<date>.json (review surface + undo log + resumability
+# checkpoint), changes ZERO rows. Refuses without --yes.
 DATABASE_URL=<live> npm --prefix services/memory-mcp run consolidate -- --yes
+
+# FREE — applies the reviewed same-day dry-run report (never re-judges; refuses
+# when no complete same-day report exists — pass --report <path> across a UTC
+# day boundary). No CLI path applies un-reviewed verdicts.
 DATABASE_URL=<live> npm --prefix services/memory-mcp run consolidate -- --yes --apply
 
 # PAID (Voyage quota — embeds every query of the chosen split) — record a TEST-split
