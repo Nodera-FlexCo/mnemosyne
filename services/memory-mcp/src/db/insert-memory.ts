@@ -21,6 +21,15 @@ import { createHash } from "node:crypto";
 import type { MemoryType } from "../memory.js"; // type-only — erased at compile, no runtime cycle
 
 /**
+ * Contract version of this module, asserted by the .mjs importers immediately after
+ * their dynamic import of the COMPILED dist copy. dist/ is gitignored, so a stale
+ * build can be silently present — the assert turns "stale dist with a changed
+ * contract" from silent bad writes into a hard "rebuild memory-mcp" failure.
+ * BUMP THIS whenever insertMemoryRow's signature, SQL, or invariants change.
+ */
+export const INSERT_MEMORY_CONTRACT = 1;
+
+/**
  * Exact-dup key: sha256 hex over CONTENT ONLY — deliberately the importers' recipe
  * (`services/importer/distill-transcripts.mjs` `sha256(content)`), so write-path and
  * importer dedup keys never diverge. Title is NOT hashed: a retitled restatement of the
@@ -118,21 +127,27 @@ export async function insertMemoryRow(
   const sha = contentSha256(input.content);
 
   // AC-302: cheap write-path pass — one extra indexed vector query, NO LLM.
-  const { rows: neighborRows } = await db.query(
-    `SELECT id, 1 - (embedding_v2 <=> $1::halfvec) AS sim
-     FROM memory.memories
-     WHERE project_id = $2 AND archived_at IS NULL
-       AND COALESCE(status,'active') = 'active' AND embedding_v2 IS NOT NULL
-     ORDER BY embedding_v2 <=> $1::halfvec
-     LIMIT ${DUP_CANDIDATE_TOP_S}`,
-    [toVectorLiteral(vectors.vec2), input.projectId],
-  );
-  const dupCandidates: DupCandidate[] = neighborRows
-    .filter((n) => Number(n.sim) > DUP_COSINE_THRESHOLD)
-    .map((n) => ({
-      id: String(n.id),
-      sim: Number(Number(n.sim).toFixed(4)),
-    }));
+  // Skipped for non-active rows (importer 'superseded' stubs): the flags exist to
+  // prioritize batch consolidation of LIVE rows, so on a stub they are inert
+  // metadata bought with a wasted ANN query.
+  let dupCandidates: DupCandidate[] = [];
+  if ((input.status ?? "active") === "active") {
+    const { rows: neighborRows } = await db.query(
+      `SELECT id, 1 - (embedding_v2 <=> $1::halfvec) AS sim
+       FROM memory.memories
+       WHERE project_id = $2 AND archived_at IS NULL
+         AND COALESCE(status,'active') = 'active' AND embedding_v2 IS NOT NULL
+       ORDER BY embedding_v2 <=> $1::halfvec
+       LIMIT ${DUP_CANDIDATE_TOP_S}`,
+      [toVectorLiteral(vectors.vec2), input.projectId],
+    );
+    dupCandidates = neighborRows
+      .filter((n) => Number(n.sim) > DUP_COSINE_THRESHOLD)
+      .map((n) => ({
+        id: String(n.id),
+        sim: Number(Number(n.sim).toFixed(4)),
+      }));
+  }
   const metadata: Record<string, unknown> = { ...(input.metadata ?? {}) };
   if (dupCandidates.length > 0) {
     metadata.dupCandidates = dupCandidates;

@@ -32,7 +32,14 @@ const threads = JSON.parse(readFileSync(process.argv[2] || 'threads.json', 'utf8
 let insertMemoryRow;
 if (!DRY_RUN) {
   try {
-    ({ insertMemoryRow } = await import('../memory-mcp/dist/db/insert-memory.js'));
+    const helper = await import('../memory-mcp/dist/db/insert-memory.js');
+    // dist/ is gitignored, so a STALE build can be silently present — the contract
+    // assert turns "stale dist with a changed write contract" into a hard rebuild
+    // failure instead of silent bad writes.
+    if (helper.INSERT_MEMORY_CONTRACT !== 1 || typeof helper.insertMemoryRow !== 'function') {
+      throw new Error(`stale or incompatible dist (contract ${helper.INSERT_MEMORY_CONTRACT ?? 'missing'}, expected 1)`);
+    }
+    ({ insertMemoryRow } = helper);
   } catch (e) {
     console.error(`cannot load ../memory-mcp/dist/db/insert-memory.js — build memory-mcp first (cd services/memory-mcp && npm ci && npm run build): ${e.message}`);
     process.exit(1);
@@ -89,6 +96,9 @@ for (const th of threads) {
   ].filter(Boolean).join('\n').slice(0, 4000);
   const hash = sha256(content);
   if (existing.has(hash)) { skipped++; continue; }
+  // In-run dedupe: two threads with identical derived content must not insert twice
+  // (the pre-dedupe sets are the ONLY exact-dup guard — the shared write path has none).
+  existing.add(hash);
   if (DRY_RUN) { stored++; continue; }
   const embedInput = `${title}\n${content}`;
   try {

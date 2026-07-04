@@ -197,6 +197,37 @@ describe.skipIf(skip)("insertMemoryRow — the shared invariant path", () => {
     expect(typeof row.metadata.dupFlaggedAt).toBe("string");
   });
 
+  it("(b) non-active rows SKIP the neighbor pass — no flags, no ANN query (importer 'superseded' stubs)", async () => {
+    // Same NEAR geometry that flags in the test above — but status:'superseded'
+    // must not buy the ANN query: the flags prioritize consolidation of LIVE rows.
+    const queries: string[] = [];
+    const spyPool = {
+      query: (text: string, values?: unknown[]) => {
+        queries.push(text);
+        return pool.query(text, values);
+      },
+    };
+    const r = await insertMemoryRow(
+      spyPool,
+      {
+        projectId: PROJ,
+        type: "episodic",
+        title: "superseded stub",
+        content: "Importer stub that would otherwise flag the anchor.",
+        sourceKind: "research",
+        status: "superseded",
+      },
+      { vec: H.legacy, vec2: H.near },
+    );
+    expect(r.dupCandidates).toEqual([]);
+    expect(queries).toHaveLength(1); // the INSERT only — no neighbor SELECT
+    expect(queries[0]).toMatch(/INSERT INTO memory\.memories/);
+
+    const row = await invariants(r.id);
+    expect(row.metadata.dupCandidates).toBeUndefined();
+    expect(row.metadata.dupFlaggedAt).toBeUndefined();
+  });
+
   it("(c) an importer-shaped insert is indistinguishable from a storeMemory row on the invariants", async () => {
     // Row S via the canonical path (mocked embeds: legacy + NEARDUP contextual).
     const contentS = "NEARDUP store-path row for the parity check.";
@@ -331,8 +362,22 @@ describe("insert-memory invariants (pure)", () => {
     expect(reExportedTopS).toBe(3);
   });
 
-  it("toVectorLiteral serializes the pgvector literal shape", () => {
+  it("toVectorLiteral serializes the pgvector literal shape — and stays byte-identical to voyage.ts's copy", async () => {
     expect(toVectorLiteral([1, 0, 0.5])).toBe("[1,0,0.5]");
+    // The duplication is deliberate (keeps this module a config-free leaf); this
+    // pin is what keeps the two copies from silently diverging. importActual
+    // bypasses this file's voyage mock — we need the REAL implementation.
+    const { toVectorLiteral: voyageCopy } =
+      await vi.importActual<typeof import("../src/voyage.js")>(
+        "../src/voyage.js",
+      );
+    const probe = [0.123456789, -1, 0, 42.5, 1e-7];
+    expect(voyageCopy(probe)).toBe(toVectorLiteral(probe));
+  });
+
+  it("INSERT_MEMORY_CONTRACT is exported for the importers' stale-dist assert", async () => {
+    const mod = await import("../src/db/insert-memory.js");
+    expect(mod.INSERT_MEMORY_CONTRACT).toBe(1);
   });
 
   it("insert-memory stays a dependency-free leaf (node:crypto only) — safe for plain-node importer consumption", () => {

@@ -136,7 +136,14 @@ if (LIMIT > 0) sessions = sessions.slice(0, LIMIT);
 let insertMemoryRow;
 if (!DRY_RUN) {
   try {
-    ({ insertMemoryRow } = await import('../memory-mcp/dist/db/insert-memory.js'));
+    const helper = await import('../memory-mcp/dist/db/insert-memory.js');
+    // dist/ is gitignored, so a STALE build can be silently present — the contract
+    // assert turns "stale dist with a changed write contract" into a hard rebuild
+    // failure instead of silent bad writes.
+    if (helper.INSERT_MEMORY_CONTRACT !== 1 || typeof helper.insertMemoryRow !== 'function') {
+      throw new Error(`stale or incompatible dist (contract ${helper.INSERT_MEMORY_CONTRACT ?? 'missing'}, expected 1)`);
+    }
+    ({ insertMemoryRow } = helper);
   } catch (e) {
     console.error(`cannot load ../memory-mcp/dist/db/insert-memory.js — build memory-mcp first (cd services/memory-mcp && npm ci && npm run build): ${e.message}`);
     process.exit(1);

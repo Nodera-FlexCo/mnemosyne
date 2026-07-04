@@ -39,8 +39,19 @@ describe("importers route writes through the shared invariant path", () => {
       });
 
       it("imports and calls insertMemoryRow from memory-mcp's compiled shared path", () => {
-        expect(src).toContain("memory-mcp/dist/db/insert-memory.js");
+        // Anchor on the import EXPRESSION, not the path string — the path also
+        // appears in header comments, which must not satisfy this pin alone.
+        expect(src).toMatch(
+          /await import\(\s*['"]\.\.\/memory-mcp\/dist\/db\/insert-memory\.js['"]\s*\)/,
+        );
         expect(src).toMatch(/insertMemoryRow\s*\(/);
+      });
+
+      it("asserts the dist contract version after import (stale-dist guard)", () => {
+        expect(src).toMatch(/INSERT_MEMORY_CONTRACT\s*!==\s*1/);
+        expect(src).toMatch(
+          /typeof\s+helper\.insertMemoryRow\s*!==\s*['"]function['"]/,
+        );
       });
 
       it("computes the contextual vector via /contextualizedembeddings (int8, 1024-dim)", () => {
