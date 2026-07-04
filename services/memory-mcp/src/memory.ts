@@ -9,23 +9,57 @@ import {
 import { config } from "./config.js";
 import { summarizeMemory } from "./summarize.js";
 
-// ── Tuned fusion/blend constants (Wave P) ───────────────────────────────────────────
-// These are the RRF k + the rerank/recency/importance blend weights. They are the
-// "retune-before-flip" knobs (AC-024): the operator finalizes them from the held-out
-// recall run documented in test/retune.md AFTER the live backfill. Defaults below match
-// the pre-flip behavior (RRF k=60; 0.7·rel + 0.2·recency + 0.1·importance) so the flip
-// is no-regression-by-default; adjust only with a recall measurement in hand.
-// `fuseCandidates` accepts an injectable `rrfK` for the wave-7 bakeoff sweep arms;
-// retrievalConfig() serializes the shipped DEFAULT (RRF_K) — sweep arms record their
-// per-call k in their own run artifacts.
-// TODO(operator/retune): finalize these from test/retune.md after the live backfill.
+// ── Fusion constant (Wave P → wave-7 bakeoff) ────────────────────────────────────────
+// RRF k stays a module const (the code default); the blend/decay knobs moved to
+// config.blendConfig (src/config.ts, wave-7 AC-702) so the bakeoff winner can ship as
+// compose env pins with the code default unchanged. `fuseCandidates` accepts an
+// injectable `rrfK` for the wave-7 k-sweep axis; retrievalConfig() serializes the
+// shipped DEFAULT (RRF_K) — sweep arms record their per-call k in their own run
+// artifacts. A non-60 winner would ship as an env pin too (decision record:
+// test/retune.md).
 const RRF_K = 60;
-const BLEND_RELEVANCE = 0.7;
-const BLEND_RECENCY = 0.2;
-const BLEND_IMPORTANCE = 0.1;
-const RECENCY_HALFLIFE_DAYS = 30;
+
+/** Bump when `blendScores` SEMANTICS change (not when env pins retune the knobs) —
+ *  serialized top-level into every run artifact so numbers are comparable only within
+ *  one scoring generation. "blend-2" = the wave-7 configurable blend/decay engine. */
+export const SCORING_VERSION = "blend-2";
 
 export type MemoryType = "episodic" | "semantic" | "procedural" | "entity";
+
+// ── Blend/decay configuration (wave-7, AC-702/AC-706) ───────────────────────────────
+
+export type BlendForm = "additive" | "multiplicative";
+export type DecayShape = "exp" | "power";
+
+export interface BlendWeights {
+  relevance: number;
+  recency: number;
+  importance: number;
+}
+
+/** Rows exempt from age decay (recency pinned to 1.0): by memory type or source_kind
+ *  (e.g. `entity` rows and `decision` records — reference material, not news). */
+export interface DecayExempt {
+  types: MemoryType[];
+  sourceKinds: string[];
+}
+
+export interface DecayConfig {
+  shape: DecayShape;
+  /** τ is the 1/e time constant in days (NOT the half-life — see config.ts). */
+  tauDays: number;
+  /** Per-type τ override; resolution is `tauDaysByType[type] ?? tauDays` (AC-706). */
+  tauDaysByType: Partial<Record<MemoryType, number>>;
+  /** Exponent for the `power` shape: `1 / (1 + age/τ)^powerExponent`. */
+  powerExponent: number;
+  exempt: DecayExempt;
+}
+
+export interface BlendConfig {
+  form: BlendForm;
+  weights: BlendWeights;
+  decay: DecayConfig;
+}
 
 export interface Hit {
   id: string;
@@ -54,6 +88,7 @@ interface CandidateRow {
   importance: number;
   created_at: Date;
   event_date?: Date | null;
+  source_kind: string | null;
   status: string;
   rrf: number;
 }
@@ -84,15 +119,27 @@ export const SNIPPET_HEADLINE_OPTS = `StartSel=${SNIPPET_START_SEL}, StopSel=${S
  * verbatim.
  */
 export function retrievalConfig() {
+  const b = config.blendConfig;
   return {
     service: "memory-mcp",
+    scoringVersion: SCORING_VERSION,
     rrfK: RRF_K,
+    // Nested blend snapshot (AC-702) — fresh literals (never references into config)
+    // so a serialized artifact can never be mutated through, or mutate, live config.
     blend: {
-      relevance: BLEND_RELEVANCE,
-      recency: BLEND_RECENCY,
-      importance: BLEND_IMPORTANCE,
+      form: b.form,
+      weights: { ...b.weights },
+      decay: {
+        shape: b.decay.shape,
+        tauDays: b.decay.tauDays,
+        tauDaysByType: { ...b.decay.tauDaysByType },
+        powerExponent: b.decay.powerExponent,
+        exempt: {
+          types: [...b.decay.exempt.types],
+          sourceKinds: [...b.decay.exempt.sourceKinds],
+        },
+      },
     },
-    recencyHalfLifeDays: RECENCY_HALFLIFE_DAYS,
     candidatePool: config.candidatePool,
     recallLimit: RECALL_LIMIT,
     embedModel: config.embedModel,
@@ -560,17 +607,17 @@ export async function fuseCandidates(input: {
   /** Pre-computed query embedding — pass it to skip the embed call (e.g. the
    *  zero-pool retry reuses the first attempt's vector; one paid embed per search). */
   qvec?: number[];
-  /** RRF k override — wave-7 bakeoff sweep arms ONLY. Live handlers omit it, so the
-   *  default path (k = RRF_K = 60) generates byte-identical SQL. The value is
-   *  template-interpolated into the SQL, hence the finite-positive guard below. */
+  /** RRF k override for the wave-7 k-sweep axis (bakeoff only — the live handler
+   *  always runs the RRF_K module default). Non-finite or ≤ 0 throws. */
   rrfK?: number;
 }): Promise<FusedCandidate[]> {
-  // Guard FIRST — before the embed call and before building the SQL: the value is
-  // interpolated (never bound), so this is also injection hygiene, and an invalid k
-  // must not spend a paid embed.
-  const k = input.rrfK ?? RRF_K;
-  if (!Number.isFinite(k) || k <= 0) {
-    throw new Error(`invalid rrfK ${k} — must be a finite positive number`);
+  // Validate the k override BEFORE any spend (embed) or SQL — reject garbage loudly.
+  // k travels as a bound SQL parameter ($5::float8), never string interpolation.
+  const rrfK = input.rrfK ?? RRF_K;
+  if (!Number.isFinite(rrfK) || rrfK <= 0) {
+    throw new Error(
+      `fuseCandidates: invalid rrfK ${String(input.rrfK)} — must be a finite number > 0`,
+    );
   }
   // BOTH sides contextual (critical): the corpus is voyage-context-4 (embedding_v2), so
   // the query MUST be embedded by the same model family or recall craters.
@@ -581,6 +628,7 @@ export async function fuseCandidates(input: {
     toVectorLiteral(qvec),
     input.projectId,
     config.candidatePool,
+    rrfK,
   ];
   let typeFilter = "";
   if (input.type) {
@@ -615,9 +663,10 @@ export async function fuseCandidates(input: {
       LIMIT ${RECALL_LIMIT}
     )
     SELECT m.id, m.title, m.content, m.summary, m.type, m.importance, m.created_at, m.event_date,
+           m.source_kind,
            COALESCE(m.status,'active') AS status,
            bm25.rank::int AS bm25_rank, vec.rank::int AS vec_rank,
-           (COALESCE(1.0/(${k}+bm25.rank),0) + COALESCE(1.0/(${k}+vec.rank),0))::float8 AS rrf
+           (COALESCE(1.0/($5::float8+bm25.rank),0) + COALESCE(1.0/($5::float8+vec.rank),0))::float8 AS rrf
     FROM memory.memories m
     LEFT JOIN bm25 ON bm25.id = m.id
     LEFT JOIN vec  ON vec.id  = m.id
@@ -627,6 +676,17 @@ export async function fuseCandidates(input: {
 
   const { rows } = await pool.query<FusedCandidate>(sql, params);
   return rows;
+}
+
+/** The row shape `blendScores` needs: the temporal/importance fields of a candidate
+ *  plus the rerank `relevance` already attached (missing rerank score ⇒ caller sets 0). */
+export interface BlendableCandidate {
+  type: MemoryType;
+  importance: number;
+  created_at: Date;
+  event_date?: Date | null;
+  source_kind?: string | null;
+  relevance: number;
 }
 
 /**
@@ -648,35 +708,81 @@ export function buildRerankDoc(r: {
 }
 
 /**
- * Phase 2: rerank the candidate pool, blend relevance with recency + importance, and
- * shape the top-`limit` hits (180-char whitespace-collapsed snippet, 4-decimal score).
+ * Pure blend scoring (wave-7, AC-701/AC-706): computes each candidate's `final` score
+ * from its rerank relevance + recency + importance under `cfg`, and returns the rows
+ * DESC-sorted by the LEGACY comparator exactly (`b.final - a.final`, NO tie-breakers —
+ * V8's stable sort preserves input order on ties, as before).
+ *
+ * Semantics (AC-706):
+ *  - `effectiveDate = event_date ?? created_at` is the ONLY temporal source;
+ *  - τ resolves per-type: `tauDaysByType[type] ?? tauDays`;
+ *  - decay shapes: `exp` = e^(−age/τ); `power` = 1/(1 + age/τ)^powerExponent;
+ *  - exempt rows (type ∈ exempt.types OR source_kind ∈ exempt.sourceKinds) get
+ *    recency = 1.0 (no age penalty);
+ *  - negative ages (future `event_date`) are NOT clamped (current behavior preserved);
+ *  - forms: `additive` = w.rel·rel + w.rec·recency + w.imp·importance (the legacy
+ *    formula); `multiplicative` = rel · (1 + w.rec·recency + w.imp·importance).
+ */
+export function blendScores<T extends BlendableCandidate>(
+  scored: T[],
+  cfg: BlendConfig,
+  now: number = Date.now(),
+): Array<T & { final: number }> {
+  const out = scored.map((r) => {
+    let recency: number;
+    const exempt =
+      cfg.decay.exempt.types.includes(r.type) ||
+      (r.source_kind != null &&
+        cfg.decay.exempt.sourceKinds.includes(r.source_kind));
+    if (exempt) {
+      recency = 1.0;
+    } else {
+      const ageDays =
+        (now - new Date(r.event_date ?? r.created_at).getTime()) / 86_400_000;
+      const tau = cfg.decay.tauDaysByType[r.type] ?? cfg.decay.tauDays;
+      recency =
+        cfg.decay.shape === "exp"
+          ? Math.exp(-ageDays / tau)
+          : 1 / Math.pow(1 + ageDays / tau, cfg.decay.powerExponent);
+    }
+    const final =
+      cfg.form === "additive"
+        ? cfg.weights.relevance * r.relevance +
+          cfg.weights.recency * recency +
+          cfg.weights.importance * r.importance
+        : r.relevance *
+          (1 +
+            cfg.weights.recency * recency +
+            cfg.weights.importance * r.importance);
+    return { ...r, final };
+  });
+  out.sort((a, b) => b.final - a.final);
+  return out;
+}
+
+/**
+ * Phase 2: rerank the candidate pool (summary-aware docs via `buildRerankDoc`),
+ * blend relevance with recency + importance (`blendScores` under
+ * `config.blendConfig`), and shape the top-`limit` hits (180-char
+ * whitespace-collapsed snippet, 4-decimal score).
  */
 export async function rerankAndBlend(
   query: string,
   rows: FusedCandidate[],
   limit: number,
 ): Promise<ScoredHit[]> {
-  // Rerank candidate pool, then blend relevance with recency + importance.
   const docs = rows.map((r) => buildRerankDoc(r));
   const ranked = await rerank(query, docs, rows.length);
   const relById = new Map<string, number>();
   for (const r of ranked) relById.set(rows[r.index].id, r.score);
 
-  const now = Date.now();
-  const scored = rows.map((r) => {
-    const rel = relById.get(r.id) ?? 0;
-    const ageDays =
-      (now - new Date(r.event_date ?? r.created_at).getTime()) / 86_400_000;
-    const recency = Math.exp(-ageDays / RECENCY_HALFLIFE_DAYS);
-    const final =
-      BLEND_RELEVANCE * rel +
-      BLEND_RECENCY * recency +
-      BLEND_IMPORTANCE * r.importance;
-    return { r, final };
-  });
-  scored.sort((a, b) => b.final - a.final);
+  // Missing rerank score ⇒ relevance 0, as before the wave-7 split.
+  const scored = blendScores(
+    rows.map((r) => ({ ...r, relevance: relById.get(r.id) ?? 0 })),
+    config.blendConfig,
+  );
 
-  return scored.slice(0, limit).map(({ r, final }) => ({
+  return scored.slice(0, limit).map((r) => ({
     id: r.id,
     title: r.title,
     type: r.type,
@@ -685,7 +791,7 @@ export async function rerankAndBlend(
     importance: r.importance,
     ...toIsoDateFields(r),
     status: r.status,
-    score: Number(final.toFixed(4)),
+    score: Number(r.final.toFixed(4)),
   }));
 }
 
@@ -849,7 +955,7 @@ export async function getRecent(input: {
     params.push(input.type);
   }
   const { rows } = await pool.query<CandidateRow>(
-    `SELECT id, title, content, summary, type, importance, created_at, event_date,
+    `SELECT id, title, content, summary, type, importance, created_at, event_date, source_kind,
             COALESCE(status,'active') AS status, 0 AS rrf
      FROM memory.memories
      WHERE archived_at IS NULL AND COALESCE(status,'active') = 'active' AND project_id = $1 ${typeFilter}

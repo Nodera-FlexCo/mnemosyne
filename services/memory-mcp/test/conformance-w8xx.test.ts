@@ -1154,6 +1154,7 @@ describe.skipIf(!DATABASE_URL)("conformance-w8xx — DB behavior (:5544)", () =>
         });
         return {
           sql: rec.calls.map((c) => c.text).join("\n---\n"),
+          params: rec.calls[0]?.params ?? [],
           ids: rows.map((r) => r.id),
         };
       } finally {
@@ -1161,16 +1162,24 @@ describe.skipIf(!DATABASE_URL)("conformance-w8xx — DB behavior (:5544)", () =>
       }
     };
 
-    it("omitted rrfK is IDENTICAL to rrfK=60 (SQL and pool); k propagates to BOTH RRF terms", async () => {
+    it("omitted rrfK is IDENTICAL to rrfK=60 (SQL, params, pool); k reaches BOTH RRF terms as a bound param", async () => {
+      // Wave-7 merge: k is a bound parameter ($5::float8), not text interpolation —
+      // the SQL text is k-invariant; only the bound value changes with k.
       const def = await capture();
       const k60 = await capture(60);
       const k61 = await capture(61);
       expect(k60.sql).toBe(def.sql);
+      expect(k60.params).toEqual(def.params);
       expect([...k60.ids].sort()).toEqual([...def.ids].sort());
-      // a non-default k changes the SQL in exactly the two RRF-term slots
-      expect(k61.sql).not.toBe(def.sql);
-      expect((k61.sql.match(/61/g) ?? []).length).toBe(2);
-      expect(k61.sql.replaceAll("61", "60")).toBe(def.sql);
+      expect(def.params[4]).toBe(60);
+      // exactly the two RRF-term slots read the k parameter
+      expect((def.sql.match(/\$5::float8/g) ?? []).length).toBe(2);
+      // a non-default k changes ONLY the bound value, never the SQL text
+      expect(k61.sql).toBe(def.sql);
+      expect(k61.params[4]).toBe(61);
+      expect(k61.params.filter((_, i) => i !== 4)).toEqual(
+        def.params.filter((_, i) => i !== 4),
+      );
     });
 
     it("non-finite or non-positive rrfK throws BEFORE the embed and BEFORE any SQL", async () => {

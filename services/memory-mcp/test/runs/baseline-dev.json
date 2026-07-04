@@ -1,13 +1,26 @@
 {
   "retrievalConfig": {
     "service": "memory-mcp",
+    "scoringVersion": "blend-2",
     "rrfK": 60,
     "blend": {
-      "relevance": 0.7,
-      "recency": 0.2,
-      "importance": 0.1
+      "form": "additive",
+      "weights": {
+        "relevance": 0.7,
+        "recency": 0.2,
+        "importance": 0.1
+      },
+      "decay": {
+        "shape": "exp",
+        "tauDays": 30,
+        "tauDaysByType": {},
+        "powerExponent": 0.5,
+        "exempt": {
+          "types": [],
+          "sourceKinds": []
+        }
+      }
     },
-    "recencyHalfLifeDays": 30,
     "candidatePool": 25,
     "recallLimit": 50,
     "embedModel": "voyage-4-large",
@@ -32,9 +45,9 @@
       "id": "m-003",
       "query": "reranker blend weights for final scoring",
       "poolRecall": 1,
-      "ndcg": 0.34337431936037655,
-      "mrr": 0.25,
-      "rank": 4
+      "ndcg": 0.3171937659698004,
+      "mrr": 0.2,
+      "rank": 5
     },
     {
       "id": "m-004",
@@ -48,17 +61,17 @@
       "id": "m-006",
       "query": "tree-sitter native module docker runtime risk",
       "poolRecall": 1,
-      "ndcg": 0.46927872602275644,
-      "mrr": 1,
-      "rank": 1
+      "ndcg": 0.23463936301137822,
+      "mrr": 0.3333333333333333,
+      "rank": 3
     },
     {
       "id": "m-008",
       "query": "how does the indexer skip unchanged files",
       "poolRecall": 1,
-      "ndcg": 0.7039180890341347,
-      "mrr": 1,
-      "rank": 1
+      "ndcg": 0.49818925746641285,
+      "mrr": 0.5,
+      "rank": 2
     },
     {
       "id": "m-009",
@@ -88,9 +101,9 @@
       "id": "m-014",
       "query": "recall gate not eyeball for embedder flip",
       "poolRecall": 1,
-      "ndcg": 0.14126697285982898,
-      "mrr": 0.1111111111111111,
-      "rank": 9
+      "ndcg": 0,
+      "mrr": 0,
+      "rank": null
     },
     {
       "id": "m-015",
@@ -120,7 +133,7 @@
       "id": "m-020",
       "query": "code_graph_expand depth cap and limit defaults",
       "poolRecall": 1,
-      "ndcg": 0.6052602440527057,
+      "ndcg": 0.5912352048230277,
       "mrr": 0.5,
       "rank": 2
     },
@@ -327,7 +340,7 @@
   ],
   "aggregates": {
     "recallAt25": 0.9473684210526315,
-    "ndcgAt10": 0.7231151063572355,
-    "mrr10": 0.7611737677527151
+    "ndcgAt10": 0.7067508758293625,
+    "mrr10": 0.7262322472848789
   }
 }

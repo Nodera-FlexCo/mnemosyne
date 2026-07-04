@@ -162,6 +162,26 @@ services:
       DEFAULT_PROJECT_ID: ${DEFAULT_PROJECT_ID:-nodex}
       PORT: "8080"
       CANDIDATE_POOL: "25"
+      # ── Wave-7 blend/decay pins (memory-mcp ONLY — codebase-mcp scoring untouched) ──
+      # The bakeoff winner ships HERE as env pins; code defaults stay A0 (additive
+      # 0.7/0.2/0.1, exp, τ30, nothing exempt), so rollback = delete the pins.
+      # Applied by the OPERATOR only after: (1) `npm run bakeoff:blend -- --yes` on the
+      # dev split picks a winner, (2) ONE predeclared confirmation on the frozen test
+      # split (`--split test --arms A0,<winner>`) passes — the recorded flip gate.
+      # Decision record: services/memory-mcp/test/retune.md (wave-7 section).
+      # Available keys (defaults in src/config.ts; invalid values throw at startup):
+      #   BLEND_FORM: multiplicative                 # additive | multiplicative
+      #   BLEND_W_RELEVANCE: "0.7"
+      #   BLEND_W_RECENCY: "0.2"
+      #   BLEND_W_IMPORTANCE: "0.1"
+      #   DECAY_SHAPE: power                         # exp | power
+      #   RECENCY_TAU_DAYS: "30"                     # τ = 1/e constant, NOT half-life
+      #   DECAY_POWER_EXPONENT: "0.5"
+      #   RECENCY_TAU_DAYS_BY_TYPE: '{"semantic":90,"procedural":90}'
+      #   DECAY_EXEMPT: 'type:entity,source_kind:decision'
+      #   RRF_K pin note: a non-60 k winner would require exposing RRF_K as an env key
+      #   first (per the wave-7 DoD it becomes a retrievalConfig-serialized env pin ONLY
+      #   if a non-60 k is confirmed on the frozen test split).
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
       CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}

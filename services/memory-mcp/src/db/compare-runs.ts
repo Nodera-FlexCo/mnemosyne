@@ -7,63 +7,17 @@
 // aggregate deltas and sign counts. Sign convention: delta = B − A (positive = B wins),
 // matching test/recall.helper.ts.
 //
-// The small CI math is INLINED here (mulberry32 + percentile bootstrap) because
-// tsconfig rootDir="src" excludes test/ — src cannot import test/recall.helper.ts.
-// The copies are pinned equal by test/compare-runs.test.ts; wave-7 Step 1 extracts
-// src/eval-core.ts and re-points BOTH call sites at it.
+// The CI math (mulberry32 + percentile bootstrap) comes from src/eval-core.ts — the
+// wave-7 extraction that ended this file's temporary inline copies (tsconfig
+// rootDir="src" excludes test/, so test/recall.helper.ts was unimportable from here).
+// Both are re-exported so test/compare-runs.test.ts's equivalence pins stay put.
 //
 // No DB, no network, no quota — reads two local JSON files (AC-108 does not bind).
 
 import { readFileSync } from "node:fs";
+import { pairedBootstrapCI } from "../eval-core.js";
 
-// ── Inline gate math (see header — wave-7 extracts this to src/eval-core.ts) ─────────
-
-/** Tiny seeded PRNG (mulberry32) — deterministic bootstrap under a fixed seed. */
-export function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/** Linear-interpolation percentile of a SORTED ascending array (numpy type-7). */
-function percentileSorted(sorted: number[], q: number): number {
-  const pos = q * (sorted.length - 1);
-  const lo = Math.floor(pos);
-  const hi = Math.ceil(pos);
-  if (lo === hi) return sorted[lo];
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
-}
-
-/** Percentile paired bootstrap over per-query deltas (delta = B − A). */
-export function pairedBootstrapCI(
-  deltas: number[],
-  opts: { iterations?: number; seed?: number; level?: number } = {},
-): { mean: number; ciLow: number; ciHigh: number } {
-  if (deltas.length === 0) return { mean: 0, ciLow: 0, ciHigh: 0 };
-  const iterations = opts.iterations ?? 10_000;
-  const level = opts.level ?? 0.95;
-  const rnd = mulberry32(opts.seed ?? 42);
-  const n = deltas.length;
-  const mean = deltas.reduce((a, b) => a + b, 0) / n;
-  const means = new Array<number>(iterations);
-  for (let it = 0; it < iterations; it++) {
-    let sum = 0;
-    for (let j = 0; j < n; j++) sum += deltas[Math.floor(rnd() * n)];
-    means[it] = sum / n;
-  }
-  means.sort((a, b) => a - b);
-  const alpha = (1 - level) / 2;
-  return {
-    mean,
-    ciLow: percentileSorted(means, alpha),
-    ciHigh: percentileSorted(means, 1 - alpha),
-  };
-}
+export { mulberry32, pairedBootstrapCI } from "../eval-core.js";
 
 // ── Artifact comparison ───────────────────────────────────────────────────────────────
 
