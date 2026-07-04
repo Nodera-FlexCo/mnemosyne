@@ -15,6 +15,9 @@ import { summarizeMemory } from "./summarize.js";
 // recall run documented in test/retune.md AFTER the live backfill. Defaults below match
 // the pre-flip behavior (RRF k=60; 0.7·rel + 0.2·recency + 0.1·importance) so the flip
 // is no-regression-by-default; adjust only with a recall measurement in hand.
+// `fuseCandidates` accepts an injectable `rrfK` for the wave-7 bakeoff sweep arms;
+// retrievalConfig() serializes the shipped DEFAULT (RRF_K) — sweep arms record their
+// per-call k in their own run artifacts.
 // TODO(operator/retune): finalize these from test/retune.md after the live backfill.
 const RRF_K = 60;
 const BLEND_RELEVANCE = 0.7;
@@ -542,7 +545,18 @@ export async function fuseCandidates(input: {
   /** Pre-computed query embedding — pass it to skip the embed call (e.g. the
    *  zero-pool retry reuses the first attempt's vector; one paid embed per search). */
   qvec?: number[];
+  /** RRF k override — wave-7 bakeoff sweep arms ONLY. Live handlers omit it, so the
+   *  default path (k = RRF_K = 60) generates byte-identical SQL. The value is
+   *  template-interpolated into the SQL, hence the finite-positive guard below. */
+  rrfK?: number;
 }): Promise<FusedCandidate[]> {
+  // Guard FIRST — before the embed call and before building the SQL: the value is
+  // interpolated (never bound), so this is also injection hygiene, and an invalid k
+  // must not spend a paid embed.
+  const k = input.rrfK ?? RRF_K;
+  if (!Number.isFinite(k) || k <= 0) {
+    throw new Error(`invalid rrfK ${k} — must be a finite positive number`);
+  }
   // BOTH sides contextual (critical): the corpus is voyage-context-4 (embedding_v2), so
   // the query MUST be embedded by the same model family or recall craters.
   const qvec =
@@ -588,7 +602,7 @@ export async function fuseCandidates(input: {
     SELECT m.id, m.title, m.content, m.summary, m.type, m.importance, m.created_at, m.event_date,
            COALESCE(m.status,'active') AS status,
            bm25.rank::int AS bm25_rank, vec.rank::int AS vec_rank,
-           (COALESCE(1.0/(${RRF_K}+bm25.rank),0) + COALESCE(1.0/(${RRF_K}+vec.rank),0))::float8 AS rrf
+           (COALESCE(1.0/(${k}+bm25.rank),0) + COALESCE(1.0/(${k}+vec.rank),0))::float8 AS rrf
     FROM memory.memories m
     LEFT JOIN bm25 ON bm25.id = m.id
     LEFT JOIN vec  ON vec.id  = m.id
