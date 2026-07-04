@@ -30,6 +30,38 @@ function relevantSet(relevant: RelevantTitles): Set<string> {
 }
 
 /**
+ * Recall@k for a single query: 1 if any relevant title appears in the top-k hits,
+ * else 0. (Binary "did we surface a relevant result in the top-k" — the gate we care
+ * about for a small held-out set; average across queries for the corpus number.)
+ *
+ * Edge cases: empty `relevant` -> 0 (nothing to recall, conservative); k <= 0 -> 0.
+ */
+export function recallAtK(
+  hits: RankedTitles,
+  relevant: RelevantTitles,
+  k: number,
+): number {
+  if (k <= 0 || relevant.length === 0) return 0;
+  const rel = relevantSet(relevant);
+  const topK = hits.slice(0, k);
+  return topK.some((h) => rel.has(normalize(h))) ? 1 : 0;
+}
+
+/**
+ * Reciprocal rank for a single query: 1 / (rank of the first relevant hit), ranks
+ * 1-based. Returns 0 when no relevant title appears anywhere in `hits` (or inputs are
+ * empty). MRR over a query set is the mean of these per-query reciprocal ranks.
+ */
+export function mrr(hits: RankedTitles, relevant: RelevantTitles): number {
+  if (relevant.length === 0) return 0;
+  const rel = relevantSet(relevant);
+  for (let i = 0; i < hits.length; i++) {
+    if (rel.has(normalize(hits[i]))) return 1 / (i + 1);
+  }
+  return 0;
+}
+
+/**
  * nDCG@k for a single query with BINARY gains (a hit is relevant or it is not — binary
  * suffices for this program's gold sets). DCG = Σ 1/log2(i+1) over relevant hits in the
  * top-k (1-based rank i); IDCG = the ideal DCG for min(|relevant|, k) items; nDCG =
