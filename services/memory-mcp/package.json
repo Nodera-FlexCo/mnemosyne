@@ -19,6 +19,7 @@
     "harvest-eval": "tsx src/db/harvest-eval.ts",
     "consolidate": "tsx src/db/consolidate.ts",
     "eval:compare": "tsx src/db/compare-runs.ts",
+    "eval:record": "tsx test/run-eval.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
