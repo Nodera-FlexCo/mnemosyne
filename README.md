@@ -98,6 +98,29 @@ DATABASE_URL=<live> VOYAGE_API_KEY=<live> EVAL_RECORD=1 \
   npm --prefix services/memory-mcp run test -- recall-gate
 ```
 
+### Consolidation operator scripts (retrieval-improvement program, wave 5)
+
+Memory consolidation is ADD-only and reversible: losers are marked
+`status='superseded'` + `superseded_by=<winner>` — content is never edited or
+deleted, pinned rows never lose, decision rows never enter. Runbook + decision
+record: [`services/memory-mcp/test/consolidation.md`](services/memory-mcp/test/consolidation.md).
+
+```bash
+# PAID (Anthropic quota — the assertion-equivalence judge; needs ANTHROPIC_API_KEY,
+# optional CONSOLIDATE_MODEL) — DRY-RUN by default: writes the report artifact
+# test/runs/consolidate-<date>.json (review surface + undo log), changes ZERO rows;
+# --apply marks reviewed losers superseded. Refuses without --yes.
+DATABASE_URL=<live> npm --prefix services/memory-mcp run consolidate -- --yes
+DATABASE_URL=<live> npm --prefix services/memory-mcp run consolidate -- --yes --apply
+
+# PAID (Voyage quota — embeds every query of the chosen split) — record a TEST-split
+# run artifact at a flip gate (pre/post-consolidation A/B); refuses without --yes
+DATABASE_URL=<live> npm --prefix services/memory-mcp run eval:record -- --yes --label pre-consolidation
+
+# FREE — paired comparison of two run artifacts (mean nDCG delta + bootstrap 95% CI)
+npm --prefix services/memory-mcp run eval:compare -- test/runs/<A>.json test/runs/<B>.json
+```
+
 ## MCP tools
 
 ### memory-mcp (durable memory)

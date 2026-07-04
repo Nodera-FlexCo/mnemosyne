@@ -21,7 +21,9 @@ pool points at rerank/blend. One aggregate number cannot tell those apart.
 Runner: `runRecallEval()` in `test/recall.helper.ts` — id-keyed v2 gold, and gold ids
 are resolved through their `superseded_by` FORWARD chains before scoring (AC-106), so
 consolidation marking a gold memory superseded can never orphan the gold row: a hit on
-any successor counts.
+any successor counts. Wave-5's `npm run consolidate` produces exactly these forward
+pointers (loser → winner, chains permitted, never destructive) — gold referencing a
+consolidated loser keeps scoring through the winner without any gold edit.
 
 nDCG is scored **one-credit**: each gold key gains at its FIRST occurrence in the top-k
 only (crediting duplicates lets DCG exceed the IDCG anchor — nDCG > 1 — silently biasing
@@ -42,7 +44,10 @@ approvedBy? }` with a `{version: 2, k, changelog: []}` header. Stable row ids
 - **test split** — spent EXCLUSIVELY by flip gates (embedder flips, rerank swaps,
   consolidation acceptance). Never used for tuning, never recomputed casually — that is
   the p-hacking guard. Every change to the test split is recorded in the file's
-  `changelog` header.
+  `changelog` header. **Consolidation acceptance (AC-304) IS a flip gate**: the
+  pre/post test-split runs of `test/consolidation.md` are the only sanctioned
+  test-split spend outside embedder/rerank flips; record them via
+  `npm run eval:record -- --yes` and compare with `npm run eval:compare`.
 
 Nothing enters either split without a human approving every gold id/path and recording
 `approvedBy` (GRAFT 2). The scripts below only PROPOSE.
@@ -156,6 +161,9 @@ none in CI:
 | `npm run distill-eval -- --yes` | both | Anthropic quota (Haiku-class; `ANTHROPIC_API_KEY`, `DISTILL_MODEL` with `CONSOLIDATE_MODEL` fallback) | refuses without `--yes` |
 | `npm run backfill:context` | memory | Voyage quota ($0.12/M) | deliberate operator step |
 | `npm run bakeoff` | codebase | Voyage quota | deliberate operator step |
+| `npm run consolidate -- --yes [--apply]` | memory | Anthropic quota (judge; `CONSOLIDATE_MODEL`, ≈500 tok/pair) — dry-run by DEFAULT, `--apply` flips losers | refuses without `--yes` |
+| `npm run eval:record -- --yes [--split test\|dev]` | memory | Voyage quota (embeds every split query — the flip-gate recorder) | refuses without `--yes` |
+| `npm run eval:compare -- <A> <B>` | memory | free (reads two artifacts) | — |
 | `npm run gold:migrate` | memory | free (SQL only) | — |
 | `npm run harvest-eval` | memory | free (SQL only) | — |
 | gate tests on the LIVE DB | both | Voyage quota (embeds every dev query) | operator-run flip gate |
