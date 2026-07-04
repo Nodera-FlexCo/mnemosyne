@@ -42,3 +42,57 @@ describe("contextModel config default (AC-022)", () => {
     expect(() => assertServerConfig()).not.toThrow();
   });
 });
+
+// Wave-7 blend/decay pins fail LOUDLY on malformed values — a typo'd compose pin
+// silently reverting to defaults would pass every post-swap gate while shipping the
+// wrong config (review findings: both engines).
+describe("blend/decay env pin validation (wave-7)", () => {
+  const loadConfig = async (env: Record<string, string>) => {
+    vi.resetModules();
+    for (const [k, v] of Object.entries(env)) process.env[k] = v;
+    return import("../src/config.js");
+  };
+
+  it("valid pins load and materialize", async () => {
+    const { config } = await loadConfig({
+      BLEND_FORM: "multiplicative",
+      RECENCY_TAU_DAYS: "90",
+      RECENCY_TAU_DAYS_BY_TYPE: '{"semantic":90}',
+      DECAY_EXEMPT: "type:entity,source_kind:decision",
+    });
+    expect(config.blendConfig.form).toBe("multiplicative");
+    expect(config.blendConfig.decay.tauDays).toBe(90);
+    expect(config.blendConfig.decay.exempt).toEqual({
+      types: ["entity"],
+      sourceKinds: ["decision"],
+    });
+  });
+
+  it.each([
+    ["BLEND_FORM", "multiplicativ"], // typo'd enum
+    ["DECAY_SHAPE", "linear"],
+    ["RECENCY_TAU_DAYS", "0"], // zero τ: recency 0 for the past, Infinity for the future
+    ["RECENCY_TAU_DAYS", "-30"], // negative τ INVERTS decay
+    ["RECENCY_TAU_DAYS", "abc"],
+    ["DECAY_POWER_EXPONENT", "0"],
+    ["DECAY_POWER_EXPONENT", "-0.5"],
+    ["RECENCY_TAU_DAYS_BY_TYPE", "not-json"],
+    ["RECENCY_TAU_DAYS_BY_TYPE", '{"semantic":0}'],
+    ["RECENCY_TAU_DAYS_BY_TYPE", '["semantic"]'],
+    ["DECAY_EXEMPT", "type:entty"], // typo'd memory type
+    ["DECAY_EXEMPT", "type:"], // empty payload
+    ["DECAY_EXEMPT", "source_kind:"],
+    ["DECAY_EXEMPT", "entity"], // missing prefix
+  ])("%s=%s throws at load", async (key, value) => {
+    await expect(loadConfig({ [key]: value })).rejects.toThrow();
+  });
+
+  it("blend weights accept 0 (a valid arm config, e.g. A4 relevance-only)", async () => {
+    const { config } = await loadConfig({
+      BLEND_W_RECENCY: "0",
+      BLEND_W_IMPORTANCE: "0",
+    });
+    expect(config.blendConfig.weights.recency).toBe(0);
+    expect(config.blendConfig.weights.importance).toBe(0);
+  });
+});

@@ -533,8 +533,7 @@ export async function fuseCandidates(input: {
    *  always runs the RRF_K module default). Non-finite or ≤ 0 throws. */
   rrfK?: number;
 }): Promise<FusedCandidate[]> {
-  // Validate the k override BEFORE any spend (embed) or SQL: k is interpolated into
-  // the SQL text (never user input on the live path), so reject garbage loudly here.
+  // Validate the k override BEFORE any spend (embed) or SQL — reject garbage loudly.
   const rrfK = input.rrfK ?? RRF_K;
   if (!Number.isFinite(rrfK) || rrfK <= 0) {
     throw new Error(
@@ -550,6 +549,7 @@ export async function fuseCandidates(input: {
     toVectorLiteral(qvec),
     input.projectId,
     config.candidatePool,
+    rrfK,
   ];
   let typeFilter = "";
   if (input.type) {
@@ -587,7 +587,7 @@ export async function fuseCandidates(input: {
            m.source_kind,
            COALESCE(m.status,'active') AS status,
            bm25.rank::int AS bm25_rank, vec.rank::int AS vec_rank,
-           (COALESCE(1.0/(${rrfK}+bm25.rank),0) + COALESCE(1.0/(${rrfK}+vec.rank),0))::float8 AS rrf
+           (COALESCE(1.0/($5::float8+bm25.rank),0) + COALESCE(1.0/($5::float8+vec.rank),0))::float8 AS rrf
     FROM memory.memories m
     LEFT JOIN bm25 ON bm25.id = m.id
     LEFT JOIN vec  ON vec.id  = m.id

@@ -28,12 +28,20 @@ function parseNum(
   name: string,
   raw: string | undefined,
   fallback: number,
+  opts: { positive?: boolean } = {},
 ): number {
   if (raw === undefined || raw === "") return fallback;
   const n = Number(raw);
   if (!Number.isFinite(n)) throw new Error(`${name}="${raw}" is not a number`);
+  if (opts.positive && n <= 0) {
+    // A zero/negative τ inverts or zeroes the decay curve — the exact silent
+    // misconfiguration the fail-loud contract above exists to prevent.
+    throw new Error(`${name}="${raw}" must be a finite number > 0`);
+  }
   return n;
 }
+
+const MEMORY_TYPES = ["episodic", "semantic", "procedural", "entity"] as const;
 
 /** `RECENCY_TAU_DAYS_BY_TYPE` — JSON object map of memory type → τ days, e.g.
  *  `{"semantic":90,"procedural":90}`. Unknown keys are tolerated (simply never match
@@ -75,10 +83,23 @@ function parseExempt(raw: string | undefined): {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)) {
-    if (entry.startsWith("type:")) types.push(entry.slice(5) as MemoryType);
-    else if (entry.startsWith("source_kind:"))
-      sourceKinds.push(entry.slice(12));
-    else {
+    if (entry.startsWith("type:")) {
+      const t = entry.slice(5);
+      if (!(MEMORY_TYPES as readonly string[]).includes(t)) {
+        throw new Error(
+          `DECAY_EXEMPT type "${t}" is invalid — use one of: ${MEMORY_TYPES.join(", ")}`,
+        );
+      }
+      types.push(t as MemoryType);
+    } else if (entry.startsWith("source_kind:")) {
+      const k = entry.slice(12);
+      if (k === "") {
+        throw new Error(
+          `DECAY_EXEMPT entry "${entry}" has an empty source_kind`,
+        );
+      }
+      sourceKinds.push(k);
+    } else {
       throw new Error(
         `DECAY_EXEMPT entry "${entry}" is invalid — use type:<t> or source_kind:<k>`,
       );
@@ -122,12 +143,15 @@ const blendConfig: BlendConfig = {
       ["exp", "power"],
       "exp",
     ),
-    tauDays: parseNum("RECENCY_TAU_DAYS", process.env.RECENCY_TAU_DAYS, 30),
+    tauDays: parseNum("RECENCY_TAU_DAYS", process.env.RECENCY_TAU_DAYS, 30, {
+      positive: true,
+    }),
     tauDaysByType: parseTauByType(process.env.RECENCY_TAU_DAYS_BY_TYPE),
     powerExponent: parseNum(
       "DECAY_POWER_EXPONENT",
       process.env.DECAY_POWER_EXPONENT,
       0.5,
+      { positive: true },
     ),
     exempt: parseExempt(process.env.DECAY_EXEMPT),
   },

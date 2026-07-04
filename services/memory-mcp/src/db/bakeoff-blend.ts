@@ -440,6 +440,15 @@ export async function runBakeoffBlend(
         "Check the eval file before spending quota.",
     );
   }
+  // Empty-gold rows score 0 on every arm, silently diluting all deltas — refuse
+  // BEFORE any spend, like the row-count guard above.
+  const goldless = rows.filter((r) => r.relevantIds.length === 0);
+  if (goldless.length > 0) {
+    throw new Error(
+      `bakeoff:blend: ${goldless.length} ${opts.split}-split row(s) have empty relevantIds ` +
+        `(first: ${goldless[0].id}) — fix the eval file before spending quota.`,
+    );
+  }
 
   // One batched SELECT: memory type of each row's FIRST gold id (the per-type slice).
   const firstGoldIds = [...new Set(rows.map((r) => r.relevantIds[0]))];
@@ -669,17 +678,19 @@ if (isMain) {
       );
     }
     const rows = filterRowsBySplit(evalFile, args.split).length;
-    const kCount = new Set(
-      predeclaredArms()
-        .filter(
-          (a) => !args.arms || a.name === "A0" || args.arms.includes(a.name),
-        )
-        .map((a) => a.rrfK),
-    ).size;
+    const kGrid = [
+      ...new Set(
+        predeclaredArms()
+          .filter(
+            (a) => !args.arms || a.name === "A0" || args.arms.includes(a.name),
+          )
+          .map((a) => a.rrfK),
+      ),
+    ].sort((a, b) => a - b);
     // PAID gate: the cost line prints BEFORE any live Voyage call.
     console.error(
-      `bakeoff:blend cost: ${rows} query embeds (reused across k) + ${rows}×${kCount} rerank calls ` +
-        `(${args.split} split, k values: ${kCount}). Blend arms score offline for free.`,
+      `bakeoff:blend cost: ${rows} query embeds (reused across k) + ${rows}×${kGrid.length} rerank calls ` +
+        `(${args.split} split, k values: ${kGrid.join(", ")}). Blend arms score offline for free.`,
     );
     const artifact = await runBakeoffBlend(
       {
