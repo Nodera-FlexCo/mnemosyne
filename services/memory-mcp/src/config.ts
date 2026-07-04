@@ -187,11 +187,14 @@ export const config = {
   // spending on every memory_store (write-path-stays-cheap lock, program wave-5
   // design lock). Default off; NOT in assertServerConfig.
   summarizeOnStore: process.env.SUMMARIZE_ON_STORE === "1",
-  consolidateModel: process.env.CONSOLIDATE_MODEL ?? "claude-haiku-4-5",
+  // `||` (not `??`): compose materializes `${CONSOLIDATE_MODEL:-}` as an EMPTY STRING
+  // in-container, and an empty model string 400s at the Anthropic API — empty must
+  // fall back exactly like unset (found live, 2026-07-04 backfill all-skip incident).
+  consolidateModel: process.env.CONSOLIDATE_MODEL || "claude-haiku-4-5",
   // Eval-candidate distiller model; falls back to the consolidate model.
   distillModel:
-    process.env.DISTILL_MODEL ??
-    process.env.CONSOLIDATE_MODEL ??
+    process.env.DISTILL_MODEL ||
+    process.env.CONSOLIDATE_MODEL ||
     "claude-haiku-4-5",
   // Origin allowlist (DNS-rebinding guard). Empty = only no-Origin (loopback) passes.
   allowedOrigins: (process.env.ALLOWED_ORIGINS ?? "")
