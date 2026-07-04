@@ -149,9 +149,16 @@ npm --prefix services/memory-mcp run eval:compare -- test/runs/<A>.json test/run
 
 - **`memory_search`** returns rank-only compact hits with
   `createdAt`, `eventDate`, `effectiveDate` (`eventDate ?? createdAt`), and `status`.
-  Optional refinements: `type`, `tags` (ANY-of metadata tags), and `after` (ISO timestamp
-  compared to `COALESCE(event_date, created_at)`). If `tags`/`after` match no candidates,
-  the tool retries once without those optional filters and prepends the retry notice.
+  Each hit's `snippet` is query-aware: a `ts_headline` fragment when the hit matched
+  lexically (detected via private-use sentinel selectors, never naive `**` scanning —
+  literal `**` in stored markdown must not false-positive), else the deterministic
+  180-char prefix. `summary` is an optional 1–3 sentence dense summary (NULL until
+  populated by the opt-in write-time summarizer or the `backfill:summaries` operator
+  script) — see [`services/memory-mcp/test/eval.md`](services/memory-mcp/test/eval.md)
+  for the full contract. Optional refinements: `type`, `tags` (ANY-of metadata tags), and
+  `after` (ISO timestamp compared to `COALESCE(event_date, created_at)`). If `tags`/`after`
+  match no candidates, the tool retries once without those optional filters and prepends
+  the retry notice.
 - **`memory_get_recent`** returns the same public hit fields as `memory_search` and keeps
   newest-created ordering (`created_at DESC`).
 - **`memory_get`** includes `status`, `event_date`, and `superseded_by` in its JSON. It
