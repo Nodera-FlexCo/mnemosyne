@@ -45,20 +45,20 @@ export function buildServer(projectId: string): McpServer {
           .enum(MEMORY_TYPES)
           .optional()
           .describe(
-            "Optional refinement — never required; restrict to one memory type",
+            "Optional strict scoping — kept on the zero-result retry, never auto-dropped; restrict to one memory type",
           ),
         tags: z
           .array(z.string())
           .optional()
           .describe(
-            "Optional refinement — never required; ANY matching tag narrows the pool",
+            "Optional refinement — auto-dropped (with a notice) if it would zero the results; ANY matching tag narrows the pool",
           ),
         after: z
           .string()
           .datetime()
           .optional()
           .describe(
-            "Optional refinement — never required; ISO timestamp for eventDate/createdAt cutoff",
+            "Optional refinement — auto-dropped (with a notice) if it would zero the results; ISO timestamp for eventDate/createdAt cutoff",
           ),
         limit: z.number().int().min(1).max(20).default(5),
       },

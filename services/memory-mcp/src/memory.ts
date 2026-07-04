@@ -400,10 +400,14 @@ export async function fuseCandidates(input: {
   tags?: string[];
   after?: string;
   limit?: number;
+  /** Pre-computed query embedding — pass it to skip the embed call (e.g. the
+   *  zero-pool retry reuses the first attempt's vector; one paid embed per search). */
+  qvec?: number[];
 }): Promise<FusedCandidate[]> {
   // BOTH sides contextual (critical): the corpus is voyage-context-4 (embedding_v2), so
   // the query MUST be embedded by the same model family or recall craters.
-  const [qvec] = await embedContextualSingle([input.query], "query");
+  const qvec =
+    input.qvec ?? (await embedContextualSingle([input.query], "query"))[0];
   const params: unknown[] = [
     input.query,
     toVectorLiteral(qvec),
@@ -550,8 +554,11 @@ export async function searchMemory(input: {
   limit: number;
 }): Promise<SearchMemoryResult> {
   const t0 = Date.now();
-  let rows = await fuseCandidates(input);
-  const poolMs = Date.now() - t0;
+  // Embed ONCE up front and hand the vector to both fuse calls — the zero-pool retry
+  // must not pay a second Voyage embed (MEDIUM-001).
+  const [qvec] = await embedContextualSingle([input.query], "query");
+  let rows = await fuseCandidates({ ...input, qvec });
+  let poolMs = Date.now() - t0;
   const droppedFilters: Record<string, string> = {};
   if (input.tags && input.tags.length > 0) {
     droppedFilters.tags = input.tags.join(",");
@@ -561,12 +568,17 @@ export async function searchMemory(input: {
   let retriedWithoutFilters = false;
   if (rows.length === 0 && hasOptionalFilters) {
     retriedWithoutFilters = true;
+    // Re-measure so the logged pool_ms covers the retried pool — the one whose ids
+    // land in pool_ids (LOW-006). The retry reuses qvec, so this window is SQL-only.
+    const retryT0 = Date.now();
     rows = await fuseCandidates({
       projectId: input.projectId,
       query: input.query,
       type: input.type,
       limit: input.limit,
+      qvec,
     });
+    poolMs = Date.now() - retryT0;
   }
   const scoredHits =
     rows.length === 0
@@ -750,10 +762,13 @@ export function formatHits(
   if (hits.length === 0) return [...lines, "No matching memories."].join("\n");
   lines.push(
     hits
-      .map(
-        (h, i) =>
-          `${i + 1}. [${h.type}] ${h.title}  (${h.effectiveDate.slice(0, 10)}, status: ${h.status}, id: ${h.id})\n   ${h.snippet}`,
-      )
+      .map((h, i) => {
+        // Status renders only when it deviates from the default — live search/recent
+        // hits are always 'active', so a constant `status: active` is token waste
+        // (LOW-001; the hit OBJECT keeps its `status` field either way).
+        const statusNote = h.status === "active" ? "" : `, status: ${h.status}`;
+        return `${i + 1}. [${h.type}] ${h.title}  (${h.effectiveDate.slice(0, 10)}${statusNote}, id: ${h.id})\n   ${h.snippet}`;
+      })
       .join("\n"),
   );
   if (

@@ -61,15 +61,25 @@ const H = vi.hoisted(() => {
     scored.sort((a, b) => b.score - a.score);
     return scored.slice(0, Math.min(topK, docs.length));
   }
-  return { fnv1a, mulberry32, fakeVec, fakeRerank };
+  // Probe for the query-embed boundary: `calls` counts embedContextualSingle
+  // invocations (MEDIUM-001 — a retried search must embed exactly once); `delayMs`
+  // slows the embed so timing assertions can tell the retried pool window from the
+  // first-attempt window (LOW-006).
+  const embedProbe = { calls: 0, delayMs: 0 };
+  return { fnv1a, mulberry32, fakeVec, fakeRerank, embedProbe };
 });
 
 vi.mock("../src/voyage.js", () => ({
   embed: async (texts: string[]) => texts.map((t) => H.fakeVec(`legacy:${t}`)),
   embedContextual: async (docs: string[][]) =>
     docs.map((d) => d.map((t) => H.fakeVec(t))),
-  embedContextualSingle: async (texts: string[]) =>
-    texts.map((t) => H.fakeVec(t)),
+  embedContextualSingle: async (texts: string[]) => {
+    H.embedProbe.calls += 1;
+    if (H.embedProbe.delayMs > 0) {
+      await new Promise((r) => setTimeout(r, H.embedProbe.delayMs));
+    }
+    return texts.map((t) => H.fakeVec(t));
+  },
   rerank: async (query: string, docs: string[], topK: number) =>
     H.fakeRerank(query, docs, topK),
   toVectorLiteral: (v: number[]) => `[${v.join(",")}]`,
@@ -266,6 +276,33 @@ describe("memory tool descriptions (AC-205)", () => {
     expect(TOOL_DESCRIPTIONS.memory_search).toContain("optionally narrowing");
     expect(TOOL_DESCRIPTIONS.memory_search).toContain("ANY-of");
   });
+
+  it("LOW-002: type is strict scoping; tags/after are droppable refinements", async () => {
+    const client = await connectClient();
+    try {
+      const { tools } = await client.listTools();
+      const search = tools.find((t) => t.name === "memory_search")!;
+      const props = (
+        search.inputSchema as {
+          properties: Record<string, { description?: string }>;
+        }
+      ).properties;
+      // `type` scopes strictly: kept on the zero-result retry, never auto-dropped.
+      expect(props.type.description).toContain("strict scoping");
+      expect(props.type.description).toContain("never auto-dropped");
+      // `tags`/`after` are the droppable refinements the retry sheds.
+      for (const droppable of ["tags", "after"]) {
+        expect(props[droppable].description, droppable).toContain(
+          "auto-dropped (with a notice)",
+        );
+        expect(props[droppable].description, droppable).not.toContain(
+          "strict scoping",
+        );
+      }
+    } finally {
+      await client.close();
+    }
+  });
 });
 
 describe("memory_search input validation", () => {
@@ -456,6 +493,19 @@ describe.skipIf(skip)("memory token shaping (AC-201/202/203/204/207)", () => {
     expect(formatHits(result.hits, result)).toBe("No matching memories.");
   });
 
+  it("MEDIUM-001: the zero-pool retry reuses the query embedding — exactly ONE embed call", async () => {
+    H.embedProbe.calls = 0;
+    const result = await searchMemory({
+      projectId: PROJ,
+      query: "gateway",
+      tags: ["no-such-tag"],
+      limit: 5,
+    });
+    expect(result.retriedWithoutFilters).toBe(true);
+    expect(result.hits.length).toBeGreaterThan(0);
+    expect(H.embedProbe.calls).toBe(1);
+  });
+
   // ── AC-203: rank-only output ────────────────────────────────────────────────
 
   it("AC-203: formatted output carries ranks + ids but no raw scores", async () => {
@@ -512,8 +562,22 @@ describe.skipIf(skip)("memory token shaping (AC-201/202/203/204/207)", () => {
     expect(h.eventDate).toBe(iso("2026-06-20T00:00:00Z"));
     expect(h.effectiveDate).toBe(h.eventDate);
     expect(h.status).toBe("active");
-    expect(formatHits([h])).toContain(
-      `(2026-06-20, status: active, id: ${h.id})`,
+    expect(formatHits([h])).toContain(`(2026-06-20, id: ${h.id})`);
+  });
+
+  it("LOW-001: status renders in the header ONLY when it deviates from active", async () => {
+    const result = await searchMemory({
+      projectId: PROJ,
+      query: "gateway",
+      limit: 20,
+    });
+    const h = result.hits.find((x) => x.id === id(2))!;
+    expect(h.status).toBe("active");
+    // Active (the only status live search/recent can return) stays out of the header…
+    expect(formatHits([h])).not.toContain("status:");
+    // …while a non-default status still renders.
+    expect(formatHits([{ ...h, status: "superseded" }])).toContain(
+      `(2026-06-20, status: superseded, id: ${h.id})`,
     );
   });
 
@@ -527,7 +591,7 @@ describe.skipIf(skip)("memory token shaping (AC-201/202/203/204/207)", () => {
     expect(h).toBeTruthy();
     expect(h.eventDate).toBeNull();
     expect(h.effectiveDate).toBe(h.createdAt);
-    expect(formatHits([h])).toContain("(2026-05-01, status: active, id: ");
+    expect(formatHits([h])).toContain("(2026-05-01, id: ");
   });
 
   it("AC-207: memory_get_recent exposes the identical public hit shape", async () => {
@@ -574,15 +638,27 @@ describe.skipIf(skip)("memory token shaping (AC-201/202/203/204/207)", () => {
     });
 
     const q2 = "gateway retried probe";
-    await searchMemory({
-      projectId: PROJ,
-      query: q2,
-      tags: ["no-such-tag"],
-      limit: 3,
-    });
+    // LOW-006 probe: slow the (single, up-front) query embed. The embed precedes the
+    // first attempt's pool window, so a pool_ms frozen before the retry would come
+    // out ≥ the delay, while a re-measured retried pool (SQL only) stays far below it.
+    H.embedProbe.delayMs = 400;
+    try {
+      await searchMemory({
+        projectId: PROJ,
+        query: q2,
+        tags: ["no-such-tag"],
+        limit: 3,
+      });
+    } finally {
+      H.embedProbe.delayMs = 0;
+    }
     const row2 = await until(async () => {
-      const { rows } = await pool.query<{ filters: Record<string, unknown> }>(
-        `SELECT filters FROM memory.search_log
+      const { rows } = await pool.query<{
+        filters: Record<string, unknown>;
+        pool_ms: number;
+        total_ms: number;
+      }>(
+        `SELECT filters, pool_ms, total_ms FROM memory.search_log
          WHERE project_id = $1 AND query = $2
          ORDER BY created_at DESC LIMIT 1`,
         [PROJ, q2],
@@ -591,6 +667,11 @@ describe.skipIf(skip)("memory token shaping (AC-201/202/203/204/207)", () => {
     });
     expect(row2).not.toBeNull();
     expect(row2!.filters).toEqual({ tags: ["no-such-tag"], retried: true });
+    // LOW-006: pool_ms covers the RETRIED pool — the one whose ids were logged.
+    expect(row2!.pool_ms).toBeGreaterThanOrEqual(0);
+    expect(row2!.pool_ms).toBeLessThan(400);
+    expect(row2!.total_ms).toBeGreaterThanOrEqual(400);
+    expect(row2!.total_ms).toBeGreaterThanOrEqual(row2!.pool_ms);
   });
 
   // ── AC-208: memory_get status/date/supersession banner ────────────────────
@@ -625,9 +706,10 @@ describe.skipIf(skip)("memory token shaping (AC-201/202/203/204/207)", () => {
   });
 
   it("AC-208: archived memory_get prepends status banner, never excludes", async () => {
-    await pool.query(`UPDATE memory.memories SET status = 'archived' WHERE id = $1`, [
-      id(8),
-    ]);
+    await pool.query(
+      `UPDATE memory.memories SET status = 'archived' WHERE id = $1`,
+      [id(8)],
+    );
     const got = await callTool(client, "memory_get", { id: id(8) });
     expect(got.isError).toBe(false);
     expect(got.text.split("\n")[0]).toBe("status=archived");

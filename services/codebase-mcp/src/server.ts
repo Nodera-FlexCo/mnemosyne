@@ -93,19 +93,27 @@ export function buildServer(projectId: string): McpServer {
         repo: z
           .string()
           .optional()
-          .describe("Repository id (dir name) to scope to"),
+          .describe(
+            "Optional strict scoping — kept on the zero-result retry, never auto-dropped; repository id (dir name) to scope to",
+          ),
         path: z
           .string()
           .optional()
-          .describe("Optional refinement — never required; substring of the repo-relative path"),
+          .describe(
+            "Optional refinement — auto-dropped (with a notice) if it would zero the results; substring of the repo-relative path",
+          ),
         extension: z
           .string()
           .optional()
-          .describe("Optional refinement — never required; file extension with or without leading dot"),
+          .describe(
+            "Optional refinement — auto-dropped (with a notice) if it would zero the results; file extension with or without leading dot",
+          ),
         language: z
           .string()
           .optional()
-          .describe("Optional refinement — never required; language stored on chunks"),
+          .describe(
+            "Optional strict scoping — kept on the zero-result retry, never auto-dropped; language stored on chunks",
+          ),
         k: z.number().int().min(1).max(20).default(5),
       },
       annotations: {
@@ -126,9 +134,7 @@ export function buildServer(projectId: string): McpServer {
           k,
         });
         return {
-          content: [
-            { type: "text", text: formatHits(result.hits, result) },
-          ],
+          content: [{ type: "text", text: formatHits(result.hits, result) }],
         };
       } catch (e) {
         return {

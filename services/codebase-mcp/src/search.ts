@@ -113,8 +113,11 @@ export async function fuseCodeCandidates(input: {
   language?: string;
   path?: string;
   extension?: string;
+  /** Pre-computed query embedding — pass it to skip the embed call (e.g. the
+   *  zero-pool retry reuses the first attempt's vector; one paid embed per search). */
+  qvec?: number[];
 }): Promise<FusedCodeCandidate[]> {
-  const [qvec] = await embedCode([input.query], "query");
+  const qvec = input.qvec ?? (await embedCode([input.query], "query"))[0];
   const params: unknown[] = [
     input.query,
     toVectorLiteral(qvec),
@@ -232,7 +235,10 @@ export async function searchCode(input: {
   extension?: string;
   k: number;
 }): Promise<SearchCodeResult> {
-  let rows = await fuseCodeCandidates(input);
+  // Embed ONCE up front and hand the vector to both fuse calls — the zero-pool retry
+  // must not pay a second Voyage embed (MEDIUM-001).
+  const [qvec] = await embedCode([input.query], "query");
+  let rows = await fuseCodeCandidates({ ...input, qvec });
   const droppedFilters: Record<string, string> = {};
   if (input.path) droppedFilters.path = input.path;
   if (input.extension) droppedFilters.extension = input.extension;
@@ -245,6 +251,7 @@ export async function searchCode(input: {
       query: input.query,
       repo: input.repo,
       language: input.language,
+      qvec,
     });
   }
   const scored =
@@ -282,15 +289,13 @@ export function formatHits(
   if (hits.length === 0) return [...lines, "No matching code."].join("\n");
   lines.push(
     hits
-      .map(
-        (h, i) => {
-          const mergedNote =
-            h.mergedCount && h.mergedCount > 1
-              ? ` (spans ${h.mergedCount} chunks)`
-              : "";
-          return `${i + 1}. ${h.filePath}:${h.startLine}-${h.endLine}${h.symbolName ? ` (${h.symbolName})` : ""}${mergedNote}  [${h.chunkId}]\n   ${h.snippet.replace(/\n/g, " ⏎ ")}`;
-        },
-      )
+      .map((h, i) => {
+        const mergedNote =
+          h.mergedCount && h.mergedCount > 1
+            ? ` (spans ${h.mergedCount} chunks)`
+            : "";
+        return `${i + 1}. ${h.filePath}:${h.startLine}-${h.endLine}${h.symbolName ? ` (${h.symbolName})` : ""}${mergedNote}  [${h.chunkId}]\n   ${h.snippet.replace(/\n/g, " ⏎ ")}`;
+      })
       .join("\n"),
   );
   if (

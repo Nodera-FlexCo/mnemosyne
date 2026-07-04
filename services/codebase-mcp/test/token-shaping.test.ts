@@ -55,12 +55,17 @@ const H = vi.hoisted(() => {
     scored.sort((a, b) => b.score - a.score);
     return scored.slice(0, Math.min(topK, docs.length));
   }
-  return { fakeVec, fakeRerank };
+  // Probe for the query-embed boundary: counts embedCode invocations (MEDIUM-001 —
+  // a retried search must embed exactly once).
+  const embedProbe = { calls: 0 };
+  return { fakeVec, fakeRerank, embedProbe };
 });
 
 vi.mock("../src/voyage.js", () => ({
-  embedCode: async (texts: string[]) =>
-    texts.map((t) => H.fakeVec(`code:${t}`)),
+  embedCode: async (texts: string[]) => {
+    H.embedProbe.calls += 1;
+    return texts.map((t) => H.fakeVec(`code:${t}`));
+  },
   embedCodeContextual: async (docs: string[][]) =>
     docs.map((d) => d.map((t) => H.fakeVec(`ctx:${t}`))),
   rerank: async (query: string, docs: string[], topK: number) =>
@@ -70,15 +75,22 @@ vi.mock("../src/voyage.js", () => ({
 
 process.env.VOYAGE_API_KEY ??= "test-key";
 
-import { TOOL_DESCRIPTIONS } from "../src/server.js";
+import { TOOL_DESCRIPTIONS, buildServer } from "../src/server.js";
 import { formatHits, fuseCodeCandidates, searchCode } from "../src/search.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PROJ = "ws2-code-shaping";
 const EMPTY_PROJ = "ws2-code-shaping-empty";
+const MERGE_PROJ = "ws2-code-merge-e2e";
 const REPO_A = "ws2-repo-a";
 const REPO_B = "ws2-repo-b";
+const REPO_M = "ws2-repo-merge";
 const cid = (n: number) => `30000000-0000-4000-8000-00000000000${n}`;
+// Merge-e2e fixture ids (own prefix — the cid template only fits one digit).
+const MID_A = "31000000-0000-4000-8000-000000000001";
+const MID_B = "31000000-0000-4000-8000-000000000002";
 
 interface ChunkFixture {
   id: string;
@@ -186,6 +198,44 @@ describe("codebase tool descriptions (AC-205)", () => {
     }
     expect(TOOL_DESCRIPTIONS.code_search).toContain("optionally narrow");
   });
+
+  it("LOW-002: repo/language are strict scoping; path/extension are droppable refinements", async () => {
+    const server = buildServer("ws2-code-desc");
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "test", version: "1.0.0" });
+    await Promise.all([
+      client.connect(clientTransport),
+      server.connect(serverTransport),
+    ]);
+    try {
+      const { tools } = await client.listTools();
+      const cs = tools.find((t) => t.name === "code_search")!;
+      const props = (
+        cs.inputSchema as {
+          properties: Record<string, { description?: string }>;
+        }
+      ).properties;
+      // Scoping params are kept on the zero-result retry, never auto-dropped…
+      for (const strict of ["repo", "language"]) {
+        expect(props[strict].description, strict).toContain("strict scoping");
+        expect(props[strict].description, strict).toContain(
+          "never auto-dropped",
+        );
+      }
+      // …while path/extension are the droppable refinements the retry sheds.
+      for (const droppable of ["path", "extension"]) {
+        expect(props[droppable].description, droppable).toContain(
+          "auto-dropped (with a notice)",
+        );
+        expect(props[droppable].description, droppable).not.toContain(
+          "strict scoping",
+        );
+      }
+    } finally {
+      await client.close();
+    }
+  });
 });
 
 describe.skipIf(skip)("code token shaping (AC-201/202/203/204)", () => {
@@ -237,11 +287,50 @@ describe.skipIf(skip)("code token shaping (AC-201/202/203/204)", () => {
         ],
       );
     }
+
+    // AC-206 e2e fixture: TWO adjacent chunks of ONE file (1-40 touches 41-80) in
+    // their own project, so both land in top-k and must come back as one merged hit.
+    await pool.query("DELETE FROM codebase.files WHERE project_id = $1", [
+      MERGE_PROJ,
+    ]);
+    const { rows: mergeFile } = await pool.query<{ id: string }>(
+      `INSERT INTO codebase.files
+         (repository_id, project_id, path, language, content_sha256)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id`,
+      [REPO_M, MERGE_PROJ, "src/merged/module.ts", "typescript", "file-merge"],
+    );
+    const mergeChunks: Array<[string, number, number]> = [
+      [MID_A, 1, 40],
+      [MID_B, 41, 80],
+    ];
+    for (const [chunkId, startLine, endLine] of mergeChunks) {
+      await pool.query(
+        `INSERT INTO codebase.code_chunks
+           (id, file_id, repository_id, project_id, file_path, language,
+            symbol_name, start_line, end_line, content, content_sha256, embedding)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::halfvec)`,
+        [
+          chunkId,
+          mergeFile[0].id,
+          REPO_M,
+          MERGE_PROJ,
+          "src/merged/module.ts",
+          "typescript",
+          null,
+          startLine,
+          endLine,
+          `// adjacent beacon segment lines ${startLine}-${endLine}`,
+          `chunk-${chunkId}`,
+          `[${H.fakeVec(`chunk:${chunkId}`).join(",")}]`,
+        ],
+      );
+    }
   });
 
   afterAll(async () => {
-    await pool.query("DELETE FROM codebase.files WHERE project_id = $1", [
-      PROJ,
+    await pool.query("DELETE FROM codebase.files WHERE project_id = ANY($1)", [
+      [PROJ, MERGE_PROJ],
     ]);
     await pool.end();
   });
@@ -315,6 +404,37 @@ describe.skipIf(skip)("code token shaping (AC-201/202/203/204)", () => {
     expect(result.hits).toEqual([]);
     expect(result.retriedWithoutFilters).toBe(true);
     expect(formatHits(result.hits, result)).toBe("No matching code.");
+  });
+
+  it("MEDIUM-001: the zero-pool retry reuses the query embedding — exactly ONE embed call", async () => {
+    H.embedProbe.calls = 0;
+    const result = await searchCode({
+      projectId: PROJ,
+      query: "gateway",
+      path: "no/such/path",
+      k: 5,
+    });
+    expect(result.retriedWithoutFilters).toBe(true);
+    expect(result.hits.length).toBeGreaterThan(0);
+    expect(H.embedProbe.calls).toBe(1);
+  });
+
+  it("AC-206 (e2e): two adjacent same-file top-k chunks merge to one hit with the union range and spans note", async () => {
+    const result = await searchCode({
+      projectId: MERGE_PROJ,
+      query: "adjacent beacon segment",
+      k: 5,
+    });
+    expect(result.hits).toHaveLength(1);
+    const [merged] = result.hits;
+    expect(merged.filePath).toBe("src/merged/module.ts");
+    expect(merged.startLine).toBe(1);
+    expect(merged.endLine).toBe(80);
+    expect(merged.mergedCount).toBe(2);
+    expect([MID_A, MID_B]).toContain(merged.chunkId); // leader = best-ranked constituent
+    expect(formatHits(result.hits, result).split("\n")[0]).toBe(
+      `1. src/merged/module.ts:1-80 (spans 2 chunks)  [${merged.chunkId}]`,
+    );
   });
 
   it("AC-203: formatted output contains no raw scores", async () => {
