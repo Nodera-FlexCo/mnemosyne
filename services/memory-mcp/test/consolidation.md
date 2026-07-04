@@ -161,17 +161,27 @@ Record the verdict here:
 
 | Date | Rows (test split) | nDCG@10 pre → post | Recall@25 pre → post | Δ nDCG 95% CI | Verdict |
 | --- | --- | --- | --- | --- | --- |
-| _pending_ | 20 | 0.5978 → _pending_ | 0.8000 → _pending_ | | |
+| 2026-07-04 | 20 | 0.5978 → 0.6811 (Δ +0.0833) | 0.8000 → 0.8000 | [−0.0322, +0.2209] | **ACCEPT** |
 
-> **Status 2026-07-04:** steps 0–1 executed (pre-flight repairs above; pre
-> artifact `test/runs/2026-07-04-pre-consolidation.json` committed). Step 2 ran
-> and fail-opened cleanly — 230 candidate pairs collected, ALL UNJUDGED, zero
-> rows changed — because **no `ANTHROPIC_API_KEY` exists on the box** (Nodex
-> routes Claude through GCP Vertex; the judge needs a direct Anthropic key).
-> BLOCKED on the operator providing one (add to `/opt/mnemosyne/.env`; compose
-> already passes it through). Re-running the dry-run resumes from the checkpoint
-> report. If the judge runs days later, re-record the pre artifact first
-> (baseline-lifetime doctrine, `test/eval.md`).
+> **Executed 2026-07-04 (full chain):** steps 0–1 this session (pre-flight
+> repairs above; pre artifact committed); step 2 first fail-opened on the
+> missing `ANTHROPIC_API_KEY` (230 pairs UNJUDGED, zero rows changed — the
+> fail-open design working as specified), then ran fully once the key landed:
+> 232 pairs judged, **92 rows superseded** on apply
+> (`consolidate-2026-07-04-applied.json` = the undo log). Step 4 post artifact
+> `test/runs/2026-07-04-post-consolidation.json`; MRR@10 0.5833 → 0.6917
+> (+0.108); per-query 6W/4L/10T. Verdict per the rule below: CI includes zero
+> with ZERO pool-recall change and a large directional win → **ACCEPT** —
+> consolidation stays applied.
+>
+> **Attribution caveat (honest record):** the pre→post window also contains the
+> token-efficiency summary flip (summary-aware rerank docs + corpus-wide summary
+> backfill, its own gate recorded PASS-with-lift on the dev split) and ~8h of
+> corpus drift — the +0.083 is the JOINT effect of consolidation + summaries;
+> the two are not separable from these artifacts. The industry "dedup →
+> precision" claim is therefore CONSISTENT with this data, not isolated by it.
+> The decision is unaffected: no regression on the frozen split under the
+> combined change, supersession fully reversible via the applied report.
 
 - **CI excludes zero on the win side, or includes zero with no pool-recall drop** →
   ACCEPT; keep both artifacts committed; done.
