@@ -6,7 +6,7 @@
     "recallLimit": 50,
     "codeEmbedModel": "voyage-code-3",
     "codeContextModel": "voyage-context-3",
-    "rerankModel": "rerank-2.5-lite",
+    "rerankModel": "rerank-2.5",
     "maxMergedLines": 120,
     "rerankDocTruncation": 1500,
     "snippetLines": 4,
@@ -44,9 +44,9 @@
       "id": "c-005",
       "query": "where are SQL migrations applied at startup",
       "poolRecall": 1,
-      "ndcg": 0.5012658353418871,
-      "mrr": 0.25,
-      "rank": 4
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
     },
     {
       "id": "c-007",
@@ -68,9 +68,9 @@
       "id": "c-010",
       "query": "tree-sitter symbol and edge extraction",
       "poolRecall": 1,
-      "ndcg": 1,
-      "mrr": 1,
-      "rank": 1
+      "ndcg": 0.6309297535714575,
+      "mrr": 0.5,
+      "rank": 2
     },
     {
       "id": "c-011",
@@ -100,17 +100,17 @@
       "id": "c-016",
       "query": "how do we serialize a vector into a halfvec literal",
       "poolRecall": 1,
-      "ndcg": 0.5249810332008933,
-      "mrr": 0.3333333333333333,
-      "rank": 3
+      "ndcg": 0.5802792108518124,
+      "mrr": 0.5,
+      "rank": 2
     },
     {
       "id": "c-017",
       "query": "how do we hold a per-repo advisory lock during indexing",
       "poolRecall": 1,
-      "ndcg": 0.6309297535714575,
-      "mrr": 0.5,
-      "rank": 2
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
     },
     {
       "id": "c-019",
@@ -204,7 +204,7 @@
       "id": "c-035",
       "query": "Voyage rerank documents against a query",
       "poolRecall": 1,
-      "ndcg": 0.7977228895450266,
+      "ndcg": 0.8065735963827293,
       "mrr": 1,
       "rank": 1
     },
@@ -236,7 +236,7 @@
       "id": "c-041",
       "query": "code_index_status tool reading index_runs",
       "poolRecall": 1,
-      "ndcg": 0.9197207891481876,
+      "ndcg": 1,
       "mrr": 1,
       "rank": 1
     },
@@ -268,9 +268,9 @@
       "id": "c-047",
       "query": "symbol graph unique constraints migration",
       "poolRecall": 1,
-      "ndcg": 0.5,
-      "mrr": 0.3333333333333333,
-      "rank": 3
+      "ndcg": 0.6309297535714575,
+      "mrr": 0.5,
+      "rank": 2
     },
     {
       "id": "c-049",
@@ -284,9 +284,9 @@
       "id": "c-050",
       "query": "memory-mcp blue green contextual embedding backfill",
       "poolRecall": 1,
-      "ndcg": 0.6309297535714575,
-      "mrr": 0.5,
-      "rank": 2
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
     },
     {
       "id": "c-052",
@@ -300,9 +300,9 @@
       "id": "c-053",
       "query": "where does the API verify Supabase access tokens via JWKS",
       "poolRecall": 1,
-      "ndcg": 0.5,
-      "mrr": 0.3333333333333333,
-      "rank": 3
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
     },
     {
       "id": "c-055",
@@ -356,30 +356,30 @@
       "id": "c-064",
       "query": "duplicate invoice detection heuristic with trigram similarity",
       "poolRecall": 1,
-      "ndcg": 1,
-      "mrr": 1,
-      "rank": 1
-    },
-    {
-      "id": "c-065",
-      "query": "Cloudflare R2 storage provider with bucket lock posture",
-      "poolRecall": 1,
       "ndcg": 0.6309297535714575,
       "mrr": 0.5,
       "rank": 2
     },
     {
+      "id": "c-065",
+      "query": "Cloudflare R2 storage provider with bucket lock posture",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
       "id": "c-067",
       "query": "gap-less invoice number allocation on finalize",
       "poolRecall": 1,
-      "ndcg": 0.21840743681816419,
-      "mrr": 0.16666666666666666,
-      "rank": 6
+      "ndcg": 0.38685280723454163,
+      "mrr": 0.5,
+      "rank": 2
     }
   ],
   "aggregates": {
     "recallAt25": 0.9333333333333333,
-    "ndcgAt10": 0.7509420132160604,
-    "mrr10": 0.735185185185185
+    "ndcgAt10": 0.7911999605586143,
+    "mrr10": 0.7925925925925927
   }
 }
