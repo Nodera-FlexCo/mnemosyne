@@ -187,7 +187,11 @@ export function buildServer(projectId: string): McpServer {
           content: [
             {
               type: "text",
-              text: `stored ${type} memory "${r.title}" (id: ${r.id})`,
+              // AC-301: an exact-content duplicate short-circuits to the existing row
+              // (no insert, no embed spend) — say so instead of pretending to store.
+              text: r.duplicate
+                ? `Already stored as ${r.id} (exact duplicate).`
+                : `stored ${type} memory "${r.title}" (id: ${r.id})`,
             },
           ],
         };
