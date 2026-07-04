@@ -602,7 +602,15 @@ describe.skipIf(skip)("memory token shaping (AC-201/202/203/204/207)", () => {
     for (const probe of [id(1), id(2)]) {
       const s = search.hits.find((x) => x.id === probe)!;
       const r = recent.find((x) => x.id === probe)!;
-      expect(r).toEqual(s);
+      // Field parity holds, but snippet TEXT deliberately differs since wave 1
+      // (AC-801/803): search snippets may be query-aware headlines, while
+      // getRecent always keeps the deterministic 180-char prefix.
+      const prefix = byId
+        .get(probe)!
+        .content.replace(/\s+/g, " ")
+        .slice(0, 180);
+      expect(r).toEqual({ ...s, snippet: prefix });
+      expect(r.snippet).toBe(prefix);
     }
     for (const r of recent) {
       expect("score" in r).toBe(false);

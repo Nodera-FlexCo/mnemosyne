@@ -58,6 +58,12 @@ const RECALL_LIMIT = 50; // per-arm (BM25 / vector) recall before fusion
 export const RERANK_DOC_TRUNCATION = 1200; // chars of title+content handed to the reranker
 export const SNIPPET_CHARS = 180; // whitespace-collapsed snippet length in Hit
 
+// ts_headline options for query-aware snippets (display-only — deliberately NOT part of
+// retrievalConfig(): headlines decorate the final hits and never touch pool or ranking).
+// `**` delimiters are markdown-safe; ≤2 fragments keep the snippet compact.
+export const SNIPPET_HEADLINE_OPTS =
+  'StartSel=**, StopSel=**, MaxFragments=2, MaxWords=20, MinWords=8, FragmentDelimiter=" … "';
+
 /**
  * The FULL retrieval configuration, serialized into every eval-run artifact (AC-104)
  * so any recorded number is reproducible. JSON-safe by construction (plain literals —
@@ -465,6 +471,46 @@ export function toPublicHits(hits: ScoredHit[]): Hit[] {
 }
 
 /**
+ * Query-aware snippet decoration (AC-801/802): one extra small SQL query computes
+ * ts_headline fragments for EXACTLY the final ≤limit hit ids — never the pool — using
+ * the SAME text-search config + query function as the BM25 arm ('english' +
+ * plainto_tsquery), so a headline lights up iff the ranking query matched lexically.
+ * A hit's snippet is replaced only when the whitespace-collapsed headline actually
+ * carries a `**` marker: a marker-less headline is ts_headline's no-match fallback
+ * (vector-only hit, stop-words-only query) and the deterministic 180-char prefix is
+ * better. Display-only and error-swallowing by design (logSearch pattern): on ANY
+ * failure the hits are returned unchanged — snippets must never fail a search.
+ */
+export async function applyQuerySnippets(
+  query: string,
+  hits: Hit[],
+): Promise<Hit[]> {
+  if (hits.length === 0) return hits;
+  try {
+    // Options passed as a text PARAMETER (never interpolated); left(content, 50000)
+    // caps headline parsing cost on giant rows. Raw content is deliberately not
+    // selected — only the headline travels back.
+    const { rows } = await pool.query<{ id: string; headline: string }>(
+      `SELECT id, ts_headline('english', left(content, 50000),
+                              plainto_tsquery('english', $1), $3) AS headline
+       FROM memory.memories
+       WHERE id = ANY($2::uuid[])`,
+      [query, hits.map((h) => h.id), SNIPPET_HEADLINE_OPTS],
+    );
+    const headlineById = new Map(rows.map((r) => [r.id, r.headline]));
+    return hits.map((h) => {
+      const cleaned = (headlineById.get(h.id) ?? "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (cleaned.length === 0 || !cleaned.includes("**")) return h;
+      return { ...h, snippet: cleaned };
+    });
+  } catch {
+    return hits; // AC-802: snippet decoration must never surface into the search path
+  }
+}
+
+/**
  * Phase 1: hybrid recall + RRF fusion. Embeds the query (contextual — the corpus is
  * voyage-context-4) and returns the fused candidate pool: `config.candidatePool` rows
  * max, RRF-ordered, with per-arm ranks. `input.limit` is the FINAL hit limit used by
@@ -662,7 +708,9 @@ export async function searchMemory(input: {
     rows.length === 0
       ? []
       : await rerankAndBlend(input.query, rows, input.limit);
-  const hits = toPublicHits(scoredHits);
+  // Snippet decoration happens AFTER ranking and BEFORE logging — logSearch records
+  // ids only, so the log is unaffected either way (AC-801; getRecent is untouched).
+  const hits = await applyQuerySnippets(input.query, toPublicHits(scoredHits));
   logSearch({
     projectId: input.projectId,
     query: input.query,

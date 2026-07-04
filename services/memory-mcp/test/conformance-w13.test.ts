@@ -110,6 +110,7 @@ vi.mock("../src/voyage.js", () => ({
 process.env.VOYAGE_API_KEY ??= "test-key";
 
 import {
+  applyQuerySnippets,
   fuseCandidates,
   rerankAndBlend,
   retrievalConfig,
@@ -750,9 +751,22 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (memory-mcp)", () => {
     for (const h of hits) {
       const f = searchById.get(h.id)!;
       expect(f).toBeTruthy();
-      // 180-char whitespace-collapsed snippet, exactly as the plan pins it.
-      expect(h.snippet).toBe(f.content.replace(/\s+/g, " ").slice(0, 180));
-      expect(h.snippet.length).toBeLessThanOrEqual(180);
+      // Snippet contract (AC-801/802): a query-aware ts_headline extract with
+      // `**` markers when the query lexically matches the content, otherwise the
+      // deterministic 180-char whitespace-collapsed prefix. Both forms are
+      // whitespace-collapsed; only the prefix form is char-bounded.
+      const collapsed = f.content.replace(/\s+/g, " ");
+      if (h.snippet.includes("**")) {
+        expect(h.snippet).not.toMatch(/\n| {2}/);
+        // Every fragment (markers stripped, delimiter-split) is drawn verbatim
+        // from this hit's own content.
+        for (const fragment of h.snippet.split(" … ")) {
+          expect(collapsed).toContain(fragment.replaceAll("**", ""));
+        }
+      } else {
+        expect(h.snippet).toBe(collapsed.slice(0, 180));
+        expect(h.snippet.length).toBeLessThanOrEqual(180);
+      }
       expect(h.title).toBe(f.title);
       expect(h.type).toBe(f.type);
       expect("score" in h).toBe(false);
@@ -763,7 +777,7 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (memory-mcp)", () => {
     }
   }
 
-  it("AC-101/AC-203/AC-207: hit shape — snippet(180, collapsed), rank-only, dates/status, ≤ limit", async () => {
+  it("AC-101/AC-203/AC-207: hit shape — snippet(headline or 180-prefix, collapsed), rank-only, dates/status, ≤ limit", async () => {
     const result = await searchMemory({
       projectId: P_SEARCH,
       query: "postgres connection pool",
@@ -828,9 +842,15 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (memory-mcp)", () => {
     const pool = await fuseCandidates(input);
     expect(pool.length).toBeGreaterThan(0);
     const composed = await rerankAndBlend(input.query, pool, input.limit);
-    expect(composed.map(({ score: _score, ...hit }) => hit)).toEqual(
-      oneShot.hits,
+    // The live handler is exactly this composition plus the display-only snippet
+    // decoration pass (AC-801) — which never adds, drops, or reorders hits.
+    const decorated = await applyQuerySnippets(
+      input.query,
+      composed.map(({ score: _score, ...hit }) => hit),
     );
+    expect(decorated).toEqual(oneShot.hits);
+    // Ranking-bearing fields are identical even before decoration.
+    expect(composed.map((h) => h.id)).toEqual(oneShot.hits.map((h) => h.id));
   });
 
   // ── AC-102: fuseCandidates pool contract ───────────────────────────────────
