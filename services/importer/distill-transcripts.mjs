@@ -12,6 +12,11 @@
 //   DRY_RUN=false VOYAGE_API_KEY=… node distill-transcripts.mjs ./condensed
 //
 // Env: CONCURRENCY (default 4), LIMIT (cap sessions, for testing), MODEL.
+//
+// LIVE ingest requires memory-mcp BUILT FIRST (cd ../memory-mcp && npm ci && npm run
+// build): rows are written through the shared invariant path
+// ../memory-mcp/dist/db/insert-memory.js (content_sha256 + metadata.dupCandidates +
+// BOTH embedding columns). DRY_RUN needs no build.
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -125,6 +130,26 @@ const manifest = JSON.parse(readFileSync(join(DIR, 'manifest.json'), 'utf8'));
 let sessions = manifest.filter((m) => m.file);
 if (LIMIT > 0) sessions = sessions.slice(0, LIMIT);
 
+// Shared invariant write path (tech-debt 4761d86c) — content_sha256 + dupCandidates
+// flagging (per row, AFTER its vectors are computed) + both embedding columns.
+// Loaded only for LIVE runs so DRY_RUN never needs the memory-mcp build.
+let insertMemoryRow;
+if (!DRY_RUN) {
+  try {
+    const helper = await import('../memory-mcp/dist/db/insert-memory.js');
+    // dist/ is gitignored, so a STALE build can be silently present — the contract
+    // assert turns "stale dist with a changed write contract" into a hard rebuild
+    // failure instead of silent bad writes.
+    if (helper.INSERT_MEMORY_CONTRACT !== 1 || typeof helper.insertMemoryRow !== 'function') {
+      throw new Error(`stale or incompatible dist (contract ${helper.INSERT_MEMORY_CONTRACT ?? 'missing'}, expected 1)`);
+    }
+    ({ insertMemoryRow } = helper);
+  } catch (e) {
+    console.error(`cannot load ../memory-mcp/dist/db/insert-memory.js — build memory-mcp first (cd services/memory-mcp && npm ci && npm run build): ${e.message}`);
+    process.exit(1);
+  }
+}
+
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 4 });
 const existing = new Set(
   (await pool.query(`SELECT content_sha256 FROM memory.memories WHERE content_sha256 IS NOT NULL`))
@@ -171,16 +196,15 @@ async function processSession(m) {
       vec2 = await embedContextual(embedInput);
     }
     catch (e) { console.error(`  embed failed: ${e.message}`); continue; }
-    await pool.query(
-      `INSERT INTO memory.memories
-         (project_id,type,title,content,importance,metadata,embedding,embedding_v2,status,source_kind,content_sha256,event_date)
-       VALUES ($1,$2,$3,$4,$5,$6,$7::halfvec,$8::halfvec,'active',$9,$10,$11)`,
-      [PROJECT_ID, type, title, content, importance,
-       JSON.stringify({ ...(it.metadata && typeof it.metadata === 'object' ? it.metadata : {}),
-         sessionId: m.sessionId, project: m.project, gitBranch: m.gitBranch || null,
-         tags: ['claude-session', 'distilled', ...tags] }),
-       `[${vec.join(',')}]`, `[${vec2.join(',')}]`, sourceKind, hash, m.eventDate || null],
-    );
+    // insertMemoryRow recomputes content_sha256 from the content — same value as
+    // `hash` above, so the pre-dedupe set stays coherent.
+    await insertMemoryRow(pool, {
+      projectId: PROJECT_ID, type, title, content, importance,
+      metadata: { ...(it.metadata && typeof it.metadata === 'object' ? it.metadata : {}),
+        sessionId: m.sessionId, project: m.project, gitBranch: m.gitBranch || null,
+        tags: ['claude-session', 'distilled', ...tags] },
+      sourceKind, eventDate: m.eventDate || null,
+    }, { vec, vec2 });
     inserted++;
   }
 }

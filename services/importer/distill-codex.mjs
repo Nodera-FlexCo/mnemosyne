@@ -5,6 +5,11 @@
 //
 //   sqlite3 -json state_5.sqlite "SELECT ... FROM threads" > threads.json
 //   DRY_RUN=false VOYAGE_API_KEY=… node distill-codex.mjs threads.json
+//
+// LIVE ingest requires memory-mcp BUILT FIRST (cd ../memory-mcp && npm ci && npm run
+// build): rows are written through the shared invariant path
+// ../memory-mcp/dist/db/insert-memory.js (content_sha256 + metadata.dupCandidates +
+// BOTH embedding columns). DRY_RUN needs no build.
 
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -20,6 +25,27 @@ const DATABASE_URL = process.env.DATABASE_URL ||
   `postgres://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.PGHOST || '127.0.0.1'}:5432/${process.env.POSTGRES_DB}`;
 
 const threads = JSON.parse(readFileSync(process.argv[2] || 'threads.json', 'utf8'));
+
+// Shared invariant write path (tech-debt 4761d86c) — content_sha256 + dupCandidates
+// flagging (per row, AFTER its vectors are computed) + both embedding columns.
+// Loaded only for LIVE runs so DRY_RUN never needs the memory-mcp build.
+let insertMemoryRow;
+if (!DRY_RUN) {
+  try {
+    const helper = await import('../memory-mcp/dist/db/insert-memory.js');
+    // dist/ is gitignored, so a STALE build can be silently present — the contract
+    // assert turns "stale dist with a changed write contract" into a hard rebuild
+    // failure instead of silent bad writes.
+    if (helper.INSERT_MEMORY_CONTRACT !== 1 || typeof helper.insertMemoryRow !== 'function') {
+      throw new Error(`stale or incompatible dist (contract ${helper.INSERT_MEMORY_CONTRACT ?? 'missing'}, expected 1)`);
+    }
+    ({ insertMemoryRow } = helper);
+  } catch (e) {
+    console.error(`cannot load ../memory-mcp/dist/db/insert-memory.js — build memory-mcp first (cd services/memory-mcp && npm ci && npm run build): ${e.message}`);
+    process.exit(1);
+  }
+}
+
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 4 });
 const existing = new Set(
   (await pool.query(`SELECT content_sha256 FROM memory.memories WHERE content_sha256 IS NOT NULL`)).rows.map((r) => r.content_sha256),
@@ -70,20 +96,22 @@ for (const th of threads) {
   ].filter(Boolean).join('\n').slice(0, 4000);
   const hash = sha256(content);
   if (existing.has(hash)) { skipped++; continue; }
+  // In-run dedupe: two threads with identical derived content must not insert twice
+  // (the pre-dedupe sets are the ONLY exact-dup guard — the shared write path has none).
+  existing.add(hash);
   if (DRY_RUN) { stored++; continue; }
   const embedInput = `${title}\n${content}`;
   try {
     const vec = await embed(embedInput);
     const vec2 = await embedContextual(embedInput);
     const eventDate = th.created_at ? new Date(th.created_at * 1000).toISOString().slice(0, 10) : null;
-    await pool.query(
-      `INSERT INTO memory.memories
-         (project_id,type,title,content,importance,metadata,embedding,embedding_v2,status,source_kind,content_sha256,event_date)
-       VALUES ($1,'episodic',$2,$3,0.4,$4,$5::halfvec,$6::halfvec,'active','codex-session',$7,$8)`,
-      [PROJECT_ID, title, content,
-       JSON.stringify({ cwd: th.cwd, branch: th.git_branch, tokens: th.tokens_used, threadId: th.id, tags: ['codex-session'] }),
-       `[${vec.join(',')}]`, `[${vec2.join(',')}]`, hash, eventDate],
-    );
+    // insertMemoryRow recomputes content_sha256 from the content — same value as
+    // `hash` above, so the pre-dedupe set stays coherent.
+    await insertMemoryRow(pool, {
+      projectId: PROJECT_ID, type: 'episodic', title, content, importance: 0.4,
+      metadata: { cwd: th.cwd, branch: th.git_branch, tokens: th.tokens_used, threadId: th.id, tags: ['codex-session'] },
+      sourceKind: 'codex-session', eventDate,
+    }, { vec, vec2 });
     stored++;
     if (stored % 50 === 0) console.error(`  ${stored} stored...`);
   } catch (e) {

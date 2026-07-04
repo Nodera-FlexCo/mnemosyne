@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { pool } from "./db/pool.js";
 import {
   embed,
@@ -8,6 +7,7 @@ import {
 } from "./voyage.js";
 import { config } from "./config.js";
 import { summarizeMemory } from "./summarize.js";
+import { contentSha256, insertMemoryRow } from "./db/insert-memory.js";
 
 // ── Fusion constant (Wave P → wave-7 bakeoff) ────────────────────────────────────────
 // RRF k stays a module const (the code default); the blend/decay knobs moved to
@@ -170,27 +170,16 @@ export interface DecisionFields {
 }
 
 // ── Write-path dedup (Wave 5, AC-301/AC-302) ─────────────────────────────────────────
-
-/**
- * Exact-dup key: sha256 hex over CONTENT ONLY — deliberately the importers' recipe
- * (`services/importer/distill-transcripts.mjs` `sha256(content)`), so write-path and
- * importer dedup keys never diverge. Title is NOT hashed: a retitled restatement of the
- * same content is still the same content.
- */
-export function contentSha256(content: string): string {
-  return createHash("sha256").update(content).digest("hex");
-}
-
-/** Cosine-similarity floor above which a neighbor is flagged as a dup CANDIDATE
- *  (AC-302 write-path flag; also the wave-5 consolidation pair threshold). */
-export const DUP_COSINE_THRESHOLD = 0.9;
-/** Top-s neighbors inspected per new memory on the write path. */
-export const DUP_CANDIDATE_TOP_S = 3;
-
-export interface DupCandidate {
-  id: string;
-  sim: number;
-}
+// The row-level invariants (content_sha256 recipe, dup thresholds, the invariant
+// INSERT itself) moved to src/db/insert-memory.ts — the ONE shared write path that
+// storeMemory and the three services/importer/*.mjs scripts all route through
+// (tech-debt 4761d86c). Re-exported here so existing consumers keep their imports.
+export {
+  contentSha256,
+  DUP_COSINE_THRESHOLD,
+  DUP_CANDIDATE_TOP_S,
+} from "./db/insert-memory.js";
+export type { DupCandidate } from "./db/insert-memory.js";
 
 export async function storeMemory(
   input: {
@@ -274,62 +263,32 @@ export async function storeMemory(
   try {
     await client.query("BEGIN");
 
-    // AC-302: cheap write-path pass 2 — top-s cosine neighbors above the dup threshold
-    // are RECORDED into metadata.dupCandidates as a flag for the batch consolidation
-    // job (a prioritization hint, never an action). One extra indexed vector query;
-    // deliberately NO LLM anywhere on this path.
-    const { rows: neighborRows } = await client.query<{
-      id: string;
-      sim: number;
-    }>(
-      `SELECT id, 1 - (embedding_v2 <=> $1::halfvec) AS sim
-       FROM memory.memories
-       WHERE project_id = $2 AND archived_at IS NULL
-         AND COALESCE(status,'active') = 'active' AND embedding_v2 IS NOT NULL
-       ORDER BY embedding_v2 <=> $1::halfvec
-       LIMIT ${DUP_CANDIDATE_TOP_S}`,
-      [toVectorLiteral(vec2), input.projectId],
-    );
-    const dupCandidates: DupCandidate[] = neighborRows
-      .filter((n) => Number(n.sim) > DUP_COSINE_THRESHOLD)
-      .map((n) => ({ id: n.id, sim: Number(Number(n.sim).toFixed(4)) }));
-    const metadata: Record<string, unknown> = { ...(input.metadata ?? {}) };
-    if (dupCandidates.length > 0) {
-      metadata.dupCandidates = dupCandidates;
-      metadata.dupFlaggedAt = new Date().toISOString();
-    }
-
-    const { rows } = await client.query<{ id: string; title: string }>(
-      `INSERT INTO memory.memories
-         (project_id, type, title, content, importance, metadata, source_session_id, source_kind,
-          embedding, embedding_v2, content_sha256,
-          decision_project, decision_status, decided_at, supersedes_id, decided_in, related_ids,
-          summary)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::halfvec,$10::halfvec,$11,
-               $12,$13,$14,$15,$16,$17,$18)
-       RETURNING id, title`,
-      [
-        input.projectId,
-        input.type,
-        input.title,
-        input.content,
-        input.importance ?? 0.5,
-        JSON.stringify(metadata),
-        input.sourceSessionId ?? null,
-        input.sourceKind ?? null,
-        toVectorLiteral(vec),
-        toVectorLiteral(vec2),
-        sha,
+    // The shared invariant path (src/db/insert-memory.ts): AC-302 neighbor pass
+    // (top-s cosine>threshold → metadata.dupCandidates, NO LLM) + the invariant
+    // INSERT (content_sha256 + BOTH embedding columns). Runs on this transaction's
+    // client, so the neighbor pass + insert stay inside the transaction as before.
+    const inserted = await insertMemoryRow(
+      client,
+      {
+        projectId: input.projectId,
+        type: input.type,
+        title: input.title,
+        content: input.content,
+        importance: input.importance,
+        metadata: input.metadata,
+        sourceSessionId: input.sourceSessionId,
+        sourceKind: input.sourceKind,
+        summary,
         decisionProject,
         decisionStatus,
         decidedAt,
         supersedesId,
         decidedIn,
         relatedIds,
-        summary,
-      ],
+      },
+      { vec, vec2 },
     );
-    const newId = rows[0].id;
+    const newId = inserted.id;
 
     // AC-041 supersession write: mark the superseded decision as superseded and set its
     // forward pointer (superseded_by) to this new decision, keeping the inverse of
@@ -347,7 +306,7 @@ export async function storeMemory(
     }
 
     await client.query("COMMIT");
-    return rows[0];
+    return { id: inserted.id, title: inserted.title };
   } catch (e) {
     await client.query("ROLLBACK");
     throw e;
