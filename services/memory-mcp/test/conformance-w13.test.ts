@@ -295,6 +295,8 @@ describe("AC-104: retrievalConfig() full snapshot (pure)", () => {
     expect(cfg.rerankDocTruncation).toBe(1200);
     expect(cfg.snippetChars).toBe(SNIPPET_CHARS);
     expect(cfg.snippetChars).toBe(180);
+    // Wave-2 (AC-810): the doc composition is a ranking-bearing knob.
+    expect(cfg.rerankDocIncludesSummary).toBe(true);
   });
 
   it("is JSON-safe (survives a JSON round-trip verbatim)", () => {

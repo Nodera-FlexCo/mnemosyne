@@ -7,6 +7,7 @@ import {
   toVectorLiteral,
 } from "./voyage.js";
 import { config } from "./config.js";
+import { summarizeMemory } from "./summarize.js";
 
 // ── Tuned fusion/blend constants (Wave P) ───────────────────────────────────────────
 // These are the RRF k + the rerank/recency/importance blend weights. They are the
@@ -28,6 +29,8 @@ export interface Hit {
   title: string;
   type: MemoryType;
   snippet: string;
+  /** Stored dense summary (wave-2, AC-808) — NULL until summarized. */
+  summary: string | null;
   importance: number;
   createdAt: string;
   eventDate: string | null;
@@ -43,6 +46,7 @@ interface CandidateRow {
   id: string;
   title: string;
   content: string;
+  summary: string | null;
   type: MemoryType;
   importance: number;
   created_at: Date;
@@ -86,6 +90,9 @@ export function retrievalConfig() {
     contextModel: config.contextModel,
     rerankModel: config.rerankModel,
     rerankDocTruncation: RERANK_DOC_TRUNCATION,
+    // Wave-2 (AC-810): reranker docs are title\n(summary\n)content — the doc
+    // composition is a ranking-bearing knob, so artifacts must carry it (AC-104).
+    rerankDocIncludesSummary: true,
     snippetChars: SNIPPET_CHARS,
   };
 }
@@ -195,9 +202,15 @@ export async function storeMemory(
   // Burn-in: write BOTH the legacy `embedding` (voyage-4-large) and the contextual
   // `embedding_v2` (voyage-context-4) so a rollback stays possible. After the Step 8
   // burn-in window, the legacy column + its embed() call are dropped.
+  // The summary rides the same Promise.all: when the summarize gate is closed
+  // (default) it resolves null instantly, so the write path gains zero latency;
+  // when open, summarizeMemory's own 4 s timeout bounds it (AC-808).
   const text = `${input.title}\n${input.content}`;
-  const [vec] = await embed([text], "document");
-  const [vec2] = await embedContextualSingle([text], "document");
+  const [[vec], [vec2], summary] = await Promise.all([
+    embed([text], "document"),
+    embedContextualSingle([text], "document"),
+    summarizeMemory(input.title, input.content),
+  ]);
 
   // A transaction so the supersession bookkeeping (insert the new decision + flip the
   // superseded row) stays consistent — the chain never half-updates.
@@ -234,9 +247,10 @@ export async function storeMemory(
       `INSERT INTO memory.memories
          (project_id, type, title, content, importance, metadata, source_session_id, source_kind,
           embedding, embedding_v2, content_sha256,
-          decision_project, decision_status, decided_at, supersedes_id, decided_in, related_ids)
+          decision_project, decision_status, decided_at, supersedes_id, decided_in, related_ids,
+          summary)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::halfvec,$10::halfvec,$11,
-               $12,$13,$14,$15,$16,$17)
+               $12,$13,$14,$15,$16,$17,$18)
        RETURNING id, title`,
       [
         input.projectId,
@@ -256,6 +270,7 @@ export async function storeMemory(
         supersedesId,
         decidedIn,
         relatedIds,
+        summary,
       ],
     );
     const newId = rows[0].id;
@@ -570,7 +585,7 @@ export async function fuseCandidates(input: {
       ORDER BY m.embedding_v2 <=> $2::halfvec
       LIMIT ${RECALL_LIMIT}
     )
-    SELECT m.id, m.title, m.content, m.type, m.importance, m.created_at, m.event_date,
+    SELECT m.id, m.title, m.content, m.summary, m.type, m.importance, m.created_at, m.event_date,
            COALESCE(m.status,'active') AS status,
            bm25.rank::int AS bm25_rank, vec.rank::int AS vec_rank,
            (COALESCE(1.0/(${RRF_K}+bm25.rank),0) + COALESCE(1.0/(${RRF_K}+vec.rank),0))::float8 AS rrf
@@ -586,6 +601,24 @@ export async function fuseCandidates(input: {
 }
 
 /**
+ * Reranker document composition (wave-2, AC-810): `title\n` + (`summary\n` when
+ * non-null) + `content`, truncated AS A WHOLE to RERANK_DOC_TRUNCATION — prefix
+ * shape, never summary-only. Slicing the JOINED string (not the content alone) is
+ * what keeps the doc-length invariant and makes a summary displace content tail
+ * within the same budget; with summary = NULL the output is byte-identical to the
+ * pre-wave-2 `title\ncontent` doc, so golden pins hold with zero edits.
+ */
+export function buildRerankDoc(r: {
+  title: string;
+  content: string;
+  summary?: string | null;
+}): string {
+  return [r.title, ...(r.summary ? [r.summary] : []), r.content]
+    .join("\n")
+    .slice(0, RERANK_DOC_TRUNCATION);
+}
+
+/**
  * Phase 2: rerank the candidate pool, blend relevance with recency + importance, and
  * shape the top-`limit` hits (180-char whitespace-collapsed snippet, 4-decimal score).
  */
@@ -595,9 +628,7 @@ export async function rerankAndBlend(
   limit: number,
 ): Promise<ScoredHit[]> {
   // Rerank candidate pool, then blend relevance with recency + importance.
-  const docs = rows.map((r) =>
-    `${r.title}\n${r.content}`.slice(0, RERANK_DOC_TRUNCATION),
-  );
+  const docs = rows.map((r) => buildRerankDoc(r));
   const ranked = await rerank(query, docs, rows.length);
   const relById = new Map<string, number>();
   for (const r of ranked) relById.set(rows[r.index].id, r.score);
@@ -621,6 +652,7 @@ export async function rerankAndBlend(
     title: r.title,
     type: r.type,
     snippet: r.content.replace(/\s+/g, " ").slice(0, SNIPPET_CHARS),
+    summary: r.summary,
     importance: r.importance,
     ...toIsoDateFields(r),
     status: r.status,
@@ -768,7 +800,7 @@ export async function getMemory(
     `UPDATE memory.memories
        SET access_count = access_count + 1, last_accessed_at = now()
      WHERE id = $1
-     RETURNING id, project_id, type, title, content, importance, access_count,
+     RETURNING id, project_id, type, title, content, summary, importance, access_count,
                metadata, source_session_id, pinned, created_at, last_accessed_at,
                status, event_date, superseded_by`,
     [id],
@@ -788,7 +820,7 @@ export async function getRecent(input: {
     params.push(input.type);
   }
   const { rows } = await pool.query<CandidateRow>(
-    `SELECT id, title, content, type, importance, created_at, event_date,
+    `SELECT id, title, content, summary, type, importance, created_at, event_date,
             COALESCE(status,'active') AS status, 0 AS rrf
      FROM memory.memories
      WHERE archived_at IS NULL AND COALESCE(status,'active') = 'active' AND project_id = $1 ${typeFilter}
@@ -801,6 +833,7 @@ export async function getRecent(input: {
     title: r.title,
     type: r.type,
     snippet: r.content.replace(/\s+/g, " ").slice(0, SNIPPET_CHARS),
+    summary: r.summary,
     importance: r.importance,
     ...toIsoDateFields(r),
     status: r.status,
@@ -869,6 +902,12 @@ export async function updateMemory(
       // embedding, so dropping the hint costs nothing but stale-judge spend.
       sets.push(`metadata = metadata - 'dupCandidates' - 'dupFlaggedAt'`);
     }
+    // Never-stale invariant (wave-2): a title/content change recomputes the summary;
+    // a null result (gate closed or summarizer failure) CLEARS the stale one — the
+    // next backfill run regenerates it.
+    const summary = await summarizeMemory(title, content);
+    sets.push(`summary = $${i++}`);
+    params.push(summary);
   }
   if (sets.length === 0) return { id };
   params.push(id);
@@ -931,7 +970,10 @@ export function formatHits(
         // hits are always 'active', so a constant `status: active` is token waste
         // (LOW-001; the hit OBJECT keeps its `status` field either way).
         const statusNote = h.status === "active" ? "" : `, status: ${h.status}`;
-        return `${i + 1}. [${h.type}] ${h.title}  (${h.effectiveDate.slice(0, 10)}${statusNote}, id: ${h.id})\n   ${h.snippet}`;
+        // Wave-2: the stored dense summary renders as a third indented line when
+        // present; NULL-summary hits keep the exact pre-wave-2 two-line form.
+        const summaryLine = h.summary ? `\n   summary: ${h.summary}` : "";
+        return `${i + 1}. [${h.type}] ${h.title}  (${h.effectiveDate.slice(0, 10)}${statusNote}, id: ${h.id})\n   ${h.snippet}${summaryLine}`;
       })
       .join("\n"),
   );

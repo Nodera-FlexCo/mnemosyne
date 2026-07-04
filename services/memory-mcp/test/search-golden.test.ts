@@ -286,6 +286,8 @@ describe.skipIf(skip)("searchMemory golden pins (AC-101)", () => {
       expect(h.eventDate).toBe(expectedEvent ? iso(expectedEvent) : null);
       expect(h.effectiveDate).toBe(h.eventDate ?? h.createdAt);
       expect(h.status).toBe("active");
+      // Wave-2: fixtures are never summarized — pins the NULL pass-through.
+      expect(h.summary).toBeNull();
     }
   }
 
