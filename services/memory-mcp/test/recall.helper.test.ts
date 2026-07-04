@@ -10,6 +10,7 @@ import {
   recallAtK,
   regressionExcluded,
   runRecallEval,
+  signTest,
   tryLoadRecallEvalV2,
 } from "./recall.helper.js";
 import { config } from "../src/config.js";
@@ -265,6 +266,62 @@ describe("pairedBootstrapCI (gate math)", () => {
     const ci = pairedBootstrapCI(deltas, { iterations: 2000, seed: 3 });
     expect(ci.ciLow).toBeLessThanOrEqual(ci.mean);
     expect(ci.ciHigh).toBeGreaterThanOrEqual(ci.mean);
+  });
+});
+
+// ── Wave-7 sign test (bakeoff verdict corroboration) — hand-computed values ─────────
+
+describe("signTest (two-sided, continuity-corrected normal approximation)", () => {
+  it("counts wins/losses/ties and excludes ties from the test", () => {
+    const r = signTest([0.1, 0.2, -0.05, 0, 0, 0.3]);
+    expect(r.wins).toBe(3);
+    expect(r.losses).toBe(1);
+    expect(r.ties).toBe(2);
+    // n = 4 non-zero: z = (|3 − 2| − 0.5)/√1 = 0.5 → p = 2·(1 − Φ(0.5)) ≈ 0.6171
+    expect(r.p).toBeCloseTo(0.6171, 3);
+  });
+
+  it("8 wins / 2 losses → z = 2.5/√2.5, p ≈ 0.1138 (hand-computed)", () => {
+    const deltas = [...Array(8).fill(0.01), ...Array(2).fill(-0.01)];
+    const r = signTest(deltas);
+    expect(r.wins).toBe(8);
+    expect(r.losses).toBe(2);
+    expect(r.ties).toBe(0);
+    // z = (|8 − 5| − 0.5)/√(10/4) = 2.5/1.58114 = 1.58114 → p = 2·(1 − Φ(1.58114))
+    expect(r.p).toBeCloseTo(0.1138, 3);
+  });
+
+  it("9 wins / 1 loss → p ≈ 0.0269 (hand-computed)", () => {
+    const r = signTest([...Array(9).fill(1), -1]);
+    // z = (|9 − 5| − 0.5)/√(10/4) = 3.5/1.58114 = 2.21359 → p = 2·(1 − Φ(2.21359))
+    expect(r.p).toBeCloseTo(0.0269, 3);
+  });
+
+  it("balanced 5/5 → the continuity correction floors z at 0 → p = 1", () => {
+    const r = signTest([1, 1, 1, 1, 1, -1, -1, -1, -1, -1]);
+    expect(r.p).toBe(1);
+  });
+
+  it("all ties (or empty) → p = 1, no evidence either way", () => {
+    expect(signTest([0, 0, 0])).toEqual({ wins: 0, losses: 0, ties: 3, p: 1 });
+    expect(signTest([])).toEqual({ wins: 0, losses: 0, ties: 0, p: 1 });
+  });
+
+  it("more lopsided splits give smaller p (monotone in |wins − losses|)", () => {
+    const p6 = signTest([...Array(6).fill(1), ...Array(4).fill(-1)]).p;
+    const p8 = signTest([...Array(8).fill(1), ...Array(2).fill(-1)]).p;
+    const p10 = signTest(Array(10).fill(1)).p;
+    expect(p8).toBeLessThan(p6);
+    expect(p10).toBeLessThan(p8);
+    expect(p10).toBeGreaterThan(0);
+  });
+
+  it("p is clamped to [0, 1]", () => {
+    for (const deltas of [[1], [1, -1], Array(200).fill(1)]) {
+      const { p } = signTest(deltas);
+      expect(p).toBeGreaterThanOrEqual(0);
+      expect(p).toBeLessThanOrEqual(1);
+    }
   });
 });
 

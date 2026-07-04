@@ -278,12 +278,28 @@ describe("AC-104: retrievalConfig() full snapshot (pure)", () => {
     const cfg = retrievalConfig();
     expect(cfg.service).toBe("memory-mcp");
     expect(typeof cfg.rrfK).toBe("number");
+    // Wave-7 (AC-702): nested blend config + top-level scoringVersion replace the
+    // retired scalar recencyHalfLifeDays.
+    expect(typeof cfg.scoringVersion).toBe("string");
     expect(cfg.blend).toEqual({
-      relevance: expect.any(Number),
-      recency: expect.any(Number),
-      importance: expect.any(Number),
+      form: expect.any(String),
+      weights: {
+        relevance: expect.any(Number),
+        recency: expect.any(Number),
+        importance: expect.any(Number),
+      },
+      decay: {
+        shape: expect.any(String),
+        tauDays: expect.any(Number),
+        tauDaysByType: expect.any(Object),
+        powerExponent: expect.any(Number),
+        exempt: {
+          types: expect.any(Array),
+          sourceKinds: expect.any(Array),
+        },
+      },
     });
-    expect(typeof cfg.recencyHalfLifeDays).toBe("number");
+    expect("recencyHalfLifeDays" in cfg).toBe(false);
     expect(cfg.candidatePool).toBe(25);
     expect(typeof cfg.recallLimit).toBe("number");
     expect(typeof cfg.embedModel).toBe("string");
