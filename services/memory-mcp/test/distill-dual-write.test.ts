@@ -1,13 +1,19 @@
-// Regression (review Fix 3) — the importer distill scripts must dual-write BOTH the legacy
-// `embedding` AND the contextual `embedding_v2`. After the contextual flip, searchMemory
-// filters `embedding_v2 IS NOT NULL`, so any memory ingested with ONLY the legacy column is
-// invisible to recall until a manual backfill. This is a STATIC guard over the two .mjs
-// scripts (they run on the box against live Voyage, so they cannot be unit-tested directly):
-// it asserts the INSERT column list includes embedding_v2 AND the script actually computes it
-// via the contextual endpoint with the correct one-chunk-per-doc / int8 / 1024-dim params.
+// Regression (review Fix 3, superseded mechanism → importer write-path unification,
+// tech-debt 4761d86c) — every importer row must carry the contextual `embedding_v2`:
+// after the contextual flip, searchMemory filters `embedding_v2 IS NOT NULL`, so any
+// memory ingested without it is invisible to recall until a manual backfill.
 //
-// When the legacy `embedding` column is dropped post burn-in, this test is updated to assert
-// the legacy write is gone (and only embedding_v2 remains).
+// ORIGINALLY this pinned the distill scripts' inline dual-write INSERT. The importers
+// now route ALL writes through the shared invariant path (src/db/insert-memory.ts,
+// consumed as ../memory-mcp/dist/db/insert-memory.js), which owns the dual-embedding
+// write — pinned at DB level by test/insert-memory.test.ts. This STATIC guard (the
+// scripts run on the box against live Voyage, so they cannot be unit-tested directly)
+// now asserts the routing itself, over all THREE importers:
+//   1. no direct `INSERT INTO memory.memories` remains (the bypass this closes);
+//   2. every script imports + calls insertMemoryRow from the compiled shared path;
+//   3. every script still computes the contextual vector via the contextual endpoint
+//      with the correct one-chunk-per-doc / int8 / 1024-dim params (importer.mjs
+//      included — it historically lacked the v2 write entirely: the AC-304 hole).
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -17,40 +23,31 @@ import { describe, expect, it } from "vitest";
 const here = dirname(fileURLToPath(import.meta.url));
 const importerDir = join(here, "..", "..", "importer");
 
-const SCRIPTS = ["distill-codex.mjs", "distill-transcripts.mjs"];
+const SCRIPTS = [
+  "importer.mjs",
+  "distill-codex.mjs",
+  "distill-transcripts.mjs",
+];
 
-describe("importer distill scripts dual-write embedding_v2 (Fix 3)", () => {
+describe("importers route writes through the shared invariant path", () => {
   for (const name of SCRIPTS) {
     describe(name, () => {
       const src = readFileSync(join(importerDir, name), "utf8");
 
-      it("INSERT column list includes embedding_v2 next to embedding", () => {
-        // The INSERT into memory.memories must name embedding_v2 in its column list.
-        const insertMatch = src.match(
-          /INSERT INTO memory\.memories[\s\S]*?VALUES/i,
-        );
-        expect(
-          insertMatch,
-          "no INSERT INTO memory.memories found",
-        ).not.toBeNull();
-        const columns = insertMatch![0];
-        expect(columns).toContain("embedding");
-        expect(columns).toContain("embedding_v2");
+      it("contains NO direct INSERT INTO memory.memories (the bypass is closed)", () => {
+        expect(src).not.toMatch(/INSERT INTO memory\.memories/i);
       });
 
-      it("computes the contextual vector via /contextualizedembeddings", () => {
+      it("imports and calls insertMemoryRow from memory-mcp's compiled shared path", () => {
+        expect(src).toContain("memory-mcp/dist/db/insert-memory.js");
+        expect(src).toMatch(/insertMemoryRow\s*\(/);
+      });
+
+      it("computes the contextual vector via /contextualizedembeddings (int8, 1024-dim)", () => {
         expect(src).toContain("/contextualizedembeddings");
-        // contextual params: nested inputs, int8, 1024-dim.
         expect(src).toMatch(/output_dtype:\s*['"]int8['"]/);
         expect(src).toMatch(/output_dimension:\s*1024/);
-        // a dedicated helper computes the v2 vector and it is passed to the INSERT.
         expect(src).toMatch(/embedContextual\s*\(/);
-      });
-
-      it("binds BOTH embedding and embedding_v2 as ::halfvec in VALUES", () => {
-        // both vectors are serialized + cast (the dual-write the live storeMemory does).
-        const halfvecCount = (src.match(/::halfvec/g) || []).length;
-        expect(halfvecCount).toBeGreaterThanOrEqual(2);
       });
     });
   }
