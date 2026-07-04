@@ -1,0 +1,333 @@
+{
+  "retrievalConfig": {
+    "service": "memory-mcp",
+    "rrfK": 60,
+    "blend": {
+      "relevance": 0.7,
+      "recency": 0.2,
+      "importance": 0.1
+    },
+    "recencyHalfLifeDays": 30,
+    "candidatePool": 25,
+    "recallLimit": 50,
+    "embedModel": "voyage-4-large",
+    "contextModel": "voyage-context-4",
+    "rerankModel": "rerank-2.5-lite",
+    "rerankDocTruncation": 1200,
+    "snippetChars": 180
+  },
+  "evalVersion": 2,
+  "split": "dev",
+  "rows": 38,
+  "perQuery": [
+    {
+      "id": "m-001",
+      "query": "what embedding model does memory-mcp use",
+      "poolRecall": 1,
+      "ndcg": 0.4911492931622974,
+      "mrr": 0.3333333333333333,
+      "rank": 3
+    },
+    {
+      "id": "m-003",
+      "query": "reranker blend weights for final scoring",
+      "poolRecall": 1,
+      "ndcg": 0.35853358850813305,
+      "mrr": 0.25,
+      "rank": 4
+    },
+    {
+      "id": "m-004",
+      "query": "code knowledge graph plan",
+      "poolRecall": 1,
+      "ndcg": 0.9674679834891693,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-006",
+      "query": "tree-sitter native module docker runtime risk",
+      "poolRecall": 1,
+      "ndcg": 0.46927872602275644,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-008",
+      "query": "how does the indexer skip unchanged files",
+      "poolRecall": 1,
+      "ndcg": 0.7039180890341347,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-009",
+      "query": "index_runs observability table",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-011",
+      "query": "decision log typed shape and supersession",
+      "poolRecall": 1,
+      "ndcg": 0.23463936301137822,
+      "mrr": 0.3333333333333333,
+      "rank": 3
+    },
+    {
+      "id": "m-012",
+      "query": "blue green re-embed backfill strategy",
+      "poolRecall": 1,
+      "ndcg": 0.3044671974905181,
+      "mrr": 0.14285714285714285,
+      "rank": 7
+    },
+    {
+      "id": "m-014",
+      "query": "recall gate not eyeball for embedder flip",
+      "poolRecall": 1,
+      "ndcg": 0.1480409554829326,
+      "mrr": 0.125,
+      "rank": 8
+    },
+    {
+      "id": "m-015",
+      "query": "importer hardcodes voyage-4-large model",
+      "poolRecall": 1,
+      "ndcg": 0.4415801103577823,
+      "mrr": 0.2,
+      "rank": 5
+    },
+    {
+      "id": "m-017",
+      "query": "migration numbering collision between waves",
+      "poolRecall": 1,
+      "ndcg": 0.6114902967340503,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-018",
+      "query": "no migrate on boot operators run by hand",
+      "poolRecall": 0,
+      "ndcg": 0,
+      "mrr": 0,
+      "rank": null
+    },
+    {
+      "id": "m-020",
+      "query": "code_graph_expand depth cap and limit defaults",
+      "poolRecall": 1,
+      "ndcg": 0.6240505200038379,
+      "mrr": 0.5,
+      "rank": 2
+    },
+    {
+      "id": "m-021",
+      "query": "contextualized embeddings endpoint nested inputs",
+      "poolRecall": 1,
+      "ndcg": 0.8529278650606567,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-023",
+      "query": "int8 quantized vectors stored in halfvec without a cast",
+      "poolRecall": 0,
+      "ndcg": 0,
+      "mrr": 0,
+      "rank": null
+    },
+    {
+      "id": "m-025",
+      "query": "burn-in writes both embedding columns for rollback",
+      "poolRecall": 1,
+      "ndcg": 0.23719771276929622,
+      "mrr": 0.2,
+      "rank": 5
+    },
+    {
+      "id": "m-027",
+      "query": "did we move prod hosting off Coolify",
+      "poolRecall": 1,
+      "ndcg": 0.6309297535714575,
+      "mrr": 0.5,
+      "rank": 2
+    },
+    {
+      "id": "m-028",
+      "query": "how do I deploy the staging compose app headlessly via the Dokploy API",
+      "poolRecall": 1,
+      "ndcg": 0.9197207891481876,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-030",
+      "query": "RlsClaims.role vs app_role JWT claim confusion",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-032",
+      "query": "how does duplicate invoice detection work",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-034",
+      "query": "how do I apply the R2 bucket lock in production",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-035",
+      "query": "why did we reject merchant-of-record billing and pick Stripe Direct",
+      "poolRecall": 1,
+      "ndcg": 0.6131471927654584,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-037",
+      "query": "what caused the ANAF UBL Party namespace rejection",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-038",
+      "query": "invoice PDF stuck in pending — what recovers it",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-040",
+      "query": "can we reuse an existing Mistral OCR pipeline instead of building one",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-041",
+      "query": "why opaque server-side impersonation instead of minting a second JWT",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-042",
+      "query": "which LLM powers the accountant copilot",
+      "poolRecall": 1,
+      "ndcg": 0.19342640361727081,
+      "mrr": 0.125,
+      "rank": 8
+    },
+    {
+      "id": "m-043",
+      "query": "why EJ2 grid instead of Syncfusion Pure React",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-045",
+      "query": "fresh worktree tests fail to resolve @nodex workspace packages",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-046",
+      "query": "Nest can't resolve CronHeartbeatService dependency",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-048",
+      "query": "how do database migrations run on deploy",
+      "poolRecall": 1,
+      "ndcg": 0.8315546295836225,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-049",
+      "query": "how is the public Mnemosyne remote MCP connector authenticated",
+      "poolRecall": 1,
+      "ndcg": 0.9197207891481876,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-050",
+      "query": "gitleaks CI failing on a secret in a file deleted mid-PR",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-051",
+      "query": "what is the latest decision on the mnemosyne memory retrieval scoring approach",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-052",
+      "query": "current status of the mnemosyne retrieval improvement program",
+      "poolRecall": 1,
+      "ndcg": 0.8503449055347546,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-053",
+      "query": "what is the current state of the NOD-597 GL close-wide atomicity work",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-056",
+      "query": "most recent fix for spurious drizzle db:generate snapshot drift",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    },
+    {
+      "id": "m-058",
+      "query": "what is the current harness role split between codex and the claude models",
+      "poolRecall": 1,
+      "ndcg": 1,
+      "mrr": 1,
+      "rank": 1
+    }
+  ],
+  "aggregates": {
+    "recallAt25": 0.9473684210526315,
+    "ndcgAt10": 0.7211470043288389,
+    "mrr10": 0.7555137844611529
+  }
+}
