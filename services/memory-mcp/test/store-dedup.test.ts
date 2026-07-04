@@ -9,6 +9,10 @@
 //
 // DB-backed (disposable :5544 Postgres), Voyage fully MOCKED at module level with
 // call counters — NO live quota. Skipped gracefully without DATABASE_URL.
+//
+// Wave-3 delta (retrieval-token-efficiency plan): the summarizer is mocked with a
+// call counter too — the exact-dup short-circuit must skip the summarize spend as
+// well as the embed spend (dup check runs BEFORE the Promise.all in storeMemory).
 
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
@@ -22,7 +26,7 @@ const skip = !DATABASE_URL;
 
 // Hoisted so the vi.mock factory (hoisted above imports) can reference them.
 const H = vi.hoisted(() => {
-  const counters = { embed: 0, embedContextualSingle: 0 };
+  const counters = { embed: 0, embedContextualSingle: 0, summarize: 0 };
   /** 1024-dim vector with the given (index, value) components; zeros elsewhere. */
   function sparse(components: Array<[number, number]>): number[] {
     const v = new Array<number>(1024).fill(0);
@@ -61,6 +65,16 @@ vi.mock("../src/voyage.js", () => ({
   rerank: async (_q: string, docs: string[], topK: number) =>
     docs.slice(0, topK).map((_, i) => ({ index: i, score: 1 - i * 0.01 })),
   toVectorLiteral: (v: number[]) => `[${v.join(",")}]`,
+}));
+
+// Counter-only summarizer mock: resolves null (same as the closed SUMMARIZE_ON_STORE
+// gate) so every non-dup insert still writes summary = NULL — behavior unchanged,
+// invocations countable.
+vi.mock("../src/summarize.js", () => ({
+  summarizeMemory: async () => {
+    H.counters.summarize += 1;
+    return null;
+  },
 }));
 
 process.env.VOYAGE_API_KEY ??= "test-key";
@@ -125,7 +139,7 @@ describe.skipIf(skip)("storeMemory write-path dedup (AC-301/AC-302)", () => {
     expect(rows[0].content_sha256).toBe(contentSha256(content));
   });
 
-  it("same content twice → ONE row, second call returns the first id, duplicate: true, ZERO embed calls", async () => {
+  it("same content twice → ONE row, second call returns the first id, duplicate: true, ZERO embed + ZERO summarize calls", async () => {
     const content = "The disposable eval Postgres listens on port 5544.";
     const first = await storeMemory({
       projectId: PROJ,
@@ -134,6 +148,9 @@ describe.skipIf(skip)("storeMemory write-path dedup (AC-301/AC-302)", () => {
       content,
     });
     const before = { ...H.counters };
+    // Mock-wiring guard: the non-dup store above MUST have gone through the mocked
+    // summarizer — otherwise the zero-call assertion below would pass vacuously.
+    expect(before.summarize).toBeGreaterThan(0);
 
     // Different TITLE on purpose: the dedup key is content-only (importer recipe).
     const second = await storeMemory({
@@ -148,9 +165,12 @@ describe.skipIf(skip)("storeMemory write-path dedup (AC-301/AC-302)", () => {
       title: first.title,
       duplicate: true,
     });
-    // No embed quota spent on the dup path — neither endpoint was called again.
+    // No embed quota spent on the dup path — neither endpoint was called again —
+    // and the short-circuit fires BEFORE the Promise.all, so the summarizer was
+    // never invoked either (wave-3 delta: zero LLM spend on the dup path).
     expect(H.counters.embed).toBe(before.embed);
     expect(H.counters.embedContextualSingle).toBe(before.embedContextualSingle);
+    expect(H.counters.summarize).toBe(before.summarize);
 
     const { rows } = await pool.query<{ n: string }>(
       `SELECT count(*) AS n FROM memory.memories

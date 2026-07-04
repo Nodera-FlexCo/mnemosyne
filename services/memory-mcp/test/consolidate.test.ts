@@ -116,6 +116,7 @@ const reportPath = () => join(outDir, `consolidate-${reportSeq++}.json`);
 interface SeedOpts {
   title: string;
   content: string;
+  summary?: string;
   vec?: number[];
   createdAt?: string;
   pinned?: boolean;
@@ -129,15 +130,16 @@ interface SeedOpts {
 async function seed(projectId: string, o: SeedOpts): Promise<string> {
   const { rows } = await pool.query<{ id: string }>(
     `INSERT INTO memory.memories
-       (project_id, type, title, content, importance, metadata, pinned,
+       (project_id, type, title, content, summary, importance, metadata, pinned,
         source_kind, status, superseded_by, content_sha256, created_at, embedding_v2)
-     VALUES ($1, 'semantic', $2, $3, 0.5, $4, $5, $6, $7, $8, $9,
-             COALESCE($10::timestamptz, now()), $11::halfvec)
+     VALUES ($1, 'semantic', $2, $3, $4, 0.5, $5, $6, $7, $8, $9, $10,
+             COALESCE($11::timestamptz, now()), $12::halfvec)
      RETURNING id`,
     [
       projectId,
       o.title,
       o.content,
+      o.summary ?? null,
       JSON.stringify(o.metadata ?? {}),
       o.pinned ?? false,
       o.sourceKind ?? null,
@@ -725,6 +727,70 @@ describe.skipIf(skip)("consolidate (AC-303/305/306, mocked judge)", () => {
     });
   });
 
+  // ── Block 5b: summary-aware judge input (wave-3 delta) ─────────────────────────────
+  describe("summary-aware judge input (wave-3 delta)", () => {
+    const P = proj("summary");
+
+    it("both collection passes hydrate summary: the judge prompt carries summary ?? content", async () => {
+      // S1/S2: near-dup pair WITH stored summaries; S2 also carries a write-path
+      // dupCandidates flag pointing at S1 so the pair flows through pass A AND the
+      // self-join sweep (source: "both") — proving BOTH SQL paths select summary.
+      const S1 = await seed(P, {
+        title: "summarized claim",
+        content: "LONGRAW-ONE body that the judge must not see",
+        summary: "DENSE-ONE the stored wave-2 summary",
+        vec: H.base(7),
+        createdAt: "2026-06-01T00:00:00Z",
+      });
+      const S2 = await seed(P, {
+        title: "summarized claim again",
+        content: "LONGRAW-TWO body that the judge must not see",
+        summary: "DENSE-TWO the stored wave-2 summary",
+        vec: H.near(7, 0.97),
+        createdAt: "2026-06-10T00:00:00Z",
+      });
+      await pool.query(
+        `UPDATE memory.memories
+         SET metadata = jsonb_set(metadata, '{dupCandidates}', $2::jsonb)
+         WHERE id = $1`,
+        [S2, JSON.stringify([{ id: S1, sim: 0.97 }])],
+      );
+      // N1/N2: near-dup pair WITHOUT summaries (self-join only) — content fallback.
+      const N1 = await seed(P, {
+        title: "plain claim",
+        content: "PLAIN-ONE fallback body",
+        vec: H.base(8),
+        createdAt: "2026-06-01T00:00:00Z",
+      });
+      await seed(P, {
+        title: "plain claim again",
+        content: "PLAIN-TWO fallback body",
+        vec: H.near(8, 0.97),
+        createdAt: "2026-06-10T00:00:00Z",
+      });
+
+      const { judge, calls } = makeJudge(() => ({ verdict: 0 }));
+      const { report } = await consolidate({
+        pool,
+        judge,
+        projectId: P,
+        reportPath: reportPath(),
+        log: () => {},
+      });
+
+      const sPair = report.pairs.find((p) => p.a === S1 && p.b === S2)!;
+      expect(sPair.source).toBe("both"); // flag path AND sweep both contributed
+      const prompts = calls.join("\n");
+      expect(prompts).toContain("DENSE-ONE the stored wave-2 summary");
+      expect(prompts).toContain("DENSE-TWO the stored wave-2 summary");
+      expect(prompts).not.toContain("LONGRAW-ONE");
+      expect(prompts).not.toContain("LONGRAW-TWO");
+      expect(prompts).toContain("PLAIN-ONE fallback body");
+      expect(prompts).toContain("PLAIN-TWO fallback body");
+      expect(report.pairs.some((p) => p.a === N1)).toBe(true);
+    });
+  });
+
   // ── Block 6: supersession chains + gold resolution (AC-106 cross-test) ─────────────
   describe("chains stay resolvable by the eval harness", () => {
     const P = proj("chain");
@@ -792,15 +858,36 @@ describe("parseVerdicts (pure, AC-305 schema)", () => {
   const rowsById = new Map<string, PairRowMeta>([
     [
       "a1",
-      { id: "a1", title: "A", content: "a", createdAt: "1", pinned: false },
+      {
+        id: "a1",
+        title: "A",
+        content: "a",
+        summary: null,
+        createdAt: "1",
+        pinned: false,
+      },
     ],
     [
       "b1",
-      { id: "b1", title: "B", content: "b", createdAt: "2", pinned: false },
+      {
+        id: "b1",
+        title: "B",
+        content: "b",
+        summary: null,
+        createdAt: "2",
+        pinned: false,
+      },
     ],
     [
       "p1",
-      { id: "p1", title: "P", content: "p", createdAt: "1", pinned: true },
+      {
+        id: "p1",
+        title: "P",
+        content: "p",
+        summary: null,
+        createdAt: "1",
+        pinned: true,
+      },
     ],
   ]);
   const pair = (a: string, b: string): CandidatePair => ({
@@ -893,6 +980,7 @@ describe("judge prompt + paid gate (pure)", () => {
           id: "id-a",
           title: "T A",
           content: "body a",
+          summary: null,
           createdAt: "2026-06-01T00:00:00.000Z",
           pinned: true,
         },
@@ -903,6 +991,7 @@ describe("judge prompt + paid gate (pure)", () => {
           id: "id-b",
           title: "T B",
           content: "body b",
+          summary: null,
           createdAt: "2026-06-02T00:00:00.000Z",
           pinned: false,
         },
@@ -917,6 +1006,40 @@ describe("judge prompt + paid gate (pure)", () => {
       "a [id-a] (created 2026-06-01T00:00:00.000Z, pinned): T A",
     );
     expect(user).toContain("b [id-b] (created 2026-06-02T00:00:00.000Z): T B");
+  });
+
+  it("buildJudgeUser prefers the dense summary over content; content is the NULL-summary fallback (wave-3 delta)", () => {
+    const rows = new Map<string, PairRowMeta>([
+      [
+        "id-s",
+        {
+          id: "id-s",
+          title: "T S",
+          content: "RAW CONTENT that must not appear when a summary exists",
+          summary: "DENSE SUMMARY the judge should read",
+          createdAt: "2026-06-01T00:00:00.000Z",
+          pinned: false,
+        },
+      ],
+      [
+        "id-n",
+        {
+          id: "id-n",
+          title: "T N",
+          content: "fallback content for the summaryless row",
+          summary: null,
+          createdAt: "2026-06-02T00:00:00.000Z",
+          pinned: false,
+        },
+      ],
+    ]);
+    const user = buildJudgeUser(
+      [{ a: "id-s", b: "id-n", sim: 0.95, source: "selfJoin" }],
+      rows,
+    );
+    expect(user).toContain("DENSE SUMMARY the judge should read");
+    expect(user).not.toContain("RAW CONTENT");
+    expect(user).toContain("fallback content for the summaryless row");
   });
 
   it("guardConsolidateRun refuses without --yes (AC-108) and passes with it", () => {
