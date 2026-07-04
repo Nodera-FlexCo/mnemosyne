@@ -42,12 +42,25 @@ approvedBy? }` with a `{version: 2, k, changelog: []}` header. Stable row ids
 
 - **dev split** — recomputed freely: by the CI gate, by local tuning runs, by anyone.
 - **test split** — spent EXCLUSIVELY by flip gates (embedder flips, rerank swaps,
-  consolidation acceptance). Never used for tuning, never recomputed casually — that is
-  the p-hacking guard. Every change to the test split is recorded in the file's
-  `changelog` header. **Consolidation acceptance (AC-304) IS a flip gate**: the
-  pre/post test-split runs of `test/consolidation.md` are the only sanctioned
-  test-split spend outside embedder/rerank flips; record them via
-  `npm run eval:record -- --yes` and compare with `npm run eval:compare`.
+  consolidation acceptance, the wave-7 blend-winner confirmation). Never used for
+  tuning, never recomputed casually — that is the p-hacking guard. Every change to the
+  test split is recorded in the file's `changelog` header. **Consolidation acceptance
+  (AC-304) IS a flip gate**: the pre/post test-split runs of `test/consolidation.md`
+  are sanctioned test-split spend; record them via `npm run eval:record -- --yes` and
+  compare with `npm run eval:compare`. **The wave-7 blend bakeoff confirmation IS a
+  flip gate too (AC-705)**: arm SELECTION runs on the dev split
+  (`npm run bakeoff:blend -- --yes`); a non-A0 winner is then confirmed by exactly ONE
+  predeclared two-arm run on the frozen test split
+  (`… -- --yes --split test --arms A0,<winner>`) BEFORE any compose pin ships. One
+  combined confirmation covers BOTH sweep axes (blend arms + RRF k) — never one
+  test-split run per axis, and never iterate on the test split. Record the spend in
+  this file's changelog and the verdict in `retune.md`.
+
+Some gold rows carry `facet: "temporal"` (recency-sensitive queries, m-051..m-058).
+The wave-7 bakeoff slices per-arm deltas over this facet separately — decay-shape arms
+are DISCRIMINABLE only when enough temporal rows exist, so the operator pre-checks
+≥ 5 temporal rows in the target split before a bakeoff run. The v2 loader tolerates
+the extra key everywhere else; scoring is unchanged.
 
 Nothing enters either split without a human approving every gold id/path and recording
 `approvedBy` (GRAFT 2). The scripts below only PROPOSE.
@@ -163,6 +176,7 @@ none in CI:
 | `npm run bakeoff` | codebase | Voyage quota | deliberate operator step |
 | `npm run consolidate -- --yes [--apply]` | memory | Anthropic quota (judge; `CONSOLIDATE_MODEL`, ≈500 tok/pair) — dry-run by DEFAULT, `--apply` flips losers | refuses without `--yes` |
 | `npm run eval:record -- --yes [--split test\|dev]` | memory | Voyage quota (embeds every split query — the flip-gate recorder) | refuses without `--yes` |
+| `npm run bakeoff:blend -- --yes [--split dev\|test] [--arms A0,…]` | memory | Voyage quota (one embed/query reused across k + one rerank/query per RRF-k; blend arms score OFFLINE from the capture, AC-703) | refuses without `--yes` |
 | `npm run eval:compare -- <A> <B>` | memory | free (reads two artifacts) | — |
 | `npm run gold:migrate` | memory | free (SQL only) | — |
 | `npm run harvest-eval` | memory | free (SQL only) | — |

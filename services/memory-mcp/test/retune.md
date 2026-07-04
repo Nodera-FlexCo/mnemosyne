@@ -7,10 +7,11 @@ silently regresses recall (the locked caveat, memory `0350c509`). This file is t
 decision record the operator fills in after the **live** backfill run.
 
 > The code flip is already landed (`src/memory.ts` reads `embedding_v2`, embeds the query
-> via `embedContextualSingle`, and reads the tuned constants `RRF_K`, `BLEND_RELEVANCE`,
-> `BLEND_RECENCY`, `BLEND_IMPORTANCE`, `RECENCY_HALFLIFE_DAYS`). It goes live at the
-> **gated redeploy**, not before — the constants below are at no-regression defaults
-> until the operator finalizes them here.
+> via `embedContextualSingle`, and reads the tuned constants — `RRF_K` plus, since
+> wave 7, the blend/decay knobs via `config.blendConfig` in `src/config.ts`;
+> `RECENCY_HALFLIFE_DAYS` was renamed `RECENCY_TAU_DAYS`, see the wave-7 section). It
+> went live at the **gated redeploy** — the constants stay at no-regression defaults
+> until a measured retune lands (wave-7 bakeoff below).
 
 ## What the operator runs (live — paid Voyage quota)
 
@@ -125,6 +126,54 @@ any future retune lands there and re-records here.
 | `RECENCY_HALFLIFE_DAYS`  | 30                 | 30 (kept)        |
 | reranker                 | rerank-2.5-lite    | rerank-2.5-lite (wave-6 bakeoff decides the 2.5 swap; decision record: [`../../codebase-mcp/test/bakeoff.md`](../../codebase-mcp/test/bakeoff.md#rerank-bakeoff-wave-6-ws5)) |
 
+## Wave-7 blend/decay bakeoff — tuned-constants decision record (closes the retune TODO)
+
+Wave 7 closes the `TODO(operator/retune)` for ALL the scoring knobs (RRF k + the blend
+weights): each knob is now a measured, paired-gated A/B through
+`npm run bakeoff:blend -- --yes` instead of an eyeballed sweep. Procedure: arm
+selection on the DEV split → ONE predeclared two-arm confirmation of a non-A0 winner on
+the frozen TEST split (a recorded flip gate — see `eval.md`) → the winner ships as
+**compose env pins ONLY** on memory-mcp (code defaults remain A0; rollback = delete the
+pins; the prepared pin block is commented in `compose.yaml`).
+
+**Rename note (wave-7):** `RECENCY_HALFLIFE_DAYS` → `RECENCY_TAU_DAYS`, value 30
+unchanged — deliberately NOT converted. The constant was always used as
+`exp(−age/τ)`, so it is the **1/e time constant τ**, not a half-life: at age = 30 days
+the recency weight is e⁻¹ ≈ 36.8% (not 50%); the true half-life is
+τ·ln2 ≈ 30 × 0.6931 ≈ 20.8 days. Inserting ln 2 to make the name honest would have
+CHANGED scoring behavior; renaming the constant keeps the numbers identical. The knob
+now lives in `src/config.ts` (`config.blendConfig`), env-pinnable per the table in the
+top-level README; `retrievalConfig()` serializes it as `blend.decay.tauDays`.
+
+**Access-based decay: REJECTED (for now).** `getMemory` MUTATES `access_count` /
+`last_accessed_at` on every read (memory.ts:508-509 at review time — the
+`UPDATE … SET access_count = access_count + 1, last_accessed_at = now()` in
+`getMemory`), so any access-conditioned scoring is state-dependent — an eval run would
+change the very state it measures — and self-reinforcing: retrieved → boosted →
+retrieved again. Revisit only with a separate shadow-logging design (log accesses out
+of band; score offline against the shadow log). Recorded in the bakeoff artifact as
+`rejectedForNow: ["access-based decay"]`.
+
+### Decision table (operator fills from the live dev-split run + test confirmation)
+
+Arms are FROZEN in `src/db/bakeoff-blend.ts` (`predeclaredArms()`): A0 control (= live
+defaults), A1 per-type exp (semantic/procedural τ90; entity + decision exempt), A2
+per-type power, A3 multiplicative, A4 relevance-only, plus the RRF_K axis K20/K120
+(k=60 control). Artifact: `test/runs/<date>-bakeoff-blend.json` (seed 42).
+
+| Arm | mean Δ nDCG@10 vs A0 | 95% CI (seed 42) | sign W/L/T (p) | affected | by-type slice | temporal slice | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| A1 | _pending live run_ | | | | | | |
+| A2 | _pending live run_ | | | | | | |
+| A3 | _pending live run_ | | | | | | |
+| A4 | _pending live run_ | | | | | | |
+| K20 | _pending live run_ | | | | | | |
+| K120 | _pending live run_ | | | | | | |
+
+Winner rule (predeclared): win-side CI (ciLow > 0) AND wins > losses AND affected > 0,
+highest mean delta wins; none qualifying ⇒ KEEP A0 and leave compose untouched.
+Test-split confirmation: _pending_. Applied pins: _none yet_.
+
 ## Why a recall gate, not eyeball
 
 `recallAtK`/`mrr`/`ndcgAtK`/`pairedBootstrapCI` are unit-tested pure functions
@@ -157,5 +206,7 @@ itself (AC-101).
 
 All retrieval constants now snapshot via the exported **`retrievalConfig()`**; every eval
 run serializes it into its artifact (AC-104), so any recorded number in this file is
-reproducible against the exact configuration that produced it. Retuned constants land in
-`src/memory.ts` as before — the snapshot follows automatically (single source).
+reproducible against the exact configuration that produced it. Since wave 7 the blend/
+decay knobs live in `src/config.ts` (`config.blendConfig`, env-pinnable — the snapshot's
+nested `blend` object + top-level `scoringVersion`); `RRF_K` stays a module const in
+`src/memory.ts`. The snapshot follows automatically either way (single source).

@@ -130,6 +130,39 @@ DATABASE_URL=<live> npm --prefix services/memory-mcp run eval:record -- --yes --
 npm --prefix services/memory-mcp run eval:compare -- test/runs/<A>.json test/runs/<B>.json
 ```
 
+### Blend/decay bake-off (retrieval-improvement program, wave 7)
+
+Blend arms are scored OFFLINE from one captured fuse+rerank pass per query (AC-703), so
+the Voyage spend is one embed per query plus one rerank per query per RRF-k value —
+never per arm. Defaults to the dev split; the frozen test split is spent ONCE, on the
+predeclared two-arm confirmation of the winner. Decision record + pin procedure:
+[`services/memory-mcp/test/retune.md`](services/memory-mcp/test/retune.md).
+
+```bash
+# PAID (Voyage quota) — 5 predeclared blend arms (A0 control, per-type exp/power decay,
+# multiplicative, relevance-only) + the RRF_K axis (K20/K120; k=60 is the control);
+# refuses without --yes and writes test/runs/<date>-bakeoff-blend.json (seed 42)
+DATABASE_URL=<live> VOYAGE_API_KEY=<live> \
+  npm --prefix services/memory-mcp run bakeoff:blend -- --yes
+
+# The ONE sanctioned frozen-test-split confirmation of a non-A0 winner (a flip gate):
+DATABASE_URL=<live> VOYAGE_API_KEY=<live> \
+  npm --prefix services/memory-mcp run bakeoff:blend -- --yes --split test --arms A0,<winner>
+```
+
+The winner ships as **compose env pins only** on memory-mcp — code defaults remain A0,
+so rollback = delete the pins (see the commented block in `compose.yaml`):
+
+| Env key (memory-mcp) | Default | Meaning |
+| --- | --- | --- |
+| `BLEND_FORM` | `additive` | `additive` (legacy weighted sum) or `multiplicative` (`rel × (1 + w·recency + w·importance)`) |
+| `BLEND_W_RELEVANCE` / `BLEND_W_RECENCY` / `BLEND_W_IMPORTANCE` | `0.7` / `0.2` / `0.1` | blend weights |
+| `DECAY_SHAPE` | `exp` | `exp` = e^(−age/τ); `power` = 1/(1 + age/τ)^exponent |
+| `RECENCY_TAU_DAYS` | `30` | τ, the 1/e time constant (NOT the half-life — that is τ·ln2 ≈ 20.8 days at τ=30); renamed from `RECENCY_HALFLIFE_DAYS` in wave 7, value unchanged |
+| `DECAY_POWER_EXPONENT` | `0.5` | exponent for the `power` shape |
+| `RECENCY_TAU_DAYS_BY_TYPE` | `{}` | JSON map of per-type τ overrides, e.g. `{"semantic":90,"procedural":90}` |
+| `DECAY_EXEMPT` | (empty) | CSV of `type:<t>` / `source_kind:<k>` rows exempt from decay (recency = 1.0), e.g. `type:entity,source_kind:decision` |
+
 ## MCP tools
 
 ### memory-mcp (durable memory)
