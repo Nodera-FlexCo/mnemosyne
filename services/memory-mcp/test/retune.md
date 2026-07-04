@@ -161,18 +161,37 @@ defaults), A1 per-type exp (semantic/procedural τ90; entity + decision exempt),
 per-type power, A3 multiplicative, A4 relevance-only, plus the RRF_K axis K20/K120
 (k=60 control). Artifact: `test/runs/<date>-bakeoff-blend.json` (seed 42).
 
+**Executed 2026-07-04** (dev split, 38 rows, seed 42; A0 nDCG@10 0.6935, pool
+Recall@25 0.9474 — artifact `test/runs/2026-07-04-bakeoff-blend.json`):
+
 | Arm | mean Δ nDCG@10 vs A0 | 95% CI (seed 42) | sign W/L/T (p) | affected | by-type slice | temporal slice | verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| A1 | _pending live run_ | | | | | | |
-| A2 | _pending live run_ | | | | | | |
-| A3 | _pending live run_ | | | | | | |
-| A4 | _pending live run_ | | | | | | |
-| K20 | _pending live run_ | | | | | | |
-| K120 | _pending live run_ | | | | | | |
+| A1 | +0.0108 | [−0.0218, +0.0436] | 9/4/25 (0.267) | 13 | sem +0.041, proc −0.031 | 0.000 (n=5) | INCONCLUSIVE |
+| A2 | +0.0169 | [−0.0142, +0.0475] | 10/2/26 (0.043) | 12 | sem +0.044, proc −0.019 | 0.000 (n=5) | INCONCLUSIVE |
+| A3 | −0.0143 | [−0.0551, +0.0246] | 6/8/24 (0.789) | 14 | sem +0.025, proc −0.071 | −0.026 (n=5) | INCONCLUSIVE |
+| A4 | −0.0248 | [−0.0654, +0.0135] | 5/10/23 (0.302) | 15 | sem +0.008, proc −0.074 | −0.026 (n=5) | INCONCLUSIVE |
+| K20 | 0.0000 | [0, 0] | 0/0/38 (1.0) | 0 | all 0 | 0 | INCONCLUSIVE |
+| K120 | 0.0000 | [0, 0] | 0/0/38 (1.0) | 0 | all 0 | 0 | INCONCLUSIVE |
 
 Winner rule (predeclared): win-side CI (ciLow > 0) AND wins > losses AND affected > 0,
 highest mean delta wins; none qualifying ⇒ KEEP A0 and leave compose untouched.
-Test-split confirmation: _pending_. Applied pins: _none yet_.
+
+**VERDICT: KEEP A0.** No arm qualified. Test-split confirmation: NOT RUN (predeclared —
+only a qualifying winner spends the frozen split). Applied pins: NONE (code defaults
+stay live). This closes the `TODO(operator/retune)` for the blend weights + RRF k with
+a measured record. Readings worth keeping:
+
+- **A2 (per-type power decay) is the one to re-test** when the corpus/gold grow: best
+  mean delta, 10W/2L (sign p = 0.043), driven entirely by the semantic slice (+0.044)
+  — but the bootstrap CI straddles zero at N=38, which is exactly the ~0.05-detectable
+  regime `test/eval.md` warns about. Not p-hackable into a win today by design.
+- **A4 (relevance-only) is directionally WORSE (−0.025)**: the recency+importance
+  blend earns its keep vs pure rerank ordering — the blend's existence is validated.
+- **The RRF-k axis is a non-lever on this corpus**: k ∈ {20, 120} produced deltas of
+  exactly zero on every query — pool composition shifts never survived rerank+blend
+  into the top-10. `RRF_K` stays a code constant; no env pin warranted.
+- A3 (multiplicative) and A4 both hurt the temporal slice (−0.026): additive recency
+  is doing real work on "current status" queries.
 
 ## Why a recall gate, not eyeball
 
