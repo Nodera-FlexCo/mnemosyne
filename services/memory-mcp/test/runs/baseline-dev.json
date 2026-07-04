@@ -24,9 +24,9 @@
       "id": "m-001",
       "query": "what embedding model does memory-mcp use",
       "poolRecall": 1,
-      "ndcg": 0.5802792108518124,
-      "mrr": 0.5,
-      "rank": 2
+      "ndcg": 0.4911492931622974,
+      "mrr": 0.3333333333333333,
+      "rank": 3
     },
     {
       "id": "m-003",
@@ -56,7 +56,7 @@
       "id": "m-008",
       "query": "how does the indexer skip unchanged files",
       "poolRecall": 1,
-      "ndcg": 0.7653606369886217,
+      "ndcg": 0.7039180890341347,
       "mrr": 1,
       "rank": 1
     },
@@ -80,25 +80,25 @@
       "id": "m-012",
       "query": "blue green re-embed backfill strategy",
       "poolRecall": 1,
-      "ndcg": 0.3235866969737877,
-      "mrr": 0.16666666666666666,
-      "rank": 6
+      "ndcg": 0.3044671974905181,
+      "mrr": 0.14285714285714285,
+      "rank": 7
     },
     {
       "id": "m-014",
       "query": "recall gate not eyeball for embedder flip",
       "poolRecall": 1,
-      "ndcg": 0.4899692203633839,
-      "mrr": 0.2,
-      "rank": 5
+      "ndcg": 0.1480409554829326,
+      "mrr": 0.125,
+      "rank": 8
     },
     {
       "id": "m-015",
       "query": "importer hardcodes voyage-4-large model",
       "poolRecall": 1,
-      "ndcg": 0.46845052016107697,
-      "mrr": 0.25,
-      "rank": 4
+      "ndcg": 0.4415801103577823,
+      "mrr": 0.2,
+      "rank": 5
     },
     {
       "id": "m-017",
@@ -128,7 +128,7 @@
       "id": "m-021",
       "query": "contextualized embeddings endpoint nested inputs",
       "poolRecall": 1,
-      "ndcg": 0.9060254355346823,
+      "ndcg": 0.8529278650606567,
       "mrr": 1,
       "rank": 1
     },
@@ -144,9 +144,9 @@
       "id": "m-025",
       "query": "burn-in writes both embedding columns for rollback",
       "poolRecall": 1,
-      "ndcg": 0.3065735963827292,
-      "mrr": 0.3333333333333333,
-      "rank": 3
+      "ndcg": 0.23719771276929622,
+      "mrr": 0.2,
+      "rank": 5
     },
     {
       "id": "m-027",
@@ -296,7 +296,7 @@
       "id": "m-052",
       "query": "current status of the mnemosyne retrieval improvement program",
       "poolRecall": 1,
-      "ndcg": 0.9197207891481876,
+      "ndcg": 0.8503449055347546,
       "mrr": 1,
       "rank": 1
     },
@@ -327,7 +327,7 @@
   ],
   "aggregates": {
     "recallAt25": 0.9473684210526315,
-    "ndcgAt10": 0.7403664774212575,
-    "mrr10": 0.7673245614035087
+    "ndcgAt10": 0.7211470043288389,
+    "mrr10": 0.7555137844611529
   }
 }

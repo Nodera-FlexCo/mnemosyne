@@ -197,6 +197,10 @@ const FIXTURES: Fixture[] = [
 
 const byId = new Map(FIXTURES.map((f) => [f.id, f]));
 
+function iso(s: string): string {
+  return new Date(s).toISOString();
+}
+
 /** The exact snippet shape searchMemory produces (180 chars, whitespace-collapsed). */
 function expectedSnippet(fixtureId: string): string {
   return byId.get(fixtureId)!.content.replace(/\s+/g, " ").slice(0, 180);
@@ -251,7 +255,7 @@ describe.skipIf(skip)("searchMemory golden pins (AC-101)", () => {
 
   /** Shared shape assertions for every pinned query. */
   function assertShape(
-    hits: Awaited<ReturnType<typeof searchMemory>>,
+    hits: Awaited<ReturnType<typeof searchMemory>>["hits"],
     limit: number,
   ): void {
     expect(hits.length).toBeLessThanOrEqual(limit);
@@ -261,56 +265,57 @@ describe.skipIf(skip)("searchMemory golden pins (AC-101)", () => {
       expect(h.title).toBe(byId.get(h.id)!.title);
       expect(h.type).toBe(byId.get(h.id)!.type);
       expect(h.importance).toBeCloseTo(byId.get(h.id)!.importance, 6);
-      // score is a 4-decimal number in [0, 1]
-      expect(h.score).toBe(Number(h.score.toFixed(4)));
-      expect(h.score).toBeGreaterThanOrEqual(0);
-      expect(h.score).toBeLessThanOrEqual(1);
-    }
-    // blend-sorted: strictly descending finals (fixtures are tie-free)
-    for (let i = 1; i < hits.length; i++) {
-      expect(hits[i - 1].score).toBeGreaterThan(hits[i].score);
+      expect("score" in h).toBe(false);
+      expect(h.createdAt).toBe(iso(byId.get(h.id)!.createdAt));
+      const expectedEvent = byId.get(h.id)!.eventDate;
+      expect(h.eventDate).toBe(expectedEvent ? iso(expectedEvent) : null);
+      expect(h.effectiveDate).toBe(h.eventDate ?? h.createdAt);
+      expect(h.status).toBe("active");
     }
   }
 
   it("pins query 1 (plain): 'postgres connection pool'", async () => {
-    const hits = await searchMemory({
+    const result = await searchMemory({
       projectId: PROJ,
       query: "postgres connection pool",
       limit: 5,
     });
+    const { hits } = result;
     assertShape(hits, 5);
     expect(hits.map((h) => h.id)).toEqual(GOLDEN_Q1);
   });
 
   it("pins query 2 (plain): 'rollback deployment procedure'", async () => {
-    const hits = await searchMemory({
+    const result = await searchMemory({
       projectId: PROJ,
       query: "rollback deployment procedure",
       limit: 5,
     });
+    const { hits } = result;
     assertShape(hits, 5);
     expect(hits.map((h) => h.id)).toEqual(GOLDEN_Q2);
   });
 
   it("pins query 3 (type-filtered semantic): 'embedding index tuning'", async () => {
-    const hits = await searchMemory({
+    const result = await searchMemory({
       projectId: PROJ,
       query: "embedding index tuning",
       type: "semantic",
       limit: 5,
     });
+    const { hits } = result;
     assertShape(hits, 5);
     for (const h of hits) expect(h.type).toBe("semantic");
     expect(hits.map((h) => h.id)).toEqual(GOLDEN_Q3);
   });
 
   it("pins the empty-corpus early return: []", async () => {
-    const hits = await searchMemory({
+    const result = await searchMemory({
       projectId: EMPTY_PROJ,
       query: "anything at all",
       limit: 5,
     });
-    expect(hits).toEqual([]);
+    expect(result.hits).toEqual([]);
   });
 });
 

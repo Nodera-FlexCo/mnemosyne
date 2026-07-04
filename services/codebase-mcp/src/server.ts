@@ -24,6 +24,23 @@ import {
   type Direction,
 } from "./graph/traverse.js";
 
+export const TOOL_DESCRIPTIONS = {
+  code_search:
+    "Hybrid semantic and lexical search over indexed code chunks. Use when: you need to find code by behavior, concept, or partial tokens; grep is insufficient; optionally narrow with repo, path, extension, or language. Do NOT use for exact known symbols (code_symbol_lookup) or reading a known file (code_get_file). Example: query='validate bearer token', path='src/auth', extension='ts'.",
+  code_get_file:
+    "Read one known repo-relative file or line range. Use when: code_search, code_symbol_lookup, or graph tools returned a path; you need full context beyond a snippet; inspecting a specific range is cheaper than another search. Do NOT use when: discovering unknown files by behavior (code_search) or tracing call relationships (code_graph_expand/code_trace_path). Example: repo='mnemosyne-impl', path='services/memory-mcp/src/server.ts', startLine=1, endLine=120.",
+  code_index_status:
+    "Report indexing progress and chunk counts per repo. Use when: checking whether a repo is indexed; diagnosing stale or in-progress indexing; confirming code_reindex completion. Do NOT use when: searching code content (code_search) or reading files (code_get_file). Example: repo='mnemosyne-impl'.",
+  code_reindex:
+    "Start a background index run for a repo under the configured repos root. Use when: files changed and the index is stale; graph data needs backfill with force=true; code_index_status shows missing or old data. Do NOT use when: retrieving already indexed code (code_search/code_get_file) or running ad hoc shell commands. Example: repo='mnemosyne-impl', force=true.",
+  code_graph_expand:
+    "Expand callers and callees around a seed symbol, file, line, or chunkId. Use when: understanding who calls a function, what it calls, or nearby graph context; following relationships from a search result; optionally setting direction/depth. Do NOT use when: exact symbol definitions are enough (code_symbol_lookup) or full file text is needed (code_get_file). Example: symbol='searchCode', direction='callers', depth=3.",
+  code_symbol_lookup:
+    "Look up exact symbol definition candidates by name. Use when: you know the symbol name; resolving ambiguous definitions; jumping to file:line before reading with code_get_file. Do NOT use when: searching by behavior or vague concept (code_search) or tracing paths between calls (code_trace_path). Example: name='rerankCodeHits', repo='mnemosyne-impl'.",
+  code_trace_path:
+    "Trace one downstream call path from a seed toward an optional target symbol. Use when: explaining request flow, route-to-service paths, or whether one component can reach another; bounding depth matters. Do NOT use when: broad neighborhood expansion is needed (code_graph_expand) or reading a known file is enough (code_get_file). Example: symbol='handleRequest', to='searchCode', depth=5.",
+} as const;
+
 /** Safe-resolve <reposRoot>/<repo>/<path>, blocking traversal outside reposRoot. */
 function resolveRepoPath(repo: string, relPath: string): string | null {
   const root = resolve(config.reposRoot);
@@ -70,17 +87,33 @@ export function buildServer(projectId: string): McpServer {
     "code_search",
     {
       title: "Semantic + lexical code search",
-      description:
-        "Find code by meaning AND exact tokens. Returns top-k {file:line, symbol, chunkId, snippet}. " +
-        'Use when grep is insufficient — "where is auth handled", "how do we validate X". ' +
-        "Fetch full bodies with code_get_file using the returned path + range.",
+      description: TOOL_DESCRIPTIONS.code_search,
       inputSchema: {
         query: z.string().describe("Natural-language or code query"),
         repo: z
           .string()
           .optional()
-          .describe("Repository id (dir name) to scope to"),
-        language: z.string().optional(),
+          .describe(
+            "Optional strict scoping — kept on the zero-result retry, never auto-dropped; repository id (dir name) to scope to",
+          ),
+        path: z
+          .string()
+          .optional()
+          .describe(
+            "Optional refinement — auto-dropped (with a notice) if it would zero the results; substring of the repo-relative path",
+          ),
+        extension: z
+          .string()
+          .optional()
+          .describe(
+            "Optional refinement — auto-dropped (with a notice) if it would zero the results; file extension with or without leading dot",
+          ),
+        language: z
+          .string()
+          .optional()
+          .describe(
+            "Optional strict scoping — kept on the zero-result retry, never auto-dropped; language stored on chunks",
+          ),
         k: z.number().int().min(1).max(20).default(5),
       },
       annotations: {
@@ -89,10 +122,20 @@ export function buildServer(projectId: string): McpServer {
         openWorldHint: false,
       },
     },
-    async ({ query, repo, language, k }) => {
+    async ({ query, repo, path, extension, language, k }) => {
       try {
-        const hits = await searchCode({ projectId, query, repo, language, k });
-        return { content: [{ type: "text", text: formatHits(hits) }] };
+        const result = await searchCode({
+          projectId,
+          query,
+          repo,
+          path,
+          extension,
+          language,
+          k,
+        });
+        return {
+          content: [{ type: "text", text: formatHits(result.hits, result) }],
+        };
       } catch (e) {
         return {
           isError: true,
@@ -111,8 +154,7 @@ export function buildServer(projectId: string): McpServer {
     "code_get_file",
     {
       title: "Read a file (or line range)",
-      description:
-        "Return a file or a line range from an indexed repo. Always pass a range for large files.",
+      description: TOOL_DESCRIPTIONS.code_get_file,
       inputSchema: {
         repo: z.string().describe("Repository id (dir name)"),
         path: z.string().describe("File path relative to the repo root"),
@@ -154,7 +196,7 @@ export function buildServer(projectId: string): McpServer {
     "code_index_status",
     {
       title: "Indexing status",
-      description: "Per-repo file/chunk counts and last index time.",
+      description: TOOL_DESCRIPTIONS.code_index_status,
       inputSchema: { repo: z.string().optional() },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -197,12 +239,7 @@ export function buildServer(projectId: string): McpServer {
     "code_reindex",
     {
       title: "Trigger (re)index of a repo",
-      description:
-        "Kick off background indexing of a repo dir under the repos root. Runs detached " +
-        "(fire-and-forget) — poll code_index_status for the result. " +
-        "Pass force:true to bypass the content-hash skip so an ALREADY-indexed corpus " +
-        "gets its code graph (symbols + edges) built on first rollout; forced runs are " +
-        "graph-only for unchanged files (no re-embed, so no Voyage quota burn).",
+      description: TOOL_DESCRIPTIONS.code_reindex,
       inputSchema: {
         repo: z.string().describe("Repository dir name under repos root"),
         force: z
@@ -244,12 +281,7 @@ export function buildServer(projectId: string): McpServer {
     "code_graph_expand",
     {
       title: "Expand the code graph around a symbol",
-      description:
-        "Given a symbol (by name), a file+line, or a chunkId, return its definition plus " +
-        "callers and callees from the AST call graph as structured rows " +
-        "{name, file:line, depth, edge_type}. Use to answer 'who calls X' / 'what does X call'. " +
-        "Falls back to a file read when the graph has no edges for the seed. " +
-        "Name-matched (ambiguous) hops are labeled.",
+      description: TOOL_DESCRIPTIONS.code_graph_expand,
       inputSchema: {
         repo: z
           .string()
@@ -343,9 +375,7 @@ export function buildServer(projectId: string): McpServer {
     "code_symbol_lookup",
     {
       title: "Look up a symbol definition by name",
-      description:
-        "Resolve a symbol name to its definition(s): {name, kind, file:line}. When more than " +
-        "one match exists the name is ambiguous — all matches are returned with a note.",
+      description: TOOL_DESCRIPTIONS.code_symbol_lookup,
       inputSchema: {
         name: z.string().describe("Symbol name to resolve"),
         repo: z
@@ -394,10 +424,7 @@ export function buildServer(projectId: string): McpServer {
     "code_trace_path",
     {
       title: "Trace a call path (route → handler → service → repo)",
-      description:
-        "Trace how a request flows: follow call edges downstream from a seed symbol/file/chunkId " +
-        "and return the ordered chain {name, file:line, edge_type, depth}. Pass `to` to stop at a " +
-        "target name. Because edges are by-name, this returns A resolved path, not a proven-unique one.",
+      description: TOOL_DESCRIPTIONS.code_trace_path,
       inputSchema: {
         repo: z
           .string()

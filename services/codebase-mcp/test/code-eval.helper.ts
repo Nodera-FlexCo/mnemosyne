@@ -76,7 +76,7 @@ export async function runCodeRecallEval(
     query: string;
   }[] = [];
   for (const row of evalFile.rows) {
-    const hits = await searchCode({
+    const result = await searchCode({
       projectId: opts.projectId,
       query: row.query,
       repo: opts.repo,
@@ -84,7 +84,7 @@ export async function runCodeRecallEval(
     });
     perQuery.push({
       query: row.query,
-      hits: hits.map((h) => h.filePath),
+      hits: result.hits.map((h) => h.filePath),
       relevant: row.relevantPaths,
     });
   }
@@ -156,12 +156,13 @@ export async function runCodeEval(
     // appear more than once in the top-k — dedupe to the FIRST occurrence before the
     // path-keyed scoring (a duplicate is not a second relevant document; letting it
     // through both inflated nDCG past 1.0 and buried later distinct paths).
-    const hits = await searchCode({
+    const result = await searchCode({
       projectId: opts.projectId,
       query: row.query,
       repo: opts.repo,
       k: FINAL_NDCG_K,
     });
+    const hits = result.hits;
     const seen = new Set<string>();
     const finalPaths = hits
       .map((h) => h.filePath)

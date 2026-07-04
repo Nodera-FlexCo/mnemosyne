@@ -8,7 +8,7 @@
 //
 // AC map (codebase-mcp scope):
 //   AC-101 — composed searchCode output contract (4-line/240-char snippet,
-//            4-decimal score, ≤k, filters, rerank-empty RRF fallback, [], and
+//            rank-only public hits, ≤k, filters, rerank-empty RRF fallback, [], and
 //            two-phase composition ≡ one-shot searchCode)
 //   AC-102 — fuseCodeCandidates pool: ≤ candidatePool rows, per-arm RRF ranks,
 //            live handler consumes exactly this pool (finals ⊆ pool)
@@ -749,7 +749,7 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (codebase-mcp)", () => 
   // ── AC-101: composed searchCode output contract ────────────────────────────
 
   function assertHitShape(
-    hits: Awaited<ReturnType<typeof searchCode>>,
+    hits: Awaited<ReturnType<typeof searchCode>>["hits"],
     k: number,
   ): void {
     expect(hits.length).toBeLessThanOrEqual(k);
@@ -767,30 +767,30 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (codebase-mcp)", () => 
       expect(h.endLine).toBe(f.endLine);
       expect(h.symbolName).toBe(f.symbolName);
       expect(h.language).toBe(f.language);
-      expect(h.score).toBe(Number(h.score.toFixed(4)));
-    }
-    for (let i = 1; i < hits.length; i++) {
-      expect(hits[i - 1].score).toBeGreaterThanOrEqual(hits[i].score);
+      // AC-203 (wave 4): raw scores never reach the public hit shape.
+      expect("score" in h).toBe(false);
     }
   }
 
-  it("AC-101: hit shape — 4-line/240-char snippet, 4-decimal score, ≤ k, rank-ordered", async () => {
-    const hits = await searchCode({
+  it("AC-101/AC-203: hit shape — 4-line/240-char snippet, rank-only, ≤ k", async () => {
+    const result = await searchCode({
       projectId: P_CODE,
       query: "bcrypt password hashing credentials",
       k: 5,
     });
+    const { hits } = result;
     expect(hits.length).toBeGreaterThan(0);
     assertHitShape(hits, 5);
   });
 
   it("AC-101: repo filter narrows to that repository", async () => {
-    const hits = await searchCode({
+    const result = await searchCode({
       projectId: P_CODE,
       query: "monthly usage report",
       repo: R_B,
       k: 10,
     });
+    const { hits } = result;
     expect(hits.length).toBeGreaterThan(0);
     for (const h of hits) {
       expect(chunkById.get(h.chunkId)!.repo).toBe(R_B);
@@ -798,23 +798,24 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (codebase-mcp)", () => 
   });
 
   it("AC-101: language filter narrows to that language", async () => {
-    const hits = await searchCode({
+    const result = await searchCode({
       projectId: P_CODE,
       query: "database connection pool",
       language: "typescript",
       k: 10,
     });
+    const { hits } = result;
     expect(hits.length).toBeGreaterThan(0);
     for (const h of hits) expect(h.language).toBe("typescript");
   });
 
   it("AC-101: empty corpus → []", async () => {
-    const hits = await searchCode({
+    const result = await searchCode({
       projectId: P_EMPTY,
       query: "anything at all",
       k: 5,
     });
-    expect(hits).toEqual([]);
+    expect(result.hits).toEqual([]);
   });
 
   it("AC-101: identical inputs → identical output (deterministic pipeline)", async () => {
@@ -825,15 +826,15 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (codebase-mcp)", () => 
     };
     const a = await searchCode(input);
     const b = await searchCode(input);
-    expect(b).toEqual(a);
+    expect(b.hits).toEqual(a.hits);
   });
 
   it("AC-101: rerank-empty falls back to RRF pool order", async () => {
     const query = `${H.RERANK_EMPTY} database connection pool`;
     const pool = await fuseCodeCandidates({ projectId: P_CODE, query });
     expect(pool.length).toBeGreaterThan(0);
-    const hits = await searchCode({ projectId: P_CODE, query, k: 5 });
-    expect(hits.map((h) => h.chunkId)).toEqual(
+    const result = await searchCode({ projectId: P_CODE, query, k: 5 });
+    expect(result.hits.map((h) => h.chunkId)).toEqual(
       pool.slice(0, 5).map((c) => c.id),
     );
   });
@@ -848,7 +849,9 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (codebase-mcp)", () => 
     const pool = await fuseCodeCandidates(input);
     expect(pool.length).toBeGreaterThan(0);
     const composed = await rerankCodeHits(input.query, pool, input.k);
-    expect(composed).toEqual(oneShot);
+    expect(composed.map(({ score: _score, ...hit }) => hit)).toEqual(
+      oneShot.hits,
+    );
   });
 
   // ── AC-102: fuseCodeCandidates pool contract ───────────────────────────────
@@ -875,7 +878,8 @@ describe.skipIf(skip)("W1–W3 conformance — DB-backed (codebase-mcp)", () => 
     const query = "confpool retrieval token";
     const pool = await fuseCodeCandidates({ projectId: P_POOL, query });
     const poolIds = new Set(pool.map((c) => c.id));
-    const hits = await searchCode({ projectId: P_POOL, query, k: 10 });
+    const result = await searchCode({ projectId: P_POOL, query, k: 10 });
+    const { hits } = result;
     expect(hits.length).toBe(10);
     for (const h of hits) expect(poolIds.has(h.chunkId)).toBe(true);
   });

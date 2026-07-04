@@ -1,6 +1,7 @@
 import { pool } from "./db/pool.js";
 import { embedCode, rerank, toVectorLiteral } from "./voyage.js";
 import { config } from "./config.js";
+import { mergeAdjacentHits, type MergeableCodeHit } from "./merge-hits.js";
 
 export interface CodeHit {
   chunkId: string;
@@ -10,11 +11,16 @@ export interface CodeHit {
   symbolName: string | null;
   language: string | null;
   snippet: string;
+  mergedCount?: number;
+}
+
+export interface ScoredCodeHit extends CodeHit {
   score: number;
 }
 
 interface Row {
   id: string;
+  repository_id: string;
   file_path: string;
   start_line: number;
   end_line: number;
@@ -48,6 +54,7 @@ export function retrievalConfig() {
     codeEmbedModel: config.codeEmbedModel,
     codeContextModel: config.codeContextModel,
     rerankModel: config.rerankModel,
+    maxMergedLines: config.maxMergedLines,
     rerankDocTruncation: RERANK_DOC_TRUNCATION,
     snippetLines: SNIPPET_LINES,
     snippetChars: SNIPPET_CHARS,
@@ -68,6 +75,32 @@ export interface FusedCodeCandidate extends Row {
   vec_rank: number | null;
 }
 
+export interface SearchCodeResult {
+  hits: CodeHit[];
+  poolSize: number;
+  requestedLimit: number;
+  truncated: boolean;
+  retriedWithoutFilters: boolean;
+  droppedFilters: Record<string, string>;
+}
+
+function escapeLike(input: string): string {
+  return input
+    .replaceAll("\\", "\\\\")
+    .replaceAll("%", "\\%")
+    .replaceAll("_", "\\_");
+}
+
+function formatDroppedFilters(filters: Record<string, string>): string {
+  return Object.entries(filters)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(", ");
+}
+
+export function toPublicCodeHits(hits: ScoredCodeHit[]): CodeHit[] {
+  return hits.map(({ score: _score, ...hit }) => hit);
+}
+
 /**
  * Phase 1: hybrid recall + RRF fusion. Embeds the query with the live code embedder and
  * returns the fused candidate pool: `config.candidatePool` rows max, RRF-ordered, with
@@ -78,8 +111,13 @@ export async function fuseCodeCandidates(input: {
   query: string;
   repo?: string;
   language?: string;
+  path?: string;
+  extension?: string;
+  /** Pre-computed query embedding — pass it to skip the embed call (e.g. the
+   *  zero-pool retry reuses the first attempt's vector; one paid embed per search). */
+  qvec?: number[];
 }): Promise<FusedCodeCandidate[]> {
-  const [qvec] = await embedCode([input.query], "query");
+  const qvec = input.qvec ?? (await embedCode([input.query], "query"))[0];
   const params: unknown[] = [
     input.query,
     toVectorLiteral(qvec),
@@ -94,6 +132,15 @@ export async function fuseCodeCandidates(input: {
   if (input.language) {
     params.push(input.language);
     filt += ` AND c.language = $${params.length}`;
+  }
+  if (input.path) {
+    params.push(`%${escapeLike(input.path)}%`);
+    filt += ` AND c.file_path LIKE $${params.length} ESCAPE '\\'`;
+  }
+  if (input.extension) {
+    const ext = input.extension.replace(/^\.+/, "");
+    params.push(`%.${escapeLike(ext)}`);
+    filt += ` AND c.file_path LIKE $${params.length} ESCAPE '\\'`;
   }
 
   const sql = `
@@ -111,7 +158,7 @@ export async function fuseCodeCandidates(input: {
       ORDER BY c.embedding <=> $2::halfvec
       LIMIT ${RECALL_LIMIT}
     )
-    SELECT c.id, c.file_path, c.start_line, c.end_line, c.symbol_name, c.language, c.content,
+    SELECT c.id, c.repository_id, c.file_path, c.start_line, c.end_line, c.symbol_name, c.language, c.content,
            bm25.rank::int AS bm25_rank, vec.rank::int AS vec_rank,
            (COALESCE(1.0/(${RRF_K}+bm25.rank),0) + COALESCE(1.0/(${RRF_K}+vec.rank),0))::float8 AS rrf
     FROM codebase.code_chunks c
@@ -133,7 +180,7 @@ export async function rerankCodeHits(
   query: string,
   rows: FusedCodeCandidate[],
   k: number,
-): Promise<CodeHit[]> {
+): Promise<ScoredCodeHit[]> {
   const docs = rows.map((r) =>
     `${r.file_path}\n${r.content}`.slice(0, RERANK_DOC_TRUNCATION),
   );
@@ -161,24 +208,104 @@ export async function rerankCodeHits(
   });
 }
 
+function toMergeableCodeHits(
+  hits: CodeHit[],
+  rows: FusedCodeCandidate[],
+): MergeableCodeHit[] {
+  const repoByChunkId = new Map(rows.map((r) => [r.id, r.repository_id]));
+  return hits.map((hit) => {
+    const repositoryId = repoByChunkId.get(hit.chunkId);
+    if (repositoryId === undefined) {
+      throw new Error(`missing repository for code chunk ${hit.chunkId}`);
+    }
+    return { ...hit, repositoryId };
+  });
+}
+
+function stripMergeRepository(hits: MergeableCodeHit[]): CodeHit[] {
+  return hits.map(({ repositoryId: _repositoryId, ...hit }) => hit);
+}
+
 export async function searchCode(input: {
   projectId: string;
   query: string;
   repo?: string;
   language?: string;
+  path?: string;
+  extension?: string;
   k: number;
-}): Promise<CodeHit[]> {
-  const rows = await fuseCodeCandidates(input);
-  if (rows.length === 0) return [];
-  return rerankCodeHits(input.query, rows, input.k);
+}): Promise<SearchCodeResult> {
+  // Embed ONCE up front and hand the vector to both fuse calls — the zero-pool retry
+  // must not pay a second Voyage embed (MEDIUM-001).
+  const [qvec] = await embedCode([input.query], "query");
+  let rows = await fuseCodeCandidates({ ...input, qvec });
+  const droppedFilters: Record<string, string> = {};
+  if (input.path) droppedFilters.path = input.path;
+  if (input.extension) droppedFilters.extension = input.extension;
+  const hasOptionalFilters = Object.keys(droppedFilters).length > 0;
+  let retriedWithoutFilters = false;
+  if (rows.length === 0 && hasOptionalFilters) {
+    retriedWithoutFilters = true;
+    rows = await fuseCodeCandidates({
+      projectId: input.projectId,
+      query: input.query,
+      repo: input.repo,
+      language: input.language,
+      qvec,
+    });
+  }
+  const scored =
+    rows.length === 0 ? [] : await rerankCodeHits(input.query, rows, input.k);
+  const hits = stripMergeRepository(
+    mergeAdjacentHits(
+      toMergeableCodeHits(toPublicCodeHits(scored), rows),
+      config.maxMergedLines,
+    ),
+  );
+  return {
+    hits,
+    poolSize: rows.length,
+    requestedLimit: input.k,
+    truncated: scored.length === input.k && rows.length > input.k,
+    retriedWithoutFilters,
+    droppedFilters,
+  };
 }
 
-export function formatHits(hits: CodeHit[]): string {
-  if (hits.length === 0) return "No matching code.";
-  return hits
-    .map(
-      (h, i) =>
-        `${i + 1}. ${h.filePath}:${h.startLine}-${h.endLine}${h.symbolName ? ` (${h.symbolName})` : ""}  [${h.chunkId}]\n   ${h.snippet.replace(/\n/g, " ⏎ ")}`,
-    )
-    .join("\n");
+export function formatHits(
+  hits: CodeHit[],
+  options: Partial<SearchCodeResult> = {},
+): string {
+  const lines: string[] = [];
+  if (
+    hits.length > 0 &&
+    options.retriedWithoutFilters &&
+    options.droppedFilters
+  ) {
+    lines.push(
+      `Note: no results matched filters {${formatDroppedFilters(options.droppedFilters)}}; showing unfiltered results. Filters are optional — retry with different values to narrow.`,
+    );
+  }
+  if (hits.length === 0) return [...lines, "No matching code."].join("\n");
+  lines.push(
+    hits
+      .map((h, i) => {
+        const mergedNote =
+          h.mergedCount && h.mergedCount > 1
+            ? ` (spans ${h.mergedCount} chunks)`
+            : "";
+        return `${i + 1}. ${h.filePath}:${h.startLine}-${h.endLine}${h.symbolName ? ` (${h.symbolName})` : ""}${mergedNote}  [${h.chunkId}]\n   ${h.snippet.replace(/\n/g, " ⏎ ")}`;
+      })
+      .join("\n"),
+  );
+  if (
+    options.truncated &&
+    options.requestedLimit !== undefined &&
+    options.poolSize !== undefined
+  ) {
+    lines.push(
+      `Showing top ${options.requestedLimit} of ${options.poolSize} candidates. Prefer several small targeted searches — optionally narrow with repo, path, extension, or language. Fetch full context with code_get_file.`,
+    );
+  }
+  return lines.join("\n");
 }

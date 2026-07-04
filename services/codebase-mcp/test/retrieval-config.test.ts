@@ -27,6 +27,7 @@ describe("retrievalConfig() snapshot (codebase-mcp)", () => {
         "codeEmbedModel",
         "codeContextModel",
         "rerankModel",
+        "maxMergedLines",
         "rerankDocTruncation",
         "snippetLines",
         "snippetChars",
@@ -42,6 +43,7 @@ describe("retrievalConfig() snapshot (codebase-mcp)", () => {
     expect(snap.codeEmbedModel).toBe(config.codeEmbedModel);
     expect(snap.codeContextModel).toBe(config.codeContextModel);
     expect(snap.rerankModel).toBe(config.rerankModel);
+    expect(snap.maxMergedLines).toBe(config.maxMergedLines);
   });
 
   it("serializes the SAME shaping constants rerankCodeHits runs with", () => {

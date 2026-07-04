@@ -12,6 +12,7 @@ export const config = {
   codeContextModel: process.env.VOYAGE_CODE_CONTEXT_MODEL ?? "voyage-context-3",
   rerankModel: process.env.VOYAGE_RERANK_MODEL ?? "rerank-2.5-lite",
   candidatePool: parseInt(process.env.CANDIDATE_POOL ?? "25", 10),
+  maxMergedLines: parseInt(process.env.MAX_MERGED_LINES ?? "120", 10),
   // Anthropic key + models for the PAID operator scripts (distill-eval). Deliberately
   // NOT in assertServerConfig — the MCP server runs without them; src/llm.ts raises a
   // clear message when a script needs the key and it is absent (AC-108). Haiku-class
