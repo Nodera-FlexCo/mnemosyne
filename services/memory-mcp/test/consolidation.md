@@ -80,7 +80,16 @@ WHERE status='superseded' AND superseded_by IS NULL;
 
 - Count DIFFERS from 4 → **STOP and inspect before any consolidation step.** The
   live count was not independently verifiable at plan time; this guard is the
-  control. (Repaired ids: _record here when executed_.)
+  control.
+
+> **Executed 2026-07-04:** count was exactly 4; repaired (→ archived):
+> `f8c949b6-749e-4577-83df-fe8b3a7fb315` (project_mobile_testing_wave2_superseded),
+> `42d1b76a-7332-4084-9443-61dbb1fcac33` (2026-05-15-eu-only-llm-mode),
+> `06dbbc62-aa7e-4acf-9fa6-3aea6a0008de` (auto-mode shipping pattern, superseded 2026-06),
+> `4fd2c859-dc85-4f77-8155-d731173f2f90` (automode_integration_pr_bots_skip, superseded 2026-06).
+> Embedding pre-flight found 5 active rows missing `embedding_v2` (stored by a
+> parallel session pre-redeploy via the old write path) — backfilled the same day
+> (probe = 0 after).
 
 ### 1. Pre-consolidation baseline (PAID small)
 
@@ -128,7 +137,17 @@ Record the verdict here:
 
 | Date | Rows (test split) | nDCG@10 pre → post | Recall@25 pre → post | Δ nDCG 95% CI | Verdict |
 | --- | --- | --- | --- | --- | --- |
-| _pending_ | | | | | |
+| _pending_ | 20 | 0.5978 → _pending_ | 0.8000 → _pending_ | | |
+
+> **Status 2026-07-04:** steps 0–1 executed (pre-flight repairs above; pre
+> artifact `test/runs/2026-07-04-pre-consolidation.json` committed). Step 2 ran
+> and fail-opened cleanly — 230 candidate pairs collected, ALL UNJUDGED, zero
+> rows changed — because **no `ANTHROPIC_API_KEY` exists on the box** (Nodex
+> routes Claude through GCP Vertex; the judge needs a direct Anthropic key).
+> BLOCKED on the operator providing one (add to `/opt/mnemosyne/.env`; compose
+> already passes it through). Re-running the dry-run resumes from the checkpoint
+> report. If the judge runs days later, re-record the pre artifact first
+> (baseline-lifetime doctrine, `test/eval.md`).
 
 - **CI excludes zero on the win side, or includes zero with no pool-recall drop** →
   ACCEPT; keep both artifacts committed; done.
