@@ -735,6 +735,32 @@ export async function searchMemory(input: {
   };
 }
 
+// Default memory_get response budget: 6000 chars ≈ 1500 tokens at ~4 chars/token.
+export const MEMORY_GET_DEFAULT_MAX_CHARS = 6000;
+
+/**
+ * Budget a memory_get row to `maxChars` of content (AC-805/806). Truncates ONLY the
+ * `content` field value — metadata stays intact and the JSON stays parseable — and
+ * marks the cut explicitly with `truncated`/`totalChars` plus a re-fetch note naming
+ * the escape hatches. `maxChars <= 0` means unlimited; under-budget rows (and rows
+ * with a non-string content) pass through unchanged, with no truncation fields.
+ */
+export function budgetMemoryBody(
+  row: Record<string, unknown>,
+  maxChars: number,
+): Record<string, unknown> {
+  if (maxChars <= 0) return row;
+  const content = row.content;
+  if (typeof content !== "string" || content.length <= maxChars) return row;
+  return {
+    ...row,
+    content: content.slice(0, maxChars),
+    truncated: true,
+    totalChars: content.length,
+    note: `content truncated to ${maxChars} of ${content.length} chars — call memory_get again with full=true (or maxChars=0) for the complete body`,
+  };
+}
+
 export async function getMemory(
   id: string,
 ): Promise<Record<string, unknown> | null> {
