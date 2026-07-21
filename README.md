@@ -1,28 +1,35 @@
-# Mnemosyne
+# Mnemosyne (local-mac branch)
 
-Dual-engine memory + codebase search for Claude Code, self-hosted on a Hetzner
-EX44. See `mnemosyne-ex44-revision.md` (one level up) for the full architecture.
+Dual-engine memory + codebase search for Claude Code, running **fully local** via
+Docker Compose — no remote box, no Cloudflare Tunnel, no Cloudflare Access. Loopback-only
+(`127.0.0.1`), for use by Claude Code running on the same machine (an Apple Silicon
+MacBook Pro/Mac Studio, or any machine with Docker) — or reachable over your own
+LAN/Tailscale if you widen the port bindings yourself.
+
+This branch strips the Hetzner/systemd/Cloudflare-Tunnel remote-connector deploy path
+that `main` uses. If you need remote access to these MCP servers from a different
+machine, see `main`'s `cloudflared` service and its `PLAN-remote-mcp-connector.md`
+instead of this branch.
 
 ## Layout
 
 ```
-compose.yaml            # service stack (postgres, redis, memory/codebase/secrets MCP, langfuse, cloudflared)
+compose.yaml            # service stack (postgres, redis, memory/codebase/secrets MCP, langfuse)
 postgres/init/          # first-boot SQL (extensions + schemas)
-systemd/                # mnemosyne.service — supervises `docker compose` on boot
 services/memory-mcp/    # durable cross-session memory engine (Stage 1)
 services/codebase-mcp/  # semantic + lexical code search + AST code graph (Stage 2)
 services/secrets-mcp/   # encrypted secrets store
 services/importer/      # bulk transcript/decision distill → memory ingest
 docs/                   # operator runbooks (see Runbooks below)
-.env.example            # config template; real .env is generated on the box
+.env.example            # config template; copy to .env and fill in locally
 ```
 
 ## Host
 
-- Box: `mnemo` SSH alias → root@157.180.50.51 (Ubuntu 26.04, i5-13500, 125GB, RAID1 NVMe)
-- Deploy target: `/opt/mnemosyne` (owned by `development`)
+Runs locally via `docker compose` — no dedicated box, no systemd unit. Bring it up from
+this directory whenever you want the MCP servers available; there's nothing to deploy.
 
-## Common commands (run on the box, in /opt/mnemosyne)
+## Common commands (run locally, in this directory)
 
 ```bash
 make secrets     # generate .env with strong random secrets (once)
@@ -321,7 +328,8 @@ drops the old single-column `symedge_from`/`symedge_to`, which `001` no longer c
 ## Stages
 
 - [x] Stage 0: host hardening, Docker, data layer
-- [ ] Stage 0: cloudflare tunnel (needs domain + token)
+- [N/A] Stage 0: cloudflare tunnel — not applicable on this branch (local-only, no
+      remote ingress); see `main` if you need remote access
 - [x] Stage 1: memory engine — durable hybrid (semantic + lexical) recall + entity graph;
       contextual embeddings (voyage-context-4, blue/green) + structured decision log
 - [x] Stage 2: codebase engine — semantic + lexical code search + deterministic AST code

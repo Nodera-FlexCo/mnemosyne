@@ -19,10 +19,10 @@ secrets-langfuse:
 	add LANGFUSE_SALT "$$(openssl rand -hex 16)"; \
 	add LANGFUSE_ENCRYPTION_KEY "$$(openssl rand -hex 32)"; \
 	add LANGFUSE_INIT_ORG_ID mnemosyne; \
-	add LANGFUSE_INIT_PROJECT_ID nodex-evals; \
+	add LANGFUSE_INIT_PROJECT_ID mnemosyne-evals; \
 	add LANGFUSE_INIT_PROJECT_PUBLIC_KEY "pk-lf-$$(uuidgen | tr 'A-Z' 'a-z')"; \
 	add LANGFUSE_INIT_PROJECT_SECRET_KEY "sk-lf-$$(uuidgen | tr 'A-Z' 'a-z')"; \
-	add LANGFUSE_INIT_USER_EMAIL dev@nodera.studio; \
+	add LANGFUSE_INIT_USER_EMAIL dev@example.com; \
 	add LANGFUSE_INIT_USER_PASSWORD "$$(openssl rand -hex 12)"; \
 	add LANGFUSE_INIT_USER_NAME Mnemosyne; \
 	echo "Langfuse secrets ensured in .env"
